@@ -11,8 +11,6 @@ const GROUND_Y = 530;
 const BASE_SPEED = 4.0; 
 
 // === РЕЕСТР ПЕРСОНАЖЕЙ ===
-// emoji — отображается в панели выбора
-// folder — откуда грузятся кадры анимации (1.png ... frameCount.png)
 const CHARACTERS = {
     crocodile: {
         id: 'crocodile',
@@ -95,7 +93,9 @@ function Game() {
     const pitAudioRef = useRef(null);
     const pitAudioEndedRef = useRef(false);
     const barrelAudioRef = useRef(null);
-    const nightAmbientRef = useRef(null); // >>> Ссылка на ночной эмбиент
+    const splashAudioRef = useRef(null);   // >>> Звук спотыкания о лужу
+    const nightAmbientRef = useRef(null);  // Ночной эмбиент
+    const dayAmbientRef = useRef(null);    // >>> Дневной эмбиент
 
     useEffect(() => {
         const pitAudio = new Audio('source/sounds/fall_in_pit.wav');
@@ -106,40 +106,58 @@ function Game() {
         barrelAudio.preload = 'auto';
         barrelAudioRef.current = barrelAudio;
 
-        // >>> Инициализация ночного звука
+        // >>> Звук спотыкания о лужу (на 20% быстрее)
+        const splashAudio = new Audio('source/sounds/splash.wav');
+        splashAudio.preload = 'auto';
+        splashAudio.playbackRate = 1.2; // +20% скорость
+        splashAudioRef.current = splashAudio;
+
         const nightAmbient = new Audio('source/sounds/night_forest.mp3');
         nightAmbient.loop = true;
-        nightAmbient.volume = 0.25; // Немного приглушенный фон
+        nightAmbient.volume = 0.25;
         nightAmbient.preload = 'auto';
         nightAmbientRef.current = nightAmbient;
+
+        // >>> Дневной эмбиент
+        const dayAmbient = new Audio('source/sounds/forest_day.wav');
+        dayAmbient.loop = true;
+        dayAmbient.volume = 0.25;
+        dayAmbient.preload = 'auto';
+        dayAmbientRef.current = dayAmbient;
 
         return () => {
             pitAudio.pause(); pitAudio.src = '';
             barrelAudio.pause(); barrelAudio.src = '';
+            splashAudio.pause(); splashAudio.src = '';
             nightAmbient.pause(); nightAmbient.src = '';
+            dayAmbient.pause(); dayAmbient.src = '';
         };
     }, []);
 
-    // >>> Логика включения/выключения ночного звука
+    // >>> Переключение дневного/ночного эмбиента
     useEffect(() => {
-        const audio = nightAmbientRef.current;
-        if (!audio) return;
+        const nightAudio = nightAmbientRef.current;
+        const dayAudio = dayAmbientRef.current;
+        if (!nightAudio || !dayAudio) return;
+
         if (timeOfDay === 'night') {
-            audio.play().catch(() => {
-                // Браузер может заблокировать автозапуск, если нет действия пользователя
-            });
+            nightAudio.play().catch(() => {});
+            dayAudio.pause();
         } else {
-            audio.pause();
+            dayAudio.play().catch(() => {});
+            nightAudio.pause();
         }
     }, [timeOfDay]);
 
-    // >>> Обход блокировки автовоспроизведения (если игра загрузилась сразу с ночным режимом)
+    // >>> Обход автоплея: если игра загрузилась сразу с выбранным днём/ночью
     useEffect(() => {
-        if (timeOfDay !== 'night') return;
         const tryPlay = () => {
-            const audio = nightAmbientRef.current;
-            if (audio && audio.paused) {
-                audio.play().catch(() => {});
+            if (timeOfDayRef.current === 'night') {
+                const n = nightAmbientRef.current;
+                if (n && n.paused) n.play().catch(() => {});
+            } else {
+                const d = dayAmbientRef.current;
+                if (d && d.paused) d.play().catch(() => {});
             }
         };
         tryPlay();
@@ -149,7 +167,7 @@ function Game() {
             window.removeEventListener('pointerdown', tryPlay);
             window.removeEventListener('keydown', tryPlay);
         };
-    }, [timeOfDay]);
+    }, []);
     
     // === ИГРОВЫЕ РЕФЫ ===
     const initChar = CHARACTERS[character] || CHARACTERS.crocodile;
@@ -349,10 +367,19 @@ function Game() {
         }
     };
 
-    const handleHit = (index) => {
+    // >>> handleHit принимает тип препятствия, чтобы играть splash только для лужи
+    const handleHit = (index, type) => {
         if (isTrippingRef.current) return;
         obstaclesRef.current.splice(index, 1);
         healthRef.current -= 1; setHealth(healthRef.current);
+
+        // Звук спотыкания о лужу (на 20% быстрее)
+        if (type === 'puddle' && splashAudioRef.current) {
+            splashAudioRef.current.currentTime = 0;
+            splashAudioRef.current.playbackRate = 1.2;
+            splashAudioRef.current.play().catch(e => console.warn("Audio blocked", e));
+        }
+
         if (healthRef.current <= 0) { handleGameOver(); return; }
         
         isTrippingRef.current = true; tripTimerRef.current = 0; isBarrelTripRef.current = false;
@@ -546,7 +573,11 @@ function Game() {
                         p.velocityY = 0; p.isJumping = false; p.isHoldingJump = false;
                         return;
                     } else if (obs.type === 'barrel') { handleBarrelHit(i); break; } 
-                    else { handleHit(i); break; }
+                    else { 
+                        // >>> Передаём тип в handleHit, чтобы проиграть splash для лужи
+                        handleHit(i, obs.type); 
+                        break; 
+                    }
                 }
             }
         }
