@@ -11,7 +11,7 @@ const GROUND_Y = 530;
 const BASE_SPEED = 4.0; 
 
 // >>> Единая скорость для всех режимов (было Easy = 0.8)
-const SPEED_MULTIPLIER = 0.8;
+const SPEED_MULTIPLIER = 1.8;
 
 // === РЕЕСТР ФОНОВ ===
 const BACKGROUNDS = {
