@@ -354,7 +354,7 @@ function Game() {
         const char = CHARACTERS[character] || CHARACTERS.crocodile;
 
         const diff = difficultyRef.current;
-        const diffMult = diff === 'easy' ? 0.55 : diff === 'medium' ? 1.125 : 1.5;
+        const diffMult = diff === 'easy' ? 0.8 : diff === 'medium' ? 1.8 : 2.3;
         
         if (isFallingIntoPitRef.current) {
             pitFallTimerRef.current++; pitVelocityRef.current += 0.2; p.y += pitVelocityRef.current;
