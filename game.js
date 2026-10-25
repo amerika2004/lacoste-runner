@@ -306,7 +306,7 @@ function Game() {
         // Medium: 0.75 * 1.5 = 1.125
         // Hard: 1.0 * 1.5 = 1.5
         const diff = difficultyRef.current;
-        const diffMult = diff === 'easy' ? 0.55 : diff === 'medium' ? 1.125 : 1.5;
+        const diffMult = diff === 'easy' ? 0.8 : diff === 'medium' ? 1.5 : 2.2;
         
         if (isFallingIntoPitRef.current) {
             pitFallTimerRef.current++; pitVelocityRef.current += 0.2; p.y += pitVelocityRef.current;
