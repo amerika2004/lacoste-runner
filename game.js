@@ -18,7 +18,7 @@ const CHARACTERS = {
         id: 'crocodile',
         name: 'Crocodile',
         emoji: '🐊',
-        folder: 'source/walk_animation',
+        folder: 'source/crocodile',
         frameCount: 12,
         baseWidth: 165.4,
         baseHeight: 110.3,
