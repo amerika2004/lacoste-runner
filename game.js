@@ -303,7 +303,7 @@ function Game() {
 
         // Коэффициенты сложности
         const diff = difficultyRef.current;
-        const diffMult = diff === 'easy' ? 0.55 : diff === 'medium' ? 1.125 : 1.5;
+        const diffMult = diff === 'easy' ? 0.80 : diff === 'medium' ? 1.6 : 2.2;
         
         if (isFallingIntoPitRef.current) {
             pitFallTimerRef.current++; pitVelocityRef.current += 0.2; p.y += pitVelocityRef.current;
