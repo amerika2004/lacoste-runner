@@ -10,8 +10,8 @@ body, html {
     margin: 0;
     padding: 0;
     width: 100%;
-    height: 100vh;         /* fallback */
-    height: 100dvh;        /* динамическая высота для мобильных */
+    height: 100vh;
+    height: 100dvh;
     background-color: var(--bg-color);
     font-family: 'Bebas Neue', sans-serif;
     overflow: hidden;
@@ -35,7 +35,6 @@ body, html {
     align-items: center;
 }
 
-/* >>> Строгие пропорции 2:1, идеально вписывается в любой экран >>> */
 #game-container {
     position: relative;
     box-sizing: border-box;
@@ -44,11 +43,9 @@ body, html {
     box-shadow: 0 0 20px var(--gta-pink), inset 0 0 20px var(--gta-pink);
     overflow: hidden;
 
-    /* Вычисляем размеры так, чтобы игра всегда влезала целиком (без учета URL-бара) */
     width: min(100vw, calc(100dvh * 2)); 
     height: min(100dvh, calc(100vw / 2)); 
     
-    /* Фоллбэк */
     width: min(100vw, calc(100vh * 2));
     height: min(100vh, calc(100vw / 2));
 }
@@ -68,7 +65,7 @@ canvas {
     touch-action: none;
 }
 
-/* >>> МЕНЮ (Адаптивное под маленькие экраны) >>> */
+/* МЕНЮ */
 .menu-overlay {
     position: absolute;
     top: 0; left: 0; width: 100%; height: 100%;
@@ -84,7 +81,7 @@ canvas {
 }
 
 .title {
-    font-size: clamp(24px, 6vmin, 80px); /* Уменьшен минимум */
+    font-size: clamp(24px, 6vmin, 80px);
     color: var(--gta-pink);
     text-shadow: 2px 2px 0px var(--gta-cyan), -1px -1px 0px var(--gta-green);
     margin-bottom: clamp(5px, 1.5vmin, 10px);
@@ -152,7 +149,89 @@ canvas {
     line-height: 1.2;
 }
 
-/* >>> HUD (Маленький и аккуратный) >>> */
+/* >>> ПАНЕЛЬ ВЫБОРА ПЕРСОНАЖЕЙ (справа) <<< */
+.char-panel {
+    position: absolute;
+    top: 50%;
+    right: 2%;
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: clamp(3px, 0.8vmin, 6px);
+    z-index: 11;
+    background: rgba(0, 0, 0, 0.7);
+    border: 2px solid rgba(255, 0, 127, 0.5);
+    border-radius: 12px;
+    padding: clamp(5px, 1.2vmin, 10px);
+    box-shadow: 0 0 15px rgba(255, 0, 127, 0.35);
+    max-height: 85%;
+    overflow-y: auto;
+}
+
+.char-panel-title {
+    font-size: clamp(9px, 1.6vmin, 14px);
+    color: var(--gta-cyan);
+    letter-spacing: 2px;
+    text-align: center;
+    text-transform: uppercase;
+    margin-bottom: 2px;
+    text-shadow: 1px 1px 0 #000;
+    white-space: nowrap;
+}
+
+.char-btn {
+    background: rgba(0, 0, 0, 0.5);
+    border: 2px solid #555;
+    border-radius: 8px;
+    padding: clamp(3px, 0.8vmin, 6px) clamp(4px, 1vmin, 8px);
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+    transition: all 0.2s;
+    color: white;
+    font-family: 'Bebas Neue', sans-serif;
+    min-width: clamp(52px, 8.5vmin, 75px);
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.char-btn .char-emoji {
+    font-size: clamp(20px, 4vmin, 32px);
+    line-height: 1;
+    display: block;
+}
+
+.char-btn .char-name {
+    font-size: clamp(8px, 1.4vmin, 12px);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: #ccc;
+    display: block;
+    white-space: nowrap;
+}
+
+.char-btn:hover {
+    border-color: white;
+}
+
+.char-btn:hover .char-name {
+    color: white;
+}
+
+.char-btn.active {
+    border-color: var(--gta-pink);
+    box-shadow: 0 0 10px var(--gta-pink);
+    background: rgba(255, 0, 127, 0.15);
+}
+
+.char-btn.active .char-name {
+    color: var(--gta-pink);
+}
+
+/* HUD */
 .hud-left {
     position: absolute; 
     top: 2%; left: 2%;
@@ -181,7 +260,6 @@ canvas {
     max-width: 70%;
 }
 
-/* Кнопки в игре (Пауза, Фуллскрин) */
 .game-btn {
     position: absolute;
     bottom: calc(10px + env(safe-area-inset-bottom, 0px));
