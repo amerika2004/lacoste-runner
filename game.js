@@ -107,7 +107,7 @@ function Game() {
         barrelAudioRef.current = barrelAudio;
 
         // >>> Звук спотыкания о лужу (на 20% быстрее)
-        const splashAudio = new Audio('source/sounds/splash.wav');
+        const splashAudio = new Audio('source/sounds/splash.mp3');
         splashAudio.preload = 'auto';
         splashAudio.playbackRate = 1.2; // +20% скорость
         splashAudioRef.current = splashAudio;
