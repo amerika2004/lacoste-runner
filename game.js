@@ -618,16 +618,19 @@ function Game() {
 
         const baseSpeedMult = 1.0 + Math.floor(distanceRef.current / 100) * 0.04;
         const effectiveSpeedMult = Math.max(1.0, baseSpeedMult * speedPenaltyRef.current);
-
-        // >>> Умножаем на eatSpeedFactor (для плавного восстановления после еды)
-        const currentSpeed = BASE_SPEED * effectiveSpeedMult * diffMult * eatSpeedFactorRef.current;
-
+        
+        // >>> ФИКС: currentSpeed = 0 при спотыкании, чтобы препятствия
+        // не плыли влево при замороженном фоне (иначе панда «плывёт вперёд»).
+        let currentSpeed = 0;
         if (!isTrippingRef.current) {
+            currentSpeed = BASE_SPEED * effectiveSpeedMult * diffMult * eatSpeedFactorRef.current;
             setSpeedDisplay((effectiveSpeedMult * diffMult * eatSpeedFactorRef.current).toFixed(2));
             distanceRef.current += (currentSpeed * 0.03); 
             setScore(Math.floor(distanceRef.current)); 
             bgOffsetRef.current -= currentSpeed;
-        } else { setSpeedDisplay("0.00"); }
+        } else { 
+            setSpeedDisplay("0.00"); 
+        }
 
         const currentPower = calculateJumpMultiplier(p.height, baseSpeedMult, speedPenaltyRef.current); setPowerDisplay(currentPower.toFixed(2));
 
