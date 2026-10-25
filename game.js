@@ -144,6 +144,14 @@ function Game() {
     };
 
     const handleKeyDown = useCallback((e) => {
+        // >>> ПАУЗА / RESUME по Escape
+        if (e.code === 'Escape') {
+            e.preventDefault();
+            if (gameState === 'playing') setGameState('paused');
+            else if (gameState === 'paused') setGameState('playing');
+            return;
+        }
+
         // Переключение день/ночь по клавише N
         if (e.code === 'KeyN') {
             e.preventDefault();
@@ -157,7 +165,8 @@ function Game() {
                 setGameState('playing');
             } else if (gameState === 'gameover') {
                 resetGame();
-            } else if (!playerRef.current.isJumping && !isTrippingRef.current && !isFallingIntoPitRef.current && !isPitDeathDelayRef.current && !isBarrelFlyingRef.current) {
+            } else if (gameState === 'playing' && !playerRef.current.isJumping && !isTrippingRef.current && !isFallingIntoPitRef.current && !isPitDeathDelayRef.current && !isBarrelFlyingRef.current) {
+                // >>> gameState === 'playing' — чтобы не прыгать в паузе
                 const p = playerRef.current;
                 const baseMult = 1.0 + Math.floor(distanceRef.current / 100) * 0.04;
                 p.jumpMult = calculateJumpMultiplier(p.height, baseMult, speedPenaltyRef.current);
@@ -182,6 +191,43 @@ function Game() {
             window.removeEventListener('keyup', handleKeyUp);
         };
     }, [handleKeyDown, handleKeyUp]);
+
+    // >>> МОБИЛЬНАЯ АДАПТАЦИЯ: тап по канвасу = прыжок
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+
+        const handleTouchStart = (e) => {
+            e.preventDefault();
+            if (gameState !== 'playing') return;
+            if (playerRef.current.isJumping) return;
+            if (isTrippingRef.current || isFallingIntoPitRef.current ||
+                isPitDeathDelayRef.current || isBarrelFlyingRef.current) return;
+
+            const p = playerRef.current;
+            const baseMult = 1.0 + Math.floor(distanceRef.current / 100) * 0.04;
+            p.jumpMult = calculateJumpMultiplier(p.height, baseMult, speedPenaltyRef.current);
+            p.velocityY = JUMP_FORCE * p.jumpMult;
+            p.isJumping = true;
+            p.isHoldingJump = true;
+        };
+
+        const handleTouchEnd = (e) => {
+            if (gameState !== 'playing') return;
+            e.preventDefault();
+            playerRef.current.isHoldingJump = false;
+        };
+
+        canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
+        canvas.addEventListener('touchend', handleTouchEnd, { passive: false });
+        canvas.addEventListener('touchcancel', handleTouchEnd, { passive: false });
+
+        return () => {
+            canvas.removeEventListener('touchstart', handleTouchStart);
+            canvas.removeEventListener('touchend', handleTouchEnd);
+            canvas.removeEventListener('touchcancel', handleTouchEnd);
+        };
+    }, [gameState]);
 
     const resetGame = () => {
         playerRef.current = {
@@ -472,13 +518,11 @@ function Game() {
                     let yOffset = 0;
 
                     if (randomType === 'rock') { width = 120; height = 120; yOffset = 30; } 
-                    // >>> Кактус уменьшен в 2 раза: 140×220 → 70×110
                     if (randomType === 'cactus') { width = 70; height = 110; }
                     if (randomType === 'barrel') { width = 50; height = 60; }
                     if (randomType === 'puddle') { width = 120; height = 120; yOffset = 30; }
                     if (randomType === 'pit') { width = 140; height = 90; yOffset = 40; }
 
-                    // Тир силы каждые 0.3 → максимальный масштаб препятствия
                     const powerTier = Math.max(0, Math.floor((currentPower - 1.0) / 0.3));
                     const maxScale = 1.0 + powerTier * 0.15;
                     const scale = 1.0 + Math.random() * (maxScale - 1.0);
@@ -555,7 +599,6 @@ function Game() {
                     obsHitboxY = obs.y + (obs.height - pitHitboxH) / 2;
                     obsHitboxHeight = pitHitboxH;
                 } else if (obs.type === 'cactus') {
-                    // Хитбокс кактуса — по стволу (30% с каждой стороны)
                     const pad = obs.width * 0.3;
                     obsHitboxX = obs.x + pad;
                     obsHitboxWidth = obs.width - pad * 2;
@@ -778,7 +821,7 @@ function Game() {
             ctx.fillText(food.emoji, food.x, food.y + food.height);
         });
 
-        // ПРЕПЯТСТВИЯ (все — картинки день/ночь)
+        // ПРЕПЯТСТВИЯ
         obstaclesRef.current.forEach(obs => {
             if ((isFallingIntoPitRef.current || isPitDeathDelayRef.current) && obs === pitTargetRef.current) return;
             
@@ -802,6 +845,7 @@ function Game() {
         }
     };
 
+    // >>> RAF-цикл: останавливается при паузе (gameState !== 'playing')
     useEffect(() => {
         if (gameState === 'playing') {
             requestRef.current = requestAnimationFrame(updateGame);
@@ -852,6 +896,13 @@ function Game() {
         ),
 
         React.createElement('canvas', { ref: canvasRef, width: 1200, height: 600 }),
+
+        // >>> Кнопка паузы (только во время игры)
+        gameState === 'playing' ? React.createElement('button', {
+            className: 'pause-btn',
+            onClick: () => setGameState('paused'),
+            'aria-label': 'Pause'
+        }, '❚❚') : null,
         
         gameState === 'menu' ? React.createElement('div', { className: 'menu-overlay' },
             React.createElement('div', { className: 'title' }, 'LACOSTE', React.createElement('br'), 'RUNNER'),
@@ -867,10 +918,32 @@ function Game() {
                 )
             ),
             React.createElement('button', { className: 'btn btn-start', onClick: startGame }, 'Start Escape'),
-            React.createElement('p', { style: {marginTop: '20px', color: '#888', fontSize: '16px'} }, 'Tap for small jump, HOLD for high jump!'),
+            React.createElement('p', { style: {marginTop: '20px', color: '#888', fontSize: '16px'} }, 'Tap / Space — jump, HOLD — high jump!'),
             React.createElement('p', { style: {color: '#FFD700', fontSize: '14px'} }, 'Eat food to grow stronger, jump higher and heal!'),
             React.createElement('p', { style: {color: '#FF007F', fontSize: '14px'} }, 'Avoid pits — they are instant death!'),
-            React.createElement('p', { style: {color: '#888', fontSize: '12px'} }, 'Press N in game to switch Day / Night')
+            React.createElement('p', { style: {color: '#888', fontSize: '12px'} }, 'Press N or use menu to switch Day / Night')
+        ) : null,
+
+        // >>> Оверлей паузы
+        gameState === 'paused' ? React.createElement('div', { className: 'menu-overlay' },
+            React.createElement('div', { className: 'title', style: { color: '#00FFFF', textShadow: '4px 4px 0px #FF007F' } }, 'PAUSED'),
+            React.createElement('div', { className: 'subtitle' }, 'Take a breath'),
+            React.createElement('button', {
+                className: 'btn btn-start',
+                onClick: () => setGameState('playing'),
+                style: { marginBottom: '20px' }
+            }, 'Resume'),
+            React.createElement('div', { className: 'settings' },
+                React.createElement('button', {
+                    className: 'btn',
+                    onClick: () => resetGame()
+                }, 'Restart'),
+                React.createElement('button', {
+                    className: 'btn',
+                    onClick: () => setGameState('menu')
+                }, 'Menu')
+            ),
+            React.createElement('p', { style: {marginTop: '20px', color: '#888', fontSize: '14px'} }, 'Press ESC or tap Resume to continue')
         ) : null,
         
         gameState === 'gameover' ? React.createElement('div', { className: 'menu-overlay' },
