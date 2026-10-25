@@ -11,9 +11,6 @@ const GROUND_Y = 530;
 const BASE_SPEED = 4.0; 
 
 // === РЕЕСТР ФОНОВ ===
-// groundOffset   — на сколько пикселей опустить землю/персонажа/препятствия (30px = 5%)
-// obstacleTypes  — какие препятствия могут спавниться
-// foodEmojis     — если задан, еда всегда из этого набора (перебивает набор персонажа)
 const BACKGROUNDS = {
     default: {
         id: 'default',
@@ -61,7 +58,7 @@ const CHARACTERS = {
         eatEmoji: '🎋',
         eatFolder: 'source/characters/panda/eating',
         eatFrameCount: 8,
-        eatDuration: 3.0,
+        eatDuration: 4.0,
     },
 };
 
@@ -91,7 +88,6 @@ function Game() {
     const difficultyRef = useRef(difficulty);
     const backgroundRef = useRef(background);
 
-    // >>> GROUND_Y с учётом фона
     const groundYRef = useRef(GROUND_Y + (BACKGROUNDS[background]?.groundOffset || 0));
 
     useEffect(() => {
@@ -118,11 +114,10 @@ function Game() {
 
     const eatFramesRef = useRef([]);
     const eatFrameIdxRef = useRef(0);
-    const lastEatFrameTimeRef = useRef(0);
     const isEatingRef = useRef(false);
     const eatTimerRef = useRef(0);
-    const eatSpeedFactorRef = useRef(1.0); // 1 = нормальная скорость, 0 = стоим
-    const eatParticlesRef = useRef([]);     // частицы бамбука
+    const eatSpeedFactorRef = useRef(1.0);
+    const eatParticlesRef = useRef([]);
 
     useEffect(() => {
         localStorage.setItem('lacosteCharacter', character);
@@ -268,7 +263,6 @@ function Game() {
     const cactusNightImg = useRef(new Image());
     const explosionImg = useRef(new Image());
 
-    // >>> ФОНЫ грузим все сразу, чтобы можно было переключать
     const backgroundImagesRef = useRef({});
     useEffect(() => {
         Object.values(BACKGROUNDS).forEach(bg => {
@@ -480,12 +474,7 @@ function Game() {
         const diff = difficultyRef.current;
         const diffMult = diff === 'easy' ? 0.8 : diff === 'medium' ? 1.8 : 2.3;
 
-        // >>> Скорость анимации поедания зависит от сложности
-        // Easy — медленно (жус ~1.5x медленнее), Medium — норма, Hard — быстро (1.5x)
-        const eatAnimSpeed = diff === 'easy' ? 0.65 : diff === 'medium' ? 1.0 : 1.5;
-        const eatFrameDelay = 120 / eatAnimSpeed;
-
-        // >>> Всегда обновляем частицы (даже после еды)
+        // Обновляем частицы (даже после еды)
         eatParticlesRef.current.forEach(pt => {
             pt.x += pt.vx;
             pt.y += pt.vy;
@@ -494,15 +483,19 @@ function Game() {
         });
         eatParticlesRef.current = eatParticlesRef.current.filter(pt => pt.life > 0);
 
-        // >>> СОСТОЯНИЕ ПОЕДАНИЯ
+        // === СОСТОЯНИЕ ПОЕДАНИЯ ===
         if (isEatingRef.current) {
             eatTimerRef.current++;
 
-            // Анимация еды
-            // Анимация еды (скорость зависит от сложности)
-            if (Date.now() - lastEatFrameTimeRef.current > eatFrameDelay && eatFramesRef.current.length > 0) {
-                eatFrameIdxRef.current = (eatFrameIdxRef.current + 1) % eatFramesRef.current.length;
-                lastEatFrameTimeRef.current = Date.now();
+            // >>> ОДИН ЦИКЛ АНИМАЦИИ ЗА ВСЮ ТРАПЕЗУ (без зацикливания)
+            // Кадр меняется линейно по eatTimerRef, синхронно с длительностью
+            if (eatFramesRef.current.length > 0) {
+                const totalFrames = (char.eatDuration || 4) * 60;   // 240 тиков при 4 сек
+                const framesPerStep = totalFrames / eatFramesRef.current.length;
+                eatFrameIdxRef.current = Math.min(
+                    eatFramesRef.current.length - 1,
+                    Math.floor(eatTimerRef.current / framesPerStep)
+                );
             }
 
             // Плавное замедление мира за первые 12 кадров
@@ -538,7 +531,7 @@ function Game() {
             p.tilt = 0;
             p.bob = Math.sin(Date.now() / 150) * 3;
 
-            // Спавним частицы бамбука каждые 6 кадров
+            // Частицы бамбука
             if (eatTimerRef.current % 6 === 0) {
                 eatParticlesRef.current.push({
                     x: p.x + p.width / 2 + (Math.random() - 0.5) * p.width * 0.3,
@@ -554,7 +547,7 @@ function Game() {
             }
 
             // Окончание еды
-            const eatDurationFrames = (char.eatDuration || 5) * 60;
+            const eatDurationFrames = (char.eatDuration || 4) * 60;
             if (eatTimerRef.current >= eatDurationFrames) {
                 isEatingRef.current = false;
                 eatTimerRef.current = 0;
@@ -625,8 +618,6 @@ function Game() {
         const baseSpeedMult = 1.0 + Math.floor(distanceRef.current / 100) * 0.04;
         const effectiveSpeedMult = Math.max(1.0, baseSpeedMult * speedPenaltyRef.current);
         
-        // >>> ФИКС: currentSpeed = 0 при спотыкании, чтобы препятствия
-        // не плыли влево при замороженном фоне (иначе панда «плывёт вперёд»).
         let currentSpeed = 0;
         if (!isTrippingRef.current) {
             currentSpeed = BASE_SPEED * effectiveSpeedMult * diffMult * eatSpeedFactorRef.current;
@@ -667,7 +658,6 @@ function Game() {
                 for (let obs of obstaclesRef.current) { if (obs.x + obs.width > canvas.width - 350) { gapOk = false; break; } }
                 
                 if (gapOk && spawnTimerRef.current > Math.max(70, 140 - currentSpeed * 3) + Math.random() * 40) {
-                    // >>> Типы препятствий из настроек фона
                     const types = bgConfig.obstacleTypes || ['barrel', 'rock', 'cactus', 'puddle', 'pit']; 
                     const randomType = types[Math.floor(Math.random() * types.length)];
                     let width = 40, height = 40, yOffset = 0;
@@ -687,7 +677,6 @@ function Game() {
                 }
             }
 
-            // >>> Еда: сначала фон, потом персонаж
             const foodList = bgConfig.foodEmojis || char.foodEmojis || ['🍗', '🍔', '🍕', '🥩'];
             const foodMult = char.eatFolder ? 3.0 : 1.0;
 
@@ -753,7 +742,6 @@ function Game() {
                     isEatingRef.current = true;
                     eatTimerRef.current = 0;
                     eatFrameIdxRef.current = 0;
-                    lastEatFrameTimeRef.current = Date.now();
                     p.y = gy - p.height;
                     p.velocityY = 0;
                     p.isJumping = false;
@@ -831,7 +819,6 @@ function Game() {
             else { ctx.fillStyle = 'black'; ctx.beginPath(); ctx.ellipse(obs.x + obs.width / 2, obs.y + obs.height / 2, obs.width / 2, obs.height / 2, 0, 0, Math.PI * 2); ctx.fill(); }
         }
 
-        // >>> Кадр персонажа: eat > walk
         let charImg;
         if (isEatingRef.current && eatFramesRef.current.length > 0) {
             charImg = eatFramesRef.current[eatFrameIdxRef.current % eatFramesRef.current.length];
@@ -853,7 +840,6 @@ function Game() {
                 ctx.save();
                 let fallAngle = 0, yOffset = 0, flyTilt = 0;
 
-                // >>> Аркадность: "чавкающая" пульсация размера
                 let chewScale = 1.0;
                 if (isEatingRef.current) {
                     chewScale = 1.0 + Math.sin(Date.now() / 80) * 0.05;
@@ -882,7 +868,6 @@ function Game() {
             } else { ctx.fillStyle = 'red'; ctx.fillRect(p.x, p.y, p.width, p.height); }
         }
 
-        // >>> Частицы бамбука (аркадность)
         eatParticlesRef.current.forEach(pt => {
             const alpha = pt.life / pt.maxLife;
             ctx.save();
@@ -890,11 +875,9 @@ function Game() {
             ctx.fillStyle = '#4CAF50';
             ctx.translate(pt.x, pt.y);
             if (pt.rot !== undefined) ctx.rotate(pt.rot);
-            // Листик/точка
             ctx.beginPath();
             ctx.ellipse(0, 0, pt.size, pt.size * 0.5, 0, 0, Math.PI * 2);
             ctx.fill();
-            // Светлая сердцевина
             ctx.fillStyle = '#8BC34A';
             ctx.beginPath();
             ctx.arc(0, 0, pt.size * 0.4, 0, Math.PI * 2);
@@ -914,7 +897,6 @@ function Game() {
             }
         });
 
-        // Еда
         ctx.save();
         ctx.globalAlpha = 1.0;
         ctx.textBaseline = 'bottom';
@@ -969,7 +951,6 @@ function Game() {
         )
     );
 
-    // >>> Панель выбора фона
     const renderBackgroundPanel = () => React.createElement('div', { className: 'settings', style: { marginTop: '-5px' } },
         Object.values(BACKGROUNDS).map(bg =>
             React.createElement('button', {
@@ -1007,7 +988,6 @@ function Game() {
 
             renderCharacterPanel(),
 
-            // >>> Выбор фона
             renderBackgroundPanel(),
             
             React.createElement('div', { className: 'settings' },
