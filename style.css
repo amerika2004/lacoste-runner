@@ -11,7 +11,7 @@ body, html {
     padding: 0;
     width: 100%;
     height: 100vh;         /* fallback */
-    height: 100dvh;        /* современные браузеры: динамическая высота */
+    height: 100dvh;        /* динамическая высота для мобильных */
     background-color: var(--bg-color);
     font-family: 'Bebas Neue', sans-serif;
     overflow: hidden;
@@ -35,26 +35,24 @@ body, html {
     align-items: center;
 }
 
-/* >>> СТРОГИЕ ПРОПОРЦИИ 2:1 >>> */
+/* >>> Строгие пропорции 2:1, идеально вписывается в любой экран >>> */
 #game-container {
     position: relative;
     box-sizing: border-box;
-    
-    /* Контейнер всегда вписывает экран, сохраняя 2:1 */
+    background: #111;
+    border: 2px solid var(--gta-pink);
+    box-shadow: 0 0 20px var(--gta-pink), inset 0 0 20px var(--gta-pink);
+    overflow: hidden;
+
+    /* Вычисляем размеры так, чтобы игра всегда влезала целиком (без учета URL-бара) */
     width: min(100vw, calc(100dvh * 2)); 
     height: min(100dvh, calc(100vw / 2)); 
     
-    /* Фоллбэк для старых браузеров */
+    /* Фоллбэк */
     width: min(100vw, calc(100vh * 2));
     height: min(100vh, calc(100vw / 2));
-
-    border: 4px solid var(--gta-pink);
-    box-shadow: 0 0 20px var(--gta-pink), inset 0 0 20px var(--gta-pink);
-    overflow: hidden;
-    background: #111;
 }
 
-/* На ПК с мышкой оставляем прежний фиксированный размер, если экран большой */
 @media (pointer: fine) and (min-width: 1220px) {
     #game-container {
         width: 1200px;
@@ -62,7 +60,15 @@ body, html {
     }
 }
 
-/* Меню (GTA Style) */
+canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    touch-action: none;
+}
+
+/* >>> МЕНЮ (Адаптивное под маленькие экраны) >>> */
 .menu-overlay {
     position: absolute;
     top: 0; left: 0; width: 100%; height: 100%;
@@ -72,33 +78,32 @@ body, html {
     justify-content: center;
     align-items: center;
     z-index: 10;
-    padding: 2% 5%;
+    padding: 2%;
     box-sizing: border-box;
     text-align: center;
 }
 
-/* >>> АДАПТИВНЫЕ ШРИФТЫ >>> */
 .title {
-    font-size: clamp(32px, 8vmin, 80px);
+    font-size: clamp(24px, 6vmin, 80px); /* Уменьшен минимум */
     color: var(--gta-pink);
-    text-shadow: 3px 3px 0px var(--gta-cyan), -2px -2px 0px var(--gta-green);
-    margin-bottom: clamp(5px, 2vmin, 10px);
+    text-shadow: 2px 2px 0px var(--gta-cyan), -1px -1px 0px var(--gta-green);
+    margin-bottom: clamp(5px, 1.5vmin, 10px);
     text-transform: uppercase;
     letter-spacing: 2px;
     line-height: 0.9;
 }
 
 .subtitle {
-    font-size: clamp(14px, 3vmin, 24px);
+    font-size: clamp(12px, 2.5vmin, 24px);
     color: var(--gta-green);
-    margin-bottom: clamp(15px, 5vmin, 40px);
+    margin-bottom: clamp(10px, 3vmin, 40px);
     letter-spacing: 4px;
 }
 
 .settings {
     display: flex;
-    gap: clamp(10px, 3vmin, 15px);
-    margin-bottom: clamp(15px, 5vmin, 40px);
+    gap: clamp(8px, 2vmin, 15px);
+    margin-bottom: clamp(10px, 3vmin, 40px);
     flex-wrap: wrap;
     justify-content: center;
 }
@@ -107,9 +112,9 @@ body, html {
     background: transparent;
     color: white;
     border: 2px solid white;
-    padding: clamp(5px, 2vmin, 10px) clamp(10px, 4vmin, 20px);
+    padding: clamp(4px, 1.5vmin, 10px) clamp(10px, 3vmin, 20px);
     font-family: 'Bebas Neue', sans-serif;
-    font-size: clamp(16px, 4vmin, 24px);
+    font-size: clamp(14px, 3vmin, 24px);
     cursor: pointer;
     transition: all 0.2s;
     text-transform: uppercase;
@@ -131,8 +136,8 @@ body, html {
 .btn-start {
     border-color: var(--gta-green);
     color: var(--gta-green);
-    font-size: clamp(20px, 6vmin, 32px);
-    padding: clamp(10px, 3vmin, 15px) clamp(20px, 8vmin, 50px);
+    font-size: clamp(18px, 4vmin, 32px);
+    padding: clamp(8px, 2vmin, 15px) clamp(15px, 5vmin, 50px);
 }
 
 .btn-start:hover, .btn-start:active {
@@ -142,45 +147,63 @@ body, html {
 }
 
 .menu-overlay p {
-    font-size: clamp(12px, 2.5vmin, 16px) !important;
-    margin: clamp(4px, 1vmin, 10px) 0 !important;
+    font-size: clamp(10px, 1.8vmin, 16px) !important;
+    margin: clamp(2px, 1vmin, 8px) 0 !important;
+    line-height: 1.2;
 }
 
-canvas {
-    display: block;
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-    touch-action: none;
+/* >>> HUD (Маленький и аккуратный) >>> */
+.hud-left {
+    position: absolute; 
+    top: 2%; left: 2%;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: clamp(10px, 1.8vmin, 20px);
+    color: #00FF41;
+    text-shadow: 1px 1px 0 #000;
+    z-index: 5;
+    display: flex; 
+    flex-direction: column; 
+    gap: 2px;
 }
 
-/* Кнопка паузы */
-.pause-btn {
+.hud-right {
+    position: absolute; 
+    top: 2%; right: 2%;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: clamp(10px, 1.8vmin, 20px);
+    color: #ff007f;
+    text-shadow: 1px 1px 0 #000;
+    z-index: 5;
+    display: flex; 
+    gap: clamp(5px, 1.5vmin, 15px);
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    max-width: 70%;
+}
+
+/* Кнопки в игре (Пауза, Фуллскрин) */
+.game-btn {
     position: absolute;
-    bottom: calc(15px + env(safe-area-inset-bottom, 0px));
-    right: calc(15px + env(safe-area-inset-right, 0px));
+    bottom: calc(10px + env(safe-area-inset-bottom, 0px));
     z-index: 15;
-    width: clamp(48px, 10vmin, 68px);
-    height: clamp(48px, 10vmin, 68px);
+    width: clamp(40px, 8vmin, 56px);
+    height: clamp(40px, 8vmin, 56px);
     border-radius: 50%;
-    background: rgba(0, 0, 0, 0.55);
-    border: 3px solid var(--gta-pink);
+    background: rgba(0, 0, 0, 0.5);
+    border: 2px solid var(--gta-pink);
     color: var(--gta-pink);
-    font-family: 'Bebas Neue', sans-serif;
-    font-size: clamp(20px, 5vmin, 26px);
-    cursor: pointer;
+    font-size: clamp(16px, 4vmin, 24px);
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 0 15px rgba(255, 0, 127, 0.6);
-    transition: all 0.2s;
+    box-shadow: 0 0 10px rgba(255, 0, 127, 0.5);
     touch-action: manipulation;
-    -webkit-tap-highlight-color: transparent;
     padding: 0;
     line-height: 1;
+    cursor: pointer;
 }
 
-.pause-btn:active {
-    background: rgba(255, 0, 127, 0.25);
-    box-shadow: 0 0 25px rgba(255, 0, 127, 0.9);
-}
+#btn-pause { right: calc(10px + env(safe-area-inset-right, 0px)); }
+#btn-fullscreen { right: calc(10px + 8vmin + 20px + env(safe-area-inset-right, 0px)); }
+
+.game-btn:active { background: rgba(255, 0, 127, 0.3); }
