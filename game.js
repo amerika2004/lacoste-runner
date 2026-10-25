@@ -301,9 +301,12 @@ function Game() {
         const canvas = canvasRef.current;
         const p = playerRef.current;
 
-        // Коэффициент сложности
+        // >>> ОБНОВЛЕННЫЕ КОЭФФИЦИЕНТЫ СЛОЖНОСТИ <<<
+        // Easy: 0.55 (работает правильно)
+        // Medium: 0.75 * 1.5 = 1.125
+        // Hard: 1.0 * 1.5 = 1.5
         const diff = difficultyRef.current;
-        const diffMult = diff === 'easy' ? 0.55 : diff === 'medium' ? 0.75 : 1.0;
+        const diffMult = diff === 'easy' ? 0.55 : diff === 'medium' ? 1.125 : 1.5;
         
         if (isFallingIntoPitRef.current) {
             pitFallTimerRef.current++; pitVelocityRef.current += 0.2; p.y += pitVelocityRef.current;
@@ -335,7 +338,7 @@ function Game() {
         if (isBarrelFlyingRef.current) {
             barrelFlyVelocityYRef.current += GRAVITY; p.y += barrelFlyVelocityYRef.current; p.tilt = Math.max(p.tilt - 0.03, -0.4);
             
-            // Отлет назад тоже замедляем в легком режиме
+            // Отлет назад тоже замедляем/ускоряем в зависимости от режима
             const backSpeed = 10 * diffMult; 
             bgOffsetRef.current += backSpeed;
             obstaclesRef.current.forEach(o => { o.x += backSpeed; }); foodsRef.current.forEach(f => { f.x += backSpeed; });
@@ -501,7 +504,7 @@ function Game() {
 
                 let deltaTime = time - lastTimeRef.current;
                 lastTimeRef.current = time;
-                if (deltaTime > 250) deltaTime = 250; // Защита от лагов
+                if (deltaTime > 250) deltaTime = 250; 
                 accumulatorRef.current += deltaTime;
 
                 const TARGET_FPS = 60;
