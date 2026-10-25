@@ -18,6 +18,13 @@ body, html {
     justify-content: center;
     align-items: center;
     color: white;
+
+    /* >>> Мобильная адаптация */
+    touch-action: none;
+    overscroll-behavior: none;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
 }
 
 #root {
@@ -32,8 +39,8 @@ body, html {
     position: relative;
     width: 100vw;
     height: 100vh;
-    max-width: 1200px; /* Увеличили ширину */
-    max-height: 600px; /* Увеличили высоту */
+    max-width: 1200px;
+    max-height: 600px;
     border: 4px solid var(--gta-pink);
     box-shadow: 0 0 20px var(--gta-pink), inset 0 0 20px var(--gta-pink);
     overflow: hidden;
@@ -86,6 +93,8 @@ body, html {
     cursor: pointer;
     transition: all 0.2s;
     text-transform: uppercase;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
 }
 
 .btn:hover {
@@ -116,6 +125,8 @@ canvas {
     display: block;
     width: 100%;
     height: 100%;
+    object-fit: contain;   /* >>> Сохраняет пропорции 2:1, добавляет чёрные поля */
+    touch-action: none;
 }
 
 /* HUD (Счет) */
@@ -127,4 +138,36 @@ canvas {
     color: var(--gta-cyan);
     text-shadow: 2px 2px 0 #000;
     z-index: 5;
+}
+
+/* >>> Кнопка паузы (видна во время игры) */
+.pause-btn {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    z-index: 15;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.55);
+    border: 3px solid var(--gta-pink);
+    color: var(--gta-pink);
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 22px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 0 15px rgba(255, 0, 127, 0.6);
+    transition: all 0.2s;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    padding: 0;
+    line-height: 1;
+}
+
+.pause-btn:hover,
+.pause-btn:active {
+    background: rgba(255, 0, 127, 0.25);
+    box-shadow: 0 0 25px rgba(255, 0, 127, 0.9);
 }
