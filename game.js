@@ -643,8 +643,10 @@ function Game() {
     };
 
     const draw = (ctx, canvas) => {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        const p = playerRef.current;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    // >>> Защита от «залипания» globalAlpha между кадрами
+    ctx.globalAlpha = 1.0;
+    const p = playerRef.current;
         const bgImg = pickImg(landscapeImg, landscapeNightImg);
 
         if (bgImg.complete && bgImg.naturalWidth > 0) {
