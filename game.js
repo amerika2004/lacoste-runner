@@ -221,8 +221,8 @@ function Game() {
     const explosionImg = useRef(new Image());
 
     useEffect(() => {
-        landscapeImg.current.src = 'source/landscape.jpg'; 
-        landscapeNightImg.current.src = 'source/landscape_n.jpg';
+        landscapeImg.current.src = 'source/cartoon_forest.png'; 
+        landscapeNightImg.current.src = 'source/cartoon_forest_n.png';
         puddleImg.current.src = 'source/puddle.png';
         puddleNightImg.current.src = 'source/puddle_n.png';
         rockImg.current.src = 'source/rock.png'; 
