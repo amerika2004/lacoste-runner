@@ -10,6 +10,9 @@ const HOLD_THRUST = 0.45;
 const GROUND_Y = 530; 
 const BASE_SPEED = 4.0; 
 
+// >>> Единая скорость для всех режимов (было Easy = 0.8)
+const SPEED_MULTIPLIER = 0.8;
+
 // === РЕЕСТР ФОНОВ ===
 const BACKGROUNDS = {
     default: {
@@ -65,7 +68,6 @@ const CHARACTERS = {
 function Game() {
     const [gameState, setGameState] = useState('menu');
     const [timeOfDay, setTimeOfDay] = useState(() => localStorage.getItem('lacosteTimeOfDay') || 'day');
-    const [difficulty, setDifficulty] = useState(() => localStorage.getItem('lacosteDifficulty') || 'hard');
     const [background, setBackground] = useState(() => {
         const saved = localStorage.getItem('lacosteBackground');
         return (saved && BACKGROUNDS[saved]) ? saved : 'default';
@@ -85,7 +87,6 @@ function Game() {
     const requestRef = useRef();
     
     const timeOfDayRef = useRef(timeOfDay);
-    const difficultyRef = useRef(difficulty);
     const backgroundRef = useRef(background);
 
     const groundYRef = useRef(GROUND_Y + (BACKGROUNDS[background]?.groundOffset || 0));
@@ -94,11 +95,6 @@ function Game() {
         timeOfDayRef.current = timeOfDay;
         localStorage.setItem('lacosteTimeOfDay', timeOfDay);
     }, [timeOfDay]);
-
-    useEffect(() => {
-        difficultyRef.current = difficulty;
-        localStorage.setItem('lacosteDifficulty', difficulty);
-    }, [difficulty]);
 
     useEffect(() => {
         backgroundRef.current = background;
@@ -471,8 +467,8 @@ function Game() {
         const gy = groundYRef.current;
         const bgConfig = BACKGROUNDS[backgroundRef.current] || BACKGROUNDS.default;
 
-        const diff = difficultyRef.current;
-        const diffMult = diff === 'easy' ? 0.8 : diff === 'medium' ? 1.8 : 2.3;
+        // >>> Единая скорость для всех режимов
+        const diffMult = SPEED_MULTIPLIER;
 
         // Обновляем частицы (даже после еды)
         eatParticlesRef.current.forEach(pt => {
@@ -487,10 +483,9 @@ function Game() {
         if (isEatingRef.current) {
             eatTimerRef.current++;
 
-            // >>> ОДИН ЦИКЛ АНИМАЦИИ ЗА ВСЮ ТРАПЕЗУ (без зацикливания)
-            // Кадр меняется линейно по eatTimerRef, синхронно с длительностью
+            // ОДИН ЦИКЛ АНИМАЦИИ ЗА ВСЮ ТРАПЕЗУ (без зацикливания)
             if (eatFramesRef.current.length > 0) {
-                const totalFrames = (char.eatDuration || 4) * 60;   // 240 тиков при 4 сек
+                const totalFrames = (char.eatDuration || 4) * 60;
                 const framesPerStep = totalFrames / eatFramesRef.current.length;
                 eatFrameIdxRef.current = Math.min(
                     eatFramesRef.current.length - 1,
@@ -989,12 +984,6 @@ function Game() {
             renderCharacterPanel(),
 
             renderBackgroundPanel(),
-            
-            React.createElement('div', { className: 'settings' },
-                React.createElement('button', { className: `btn ${difficulty === 'easy' ? 'active' : ''}`, onClick: () => setDifficulty('easy') }, 'Easy'),
-                React.createElement('button', { className: `btn ${difficulty === 'medium' ? 'active' : ''}`, onClick: () => setDifficulty('medium') }, 'Medium'),
-                React.createElement('button', { className: `btn ${difficulty === 'hard' ? 'active' : ''}`, onClick: () => setDifficulty('hard') }, 'Hard')
-            ),
 
             React.createElement('div', { className: 'settings', style: { marginTop: '-10px' } },
                 React.createElement('button', { className: `btn ${timeOfDay === 'day' ? 'active' : ''}`, onClick: () => setTimeOfDay('day') }, '☀️ Day'),
