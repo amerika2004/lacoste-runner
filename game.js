@@ -15,6 +15,8 @@ const FRAME_COUNT = 12;
 function Game() {
     const [gameState, setGameState] = useState('menu');
     const [timeOfDay, setTimeOfDay] = useState(() => localStorage.getItem('lacosteTimeOfDay') || 'day');
+    const [difficulty, setDifficulty] = useState(() => localStorage.getItem('lacosteDifficulty') || 'hard');
+    
     const [score, setScore] = useState(0);
     const [speedDisplay, setSpeedDisplay] = useState(1.0); 
     const [powerDisplay, setPowerDisplay] = useState(1.0);
@@ -23,27 +25,42 @@ function Game() {
 
     const canvasRef = useRef(null);
     const requestRef = useRef();
+    
+    // Рефы для стейтов, чтобы читать их в игровом цикле без перезапуска
     const timeOfDayRef = useRef(timeOfDay);
-
-    // >>> ЗВУК ПАДЕНИЯ В ЯМУ
-    const pitAudioRef = useRef(null);
-    const pitAudioEndedRef = useRef(false);
-
-    useEffect(() => {
-        const audio = new Audio('source/sounds/fall_in_pit.wav');
-        audio.preload = 'auto';
-        pitAudioRef.current = audio;
-        return () => {
-            audio.pause();
-            audio.src = '';
-        };
-    }, []);
+    const difficultyRef = useRef(difficulty);
 
     useEffect(() => {
         timeOfDayRef.current = timeOfDay;
         localStorage.setItem('lacosteTimeOfDay', timeOfDay);
     }, [timeOfDay]);
+
+    useEffect(() => {
+        difficultyRef.current = difficulty;
+        localStorage.setItem('lacosteDifficulty', difficulty);
+    }, [difficulty]);
+
+    // === АУДИО ===
+    const pitAudioRef = useRef(null);
+    const pitAudioEndedRef = useRef(false);
+    const barrelAudioRef = useRef(null);
+
+    useEffect(() => {
+        const pitAudio = new Audio('source/sounds/fall_in_pit.wav');
+        pitAudio.preload = 'auto';
+        pitAudioRef.current = pitAudio;
+
+        const barrelAudio = new Audio('source/sounds/barrel_explosion.wav');
+        barrelAudio.preload = 'auto';
+        barrelAudioRef.current = barrelAudio;
+
+        return () => {
+            pitAudio.pause(); pitAudio.src = '';
+            barrelAudio.pause(); barrelAudio.src = '';
+        };
+    }, []);
     
+    // === ИГРОВЫЕ РЕФЫ ===
     const playerRef = useRef({
         x: 100, y: GROUND_Y - 110.3, width: 165.4, height: 110.3,
         velocityY: 0, isJumping: false, isHoldingJump: false, jumpMult: 1.0,
@@ -82,6 +99,7 @@ function Game() {
     const currentFrameRef = useRef(0); 
     const lastFrameTimeRef = useRef(0); 
 
+    // === ИЗОБРАЖЕНИЯ ===
     const landscapeImg = useRef(new Image());
     const landscapeNightImg = useRef(new Image());
     const puddleImg = useRef(new Image());
@@ -135,7 +153,6 @@ function Game() {
     const handleKeyDown = useCallback((e) => {
         if (e.code === 'Escape') {
             e.preventDefault();
-            // Не даём поставить на паузу во время анимации смерти
             if (isFallingIntoPitRef.current || isPitDeathDelayRef.current) return;
             if (gameState === 'playing') setGameState('paused');
             else if (gameState === 'paused') setGameState('playing');
@@ -229,12 +246,8 @@ function Game() {
         pitFallTimerRef.current = 0; pitVelocityRef.current = 0;
         isPitDeathDelayRef.current = false; pitDeathDelayTimerRef.current = 0;
 
-        // >>> Сброс звука падения
         pitAudioEndedRef.current = false;
-        if (pitAudioRef.current) {
-            pitAudioRef.current.pause();
-            pitAudioRef.current.currentTime = 0;
-        }
+        if (pitAudioRef.current) { pitAudioRef.current.pause(); pitAudioRef.current.currentTime = 0; }
 
         setScore(0); setSpeedDisplay(1.0); setPowerDisplay(1.0); setGameState('playing');
     };
@@ -265,7 +278,15 @@ function Game() {
         const obs = obstaclesRef.current[index]; if (!obs) return;
         const canvas = canvasRef.current; const p = playerRef.current;
         
+        // Взрыв
         explosionsRef.current.push({ x: obs.x + obs.width / 2, y: obs.y + obs.height / 2, size: obs.height * 6, timer: 0, maxTimer: 30 });
+        
+        // Звук взрыва
+        if (barrelAudioRef.current) {
+            barrelAudioRef.current.currentTime = 0;
+            barrelAudioRef.current.play().catch(e => console.warn("Audio blocked", e));
+        }
+
         obstaclesRef.current.splice(index, 1);
         obstaclesRef.current = obstaclesRef.current.filter(o => (o.x + o.width) > p.x && o.x < canvas.width);
         foodsRef.current = foodsRef.current.filter(f => f.x < canvas.width);
@@ -275,48 +296,48 @@ function Game() {
         p.velocityY = 0; p.isJumping = false; p.isHoldingJump = false; p.tilt = 0;
     };
 
-    const updateGame = () => {
-        if (gameState !== 'playing') return;
-        const canvas = canvasRef.current; const ctx = canvas.getContext('2d'); const p = playerRef.current;
+    // === ЧИСТАЯ ЛОГИКА ИГРЫ (Вызывается ровно 60 раз в секунду) ===
+    const updateLogic = () => {
+        const canvas = canvasRef.current;
+        const p = playerRef.current;
+
+        // Коэффициент сложности
+        const diff = difficultyRef.current;
+        const diffMult = diff === 'easy' ? 0.55 : diff === 'medium' ? 0.75 : 1.0;
         
         if (isFallingIntoPitRef.current) {
             pitFallTimerRef.current++; pitVelocityRef.current += 0.2; p.y += pitVelocityRef.current;
             if (p.y > GROUND_Y + 30 || pitFallTimerRef.current > 400) {
                 isFallingIntoPitRef.current = false; isPitDeathDelayRef.current = true; pitDeathDelayTimerRef.current = 0;
 
-                // >>> Запуск звука падения и ожидание его окончания
                 pitAudioEndedRef.current = false;
                 const a = pitAudioRef.current;
                 if (a) {
-                    a.currentTime = 0;
-                    a.onended = () => { pitAudioEndedRef.current = true; };
-                    a.onerror = () => { pitAudioEndedRef.current = true; };
+                    a.currentTime = 0; a.onended = () => { pitAudioEndedRef.current = true; }; a.onerror = () => { pitAudioEndedRef.current = true; };
                     a.play().catch(() => { pitAudioEndedRef.current = true; });
-                } else {
-                    pitAudioEndedRef.current = true;
-                }
+                } else { pitAudioEndedRef.current = true; }
             }
-            draw(ctx, canvas); requestRef.current = requestAnimationFrame(updateGame); return;
+            return;
         }
         
         if (isPitDeathDelayRef.current) {
             pitDeathDelayTimerRef.current++;
-            // Ждём окончания аудио (с защитным таймаутом 10 сек)
             const audioDone = pitAudioEndedRef.current || !pitAudioRef.current;
             const fallbackDone = pitDeathDelayTimerRef.current > 600;
             const minDelayPassed = pitDeathDelayTimerRef.current > 20;
 
             if ((audioDone && minDelayPassed) || fallbackDone) {
-                isPitDeathDelayRef.current = false;
-                handleGameOver();
-                return;
+                isPitDeathDelayRef.current = false; handleGameOver(); return;
             }
-            draw(ctx, canvas); requestRef.current = requestAnimationFrame(updateGame); return;
+            return;
         }
         
         if (isBarrelFlyingRef.current) {
             barrelFlyVelocityYRef.current += GRAVITY; p.y += barrelFlyVelocityYRef.current; p.tilt = Math.max(p.tilt - 0.03, -0.4);
-            const backSpeed = 10; bgOffsetRef.current += backSpeed;
+            
+            // Отлет назад тоже замедляем в легком режиме
+            const backSpeed = 10 * diffMult; 
+            bgOffsetRef.current += backSpeed;
             obstaclesRef.current.forEach(o => { o.x += backSpeed; }); foodsRef.current.forEach(f => { f.x += backSpeed; });
             setSpeedDisplay("REVERSE");
             
@@ -325,7 +346,7 @@ function Game() {
                 isTrippingRef.current = true; tripTimerRef.current = 0; pendingBarrelDamageRef.current = true; p.tilt = 0;
             }
             explosionsRef.current.forEach(e => e.timer++); explosionsRef.current = explosionsRef.current.filter(e => e.timer < e.maxTimer);
-            draw(ctx, canvas); requestRef.current = requestAnimationFrame(updateGame); return;
+            return;
         }
         
         if (isTrippingRef.current) {
@@ -345,12 +366,17 @@ function Game() {
 
         let currentSpeed = 0;
         if (!isTrippingRef.current) {
-            currentSpeed = BASE_SPEED * effectiveSpeedMult; setSpeedDisplay(effectiveSpeedMult.toFixed(2));
-            distanceRef.current += (currentSpeed * 0.03); setScore(Math.floor(distanceRef.current)); bgOffsetRef.current -= currentSpeed;
+            // Умножаем скорость на коэффициент сложности
+            currentSpeed = BASE_SPEED * effectiveSpeedMult * diffMult;
+            setSpeedDisplay((effectiveSpeedMult * diffMult).toFixed(2));
+            distanceRef.current += (currentSpeed * 0.03); 
+            setScore(Math.floor(distanceRef.current)); 
+            bgOffsetRef.current -= currentSpeed;
         } else { setSpeedDisplay("0.00"); }
 
         const currentPower = calculateJumpMultiplier(p.height, baseSpeedMult, speedPenaltyRef.current); setPowerDisplay(currentPower.toFixed(2));
 
+        // ФИЗИКА ПРЫЖКА (не зависит от сложности, чтобы на легком было легче прыгать)
         if (p.isJumping) {
             p.velocityY += GRAVITY; if (p.isHoldingJump) p.velocityY -= HOLD_THRUST * p.jumpMult;
             p.y += p.velocityY; p.tilt = p.velocityY * 0.025; p.tilt = Math.max(-0.35, Math.min(0.35, p.tilt)); 
@@ -360,6 +386,7 @@ function Game() {
             p.bob = Math.sin(Date.now() / 80) * 2.5; p.tilt = 0;
         }
 
+        // Анимация лап (замедляется вместе со скоростью)
         if (!p.isJumping && !isTrippingRef.current) {
             const now = Date.now(); const frameDelay = Math.max(30, 100 - (currentSpeed * 5)); 
             if (now - lastFrameTimeRef.current > frameDelay) {
@@ -367,12 +394,16 @@ function Game() {
             }
         }
 
+        // СПАВН
         if (!isTrippingRef.current) {
             if (spawnCooldownRef.current > 0) { spawnCooldownRef.current--; spawnTimerRef.current = 0; } 
             else {
-                spawnTimerRef.current++;
+                // Масштабируем таймер, чтобы физическое расстояние между препятствиями было одинаковым
+                spawnTimerRef.current += (currentSpeed / BASE_SPEED);
+                
                 let gapOk = true;
                 for (let obs of obstaclesRef.current) { if (obs.x + obs.width > canvas.width - 350) { gapOk = false; break; } }
+                
                 if (gapOk && spawnTimerRef.current > Math.max(70, 140 - currentSpeed * 3) + Math.random() * 40) {
                     const types = ['barrel', 'rock', 'cactus', 'puddle', 'pit']; 
                     const randomType = types[Math.floor(Math.random() * types.length)];
@@ -393,7 +424,7 @@ function Game() {
                 }
             }
 
-            foodTimerRef.current++;
+            foodTimerRef.current += (currentSpeed / BASE_SPEED);
             if (foodTimerRef.current > 100 + Math.random() * 80) { 
                 let isSafeToSpawn = true;
                 for (let obs of obstaclesRef.current) { if (obs.x + obs.width > canvas.width - 300) { isSafeToSpawn = false; break; } }
@@ -410,6 +441,7 @@ function Game() {
         obstaclesRef.current.forEach(obs => { obs.x -= currentSpeed; }); obstaclesRef.current = obstaclesRef.current.filter(obs => obs.x + obs.width > 0);
         foodsRef.current.forEach(food => { food.x -= currentSpeed; }); foodsRef.current = foodsRef.current.filter(food => food.x + food.width > 0);
 
+        // КОЛЛИЗИИ
         if (!isTrippingRef.current) {
             for (let i = obstaclesRef.current.length - 1; i >= 0; i--) {
                 let obs = obstaclesRef.current[i];
@@ -433,7 +465,7 @@ function Game() {
                         isFallingIntoPitRef.current = true; pitTargetRef.current = obs;
                         pitFallTimerRef.current = 0; pitVelocityRef.current = 0;
                         p.velocityY = 0; p.isJumping = false; p.isHoldingJump = false;
-                        draw(ctx, canvas); requestRef.current = requestAnimationFrame(updateGame); return;
+                        return;
                     } else if (obs.type === 'barrel') { handleBarrelHit(i); break; } 
                     else { handleHit(i); break; }
                 }
@@ -453,9 +485,48 @@ function Game() {
             }
             return true;
         });
-
-        draw(ctx, canvas); requestRef.current = requestAnimationFrame(updateGame);
     };
+
+    // === ФИКСИРОВАННЫЙ ЦИКЛ (60 FPS) ===
+    const lastTimeRef = useRef(0);
+    const accumulatorRef = useRef(0);
+
+    useEffect(() => {
+        if (gameState === 'playing') {
+            lastTimeRef.current = performance.now();
+            accumulatorRef.current = 0;
+
+            const gameLoop = (time) => {
+                if (gameState !== 'playing') return;
+
+                let deltaTime = time - lastTimeRef.current;
+                lastTimeRef.current = time;
+                if (deltaTime > 250) deltaTime = 250; // Защита от лагов
+                accumulatorRef.current += deltaTime;
+
+                const TARGET_FPS = 60;
+                const FRAME_TIME = 1000 / TARGET_FPS;
+
+                let loops = 0;
+                while (accumulatorRef.current >= FRAME_TIME && loops < 5) {
+                    updateLogic();
+                    accumulatorRef.current -= FRAME_TIME;
+                    loops++;
+                }
+
+                if (gameState !== 'playing') return;
+
+                const canvas = canvasRef.current;
+                const ctx = canvas.getContext('2d');
+                draw(ctx, canvas);
+
+                requestRef.current = requestAnimationFrame(gameLoop);
+            };
+
+            requestRef.current = requestAnimationFrame(gameLoop);
+        }
+        return () => cancelAnimationFrame(requestRef.current);
+    }, [gameState]);
 
     const pickImg = (dayImg, nightImg) => timeOfDayRef.current === 'night' ? nightImg.current : dayImg.current;
     const drawObstacleImage = (ctx, obs, dayImg, nightImg, fallbackColor) => {
@@ -475,17 +546,13 @@ function Game() {
             if (offsetX > 0) offsetX -= exactWidth;
             for (let i = offsetX; i < canvas.width; i += exactWidth) ctx.drawImage(bgImg, i, 0, exactWidth, canvas.height);
         } else {
-            ctx.fillStyle = timeOfDayRef.current === 'night' ? '#0a0512' : '#1a0b2e';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = timeOfDayRef.current === 'night' ? '#0a0512' : '#1a0b2e'; ctx.fillRect(0, 0, canvas.width, canvas.height);
         }
 
         if ((isFallingIntoPitRef.current || isPitDeathDelayRef.current) && pitTargetRef.current) {
             const obs = pitTargetRef.current; const pitDrawImg = pickImg(pitImg, pitNightImg);
             if (pitDrawImg.complete && pitDrawImg.naturalWidth > 0) ctx.drawImage(pitDrawImg, obs.x, obs.y, obs.width, obs.height);
-            else {
-                ctx.fillStyle = 'black'; ctx.beginPath();
-                ctx.ellipse(obs.x + obs.width / 2, obs.y + obs.height / 2, obs.width / 2, obs.height / 2, 0, 0, Math.PI * 2); ctx.fill();
-            }
+            else { ctx.fillStyle = 'black'; ctx.beginPath(); ctx.ellipse(obs.x + obs.width / 2, obs.y + obs.height / 2, obs.width / 2, obs.height / 2, 0, 0, Math.PI * 2); ctx.fill(); }
         }
 
         const crocImg = walkFramesRef.current[currentFrameRef.current];
@@ -538,24 +605,14 @@ function Game() {
             else if (obs.type === 'cactus') drawObstacleImage(ctx, obs, cactusImg, cactusNightImg, '#2e8b3a');
         });
         
-        // >>> Затемнение экрана синхронизировано со звуком
         if (isPitDeathDelayRef.current) {
             let fadeProgress;
             const a = pitAudioRef.current;
-            if (a && isFinite(a.duration) && a.duration > 0.1) {
-                fadeProgress = Math.min(1, a.currentTime / a.duration);
-            } else {
-                fadeProgress = Math.min(1, pitDeathDelayTimerRef.current / 180);
-            }
-            ctx.fillStyle = `rgba(0, 0, 0, ${fadeProgress})`;
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            if (a && isFinite(a.duration) && a.duration > 0.1) fadeProgress = Math.min(1, a.currentTime / a.duration);
+            else fadeProgress = Math.min(1, pitDeathDelayTimerRef.current / 180);
+            ctx.fillStyle = `rgba(0, 0, 0, ${fadeProgress})`; ctx.fillRect(0, 0, canvas.width, canvas.height);
         }
     };
-
-    useEffect(() => {
-        if (gameState === 'playing') requestRef.current = requestAnimationFrame(updateGame);
-        return () => cancelAnimationFrame(requestRef.current);
-    }, [gameState]);
 
     const startGame = () => resetGame();
     const formatScore = (num) => num.toString().padStart(5, '0');
@@ -586,24 +643,29 @@ function Game() {
         React.createElement('canvas', { ref: canvasRef, width: 1200, height: 600 }),
 
         gameState === 'playing' ? React.createElement(React.Fragment, null,
-            React.createElement('button', {
-                id: 'btn-fullscreen', className: 'game-btn', onClick: toggleFullscreen, 'aria-label': 'Fullscreen'
-            }, '⛶'),
-            React.createElement('button', {
-                id: 'btn-pause', className: 'game-btn', onClick: () => setGameState('paused'), 'aria-label': 'Pause'
-            }, '❚❚')
+            React.createElement('button', { id: 'btn-fullscreen', className: 'game-btn', onClick: toggleFullscreen, 'aria-label': 'Fullscreen' }, '⛶'),
+            React.createElement('button', { id: 'btn-pause', className: 'game-btn', onClick: () => setGameState('paused'), 'aria-label': 'Pause' }, '❚❚')
         ) : null,
         
         gameState === 'menu' ? React.createElement('div', { className: 'menu-overlay' },
             React.createElement('div', { className: 'title' }, 'LACOSTE', React.createElement('br'), 'RUNNER'),
             React.createElement('div', { className: 'subtitle' }, 'VICE CITY EDITION'),
-            React.createElement('div', { style: { display: 'flex', gap: '10px', marginBottom: '15px' } },
-                React.createElement('button', { className: 'btn', onClick: toggleFullscreen }, '⛶ На весь экран')
-            ),
+            
             React.createElement('div', { className: 'settings' },
+                React.createElement('button', { className: `btn ${difficulty === 'easy' ? 'active' : ''}`, onClick: () => setDifficulty('easy') }, 'Easy'),
+                React.createElement('button', { className: `btn ${difficulty === 'medium' ? 'active' : ''}`, onClick: () => setDifficulty('medium') }, 'Medium'),
+                React.createElement('button', { className: `btn ${difficulty === 'hard' ? 'active' : ''}`, onClick: () => setDifficulty('hard') }, 'Hard')
+            ),
+
+            React.createElement('div', { className: 'settings', style: { marginTop: '-10px' } },
                 React.createElement('button', { className: `btn ${timeOfDay === 'day' ? 'active' : ''}`, onClick: () => setTimeOfDay('day') }, '☀️ Day'),
                 React.createElement('button', { className: `btn ${timeOfDay === 'night' ? 'active' : ''}`, onClick: () => setTimeOfDay('night') }, '🌙 Night')
             ),
+
+            React.createElement('div', { style: { display: 'flex', gap: '10px', marginBottom: '15px' } },
+                React.createElement('button', { className: 'btn', onClick: toggleFullscreen }, '⛶ На весь экран')
+            ),
+
             React.createElement('button', { className: 'btn btn-start', onClick: startGame }, 'Start Escape'),
             React.createElement('div', { style: { marginTop: '10px' } },
                 React.createElement('p', { style: {color: '#888', fontSize: '12px'} }, 'Tap / Space — jump, HOLD — high jump!'),
