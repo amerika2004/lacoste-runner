@@ -11,22 +11,22 @@ const GROUND_Y = 530;
 const BASE_SPEED = 4.0; 
 
 // === РЕЕСТР ПЕРСОНАЖЕЙ ===
-// Каждый персонаж загружается из своей папки.
-// Кадры должны называться 1.png ... N.png
+// emoji — отображается в панели выбора
+// folder — откуда грузятся кадры анимации (1.png ... frameCount.png)
 const CHARACTERS = {
     crocodile: {
         id: 'crocodile',
         name: 'Crocodile',
         emoji: '🐊',
-        folder: 'source/crocodile',
+        folder: 'source/walk_animation',
         frameCount: 12,
-        baseWidth: 32,
-        baseHeight: 32,
+        baseWidth: 165.4,
+        baseHeight: 110.3,
     },
     // === КАК ДОБАВИТЬ НОВОГО ПЕРСОНАЖА ===
     // 1. Создай папку: source/characters/имя/
-    // 2. Загрузи туда 12 PNG кадров: 1.png, 2.png, ..., 12.png
-    // 3. Раскомментируй и настрой блок ниже:
+    // 2. Загрузи туда кадры: 1.png, 2.png, ..., N.png
+    // 3. Раскомментируй блок ниже и укажи свои значения:
     //
     // panda: {
     //     id: 'panda',
@@ -34,8 +34,8 @@ const CHARACTERS = {
     //     emoji: '🐼',
     //     folder: 'source/characters/panda',
     //     frameCount: 12,
-    //     baseWidth: 160,     // стартовая ширина спрайта на канвасе
-    //     baseHeight: 120,    // стартовая высота спрайта
+    //     baseWidth: 160,
+    //     baseHeight: 120,
     // },
     //
     // wolf: {
@@ -80,7 +80,7 @@ function Game() {
         localStorage.setItem('lacosteDifficulty', difficulty);
     }, [difficulty]);
 
-    // === ЗАГРУЗКА КАДРОВ ПЕРСОНАЖА (зависит от выбора) ===
+    // === ЗАГРУЗКА КАДРОВ ПЕРСОНАЖА ===
     const walkFramesRef = useRef([]); 
     const currentFrameRef = useRef(0); 
     const lastFrameTimeRef = useRef(0); 
@@ -153,7 +153,7 @@ function Game() {
     const isPitDeathDelayRef = useRef(false);
     const pitDeathDelayTimerRef = useRef(0);
 
-    // === СТАТИЧНЫЕ ИЗОБРАЖЕНИЯ (не зависят от персонажа) ===
+    // === СТАТИЧНЫЕ ИЗОБРАЖЕНИЯ ===
     const landscapeImg = useRef(new Image());
     const landscapeNightImg = useRef(new Image());
     const puddleImg = useRef(new Image());
@@ -184,7 +184,6 @@ function Game() {
         explosionImg.current.src = 'source/explosion.png';
     }, []);
 
-    // Базовый рост меряется относительно роста самого персонажа.
     const calculateJumpMultiplier = (playerHeight, gameSpeed, penalty = 1.0) => {
         const char = CHARACTERS[character] || CHARACTERS.crocodile;
         const sizeFactor = Math.sqrt(playerHeight / char.baseHeight);
@@ -598,7 +597,6 @@ function Game() {
             else { ctx.fillStyle = 'black'; ctx.beginPath(); ctx.ellipse(obs.x + obs.width / 2, obs.y + obs.height / 2, obs.width / 2, obs.height / 2, 0, 0, Math.PI * 2); ctx.fill(); }
         }
 
-        // Кадр текущего персонажа (безопасное получение)
         const frames = walkFramesRef.current;
         const frameIdx = frames.length > 0 ? (currentFrameRef.current % frames.length) : 0;
         const charImg = frames[frameIdx];
@@ -673,22 +671,18 @@ function Game() {
         return h.join(' ');
     };
 
-    // Универсальная сетка выбора персонажа (используется в меню и на экране смерти)
-    const renderCharacterGrid = () => React.createElement('div', { className: 'character-grid' },
-        Object.values(CHARACTERS).map(char => 
+    // >>> ПАНЕЛЬ ВЫБОРА ПЕРСОНАЖЕЙ (справа, с эмодзи)
+    const renderCharacterPanel = () => React.createElement('div', { className: 'char-panel' },
+        React.createElement('div', { className: 'char-panel-title' }, 'Hero'),
+        Object.values(CHARACTERS).map(char =>
             React.createElement('button', {
                 key: char.id,
                 className: `char-btn ${character === char.id ? 'active' : ''}`,
                 onClick: () => setCharacter(char.id),
                 title: char.name
             },
-                React.createElement('img', {
-                    src: `${char.folder}/1.png`,
-                    alt: '',
-                    draggable: false,
-                    onError: (e) => { e.target.style.visibility = 'hidden'; }
-                }),
-                React.createElement('span', null, char.name)
+                React.createElement('span', { className: 'char-emoji' }, char.emoji || '❓'),
+                React.createElement('span', { className: 'char-name' }, char.name)
             )
         )
     );
@@ -718,8 +712,8 @@ function Game() {
             React.createElement('div', { className: 'title' }, 'LACOSTE', React.createElement('br'), 'RUNNER'),
             React.createElement('div', { className: 'subtitle' }, 'VICE CITY EDITION'),
 
-            // >>> ВЫБОР ПЕРСОНАЖА
-            renderCharacterGrid(),
+            // >>> Панель выбора персонажей справа
+            renderCharacterPanel(),
             
             React.createElement('div', { className: 'settings' },
                 React.createElement('button', { className: `btn ${difficulty === 'easy' ? 'active' : ''}`, onClick: () => setDifficulty('easy') }, 'Easy'),
@@ -759,8 +753,8 @@ function Game() {
             React.createElement('div', { className: 'subtitle', style: {color: 'white', marginBottom: '10px'} }, 'The employees caught you!'),
             React.createElement('div', { className: 'subtitle' }, 'DIST: ', Math.floor(score), 'm | HI: ', highScore, 'm'),
 
-            // >>> ВЫБОР ПЕРСОНАЖА и на экране смерти
-            renderCharacterGrid(),
+            // >>> Панель выбора персонажей справа (и на экране смерти)
+            renderCharacterPanel(),
 
             React.createElement('div', { className: 'settings' },
                 React.createElement('button', { className: 'btn', onClick: toggleFullscreen }, '⛶ Fullscreen'),
