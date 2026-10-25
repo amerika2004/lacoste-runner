@@ -25,6 +25,20 @@ function Game() {
     const requestRef = useRef();
     const timeOfDayRef = useRef(timeOfDay);
 
+    // >>> ЗВУК ПАДЕНИЯ В ЯМУ
+    const pitAudioRef = useRef(null);
+    const pitAudioEndedRef = useRef(false);
+
+    useEffect(() => {
+        const audio = new Audio('source/sounds/fall_in_pit.wav');
+        audio.preload = 'auto';
+        pitAudioRef.current = audio;
+        return () => {
+            audio.pause();
+            audio.src = '';
+        };
+    }, []);
+
     useEffect(() => {
         timeOfDayRef.current = timeOfDay;
         localStorage.setItem('lacosteTimeOfDay', timeOfDay);
@@ -107,28 +121,22 @@ function Game() {
         return Math.max(1.0, sizeFactor * speedFactor * penalty);
     };
 
-    // Функция полноэкранного режима
     const toggleFullscreen = () => {
         if (!document.fullscreenElement) {
-            document.documentElement.requestFullscreen().catch((err) => {
-                console.warn("Fullscreen error:", err);
-            });
-            // Пытаемся заблокировать ориентацию (работает на Android)
+            document.documentElement.requestFullscreen().catch((err) => console.warn("Fullscreen error:", err));
             if (screen.orientation && screen.orientation.lock) {
-                screen.orientation.lock('landscape').catch((err) => {
-                    console.warn("Orientation lock error:", err);
-                });
+                screen.orientation.lock('landscape').catch((err) => console.warn("Orientation lock error:", err));
             }
         } else {
-            if (document.exitFullscreen) {
-                document.exitFullscreen();
-            }
+            if (document.exitFullscreen) document.exitFullscreen();
         }
     };
 
     const handleKeyDown = useCallback((e) => {
         if (e.code === 'Escape') {
             e.preventDefault();
+            // Не даём поставить на паузу во время анимации смерти
+            if (isFallingIntoPitRef.current || isPitDeathDelayRef.current) return;
             if (gameState === 'playing') setGameState('paused');
             else if (gameState === 'paused') setGameState('playing');
             return;
@@ -171,7 +179,7 @@ function Game() {
         if (!canvas) return;
 
         const handleTouchStart = (e) => {
-            if (e.target.closest('.game-btn') || e.target.closest('.btn')) return; // Игнорируем кнопки
+            if (e.target.closest('.game-btn') || e.target.closest('.btn')) return;
             e.preventDefault();
             if (gameState !== 'playing') return;
             if (playerRef.current.isJumping || isTrippingRef.current || isFallingIntoPitRef.current || isPitDeathDelayRef.current || isBarrelFlyingRef.current) return;
@@ -221,10 +229,18 @@ function Game() {
         pitFallTimerRef.current = 0; pitVelocityRef.current = 0;
         isPitDeathDelayRef.current = false; pitDeathDelayTimerRef.current = 0;
 
+        // >>> Сброс звука падения
+        pitAudioEndedRef.current = false;
+        if (pitAudioRef.current) {
+            pitAudioRef.current.pause();
+            pitAudioRef.current.currentTime = 0;
+        }
+
         setScore(0); setSpeedDisplay(1.0); setPowerDisplay(1.0); setGameState('playing');
     };
 
     const handleGameOver = () => {
+        if (pitAudioRef.current) pitAudioRef.current.pause();
         setGameState('gameover');
         if (Math.floor(distanceRef.current) > highScore) {
             const newHigh = Math.floor(distanceRef.current);
@@ -267,13 +283,34 @@ function Game() {
             pitFallTimerRef.current++; pitVelocityRef.current += 0.2; p.y += pitVelocityRef.current;
             if (p.y > GROUND_Y + 30 || pitFallTimerRef.current > 400) {
                 isFallingIntoPitRef.current = false; isPitDeathDelayRef.current = true; pitDeathDelayTimerRef.current = 0;
+
+                // >>> Запуск звука падения и ожидание его окончания
+                pitAudioEndedRef.current = false;
+                const a = pitAudioRef.current;
+                if (a) {
+                    a.currentTime = 0;
+                    a.onended = () => { pitAudioEndedRef.current = true; };
+                    a.onerror = () => { pitAudioEndedRef.current = true; };
+                    a.play().catch(() => { pitAudioEndedRef.current = true; });
+                } else {
+                    pitAudioEndedRef.current = true;
+                }
             }
             draw(ctx, canvas); requestRef.current = requestAnimationFrame(updateGame); return;
         }
         
         if (isPitDeathDelayRef.current) {
             pitDeathDelayTimerRef.current++;
-            if (pitDeathDelayTimerRef.current > 180) { isPitDeathDelayRef.current = false; handleGameOver(); return; }
+            // Ждём окончания аудио (с защитным таймаутом 10 сек)
+            const audioDone = pitAudioEndedRef.current || !pitAudioRef.current;
+            const fallbackDone = pitDeathDelayTimerRef.current > 600;
+            const minDelayPassed = pitDeathDelayTimerRef.current > 20;
+
+            if ((audioDone && minDelayPassed) || fallbackDone) {
+                isPitDeathDelayRef.current = false;
+                handleGameOver();
+                return;
+            }
             draw(ctx, canvas); requestRef.current = requestAnimationFrame(updateGame); return;
         }
         
@@ -501,9 +538,17 @@ function Game() {
             else if (obs.type === 'cactus') drawObstacleImage(ctx, obs, cactusImg, cactusNightImg, '#2e8b3a');
         });
         
+        // >>> Затемнение экрана синхронизировано со звуком
         if (isPitDeathDelayRef.current) {
-            const fadeProgress = Math.min(1, pitDeathDelayTimerRef.current / 180);
-            ctx.fillStyle = `rgba(0, 0, 0, ${fadeProgress * 0.85})`; ctx.fillRect(0, 0, canvas.width, canvas.height);
+            let fadeProgress;
+            const a = pitAudioRef.current;
+            if (a && isFinite(a.duration) && a.duration > 0.1) {
+                fadeProgress = Math.min(1, a.currentTime / a.duration);
+            } else {
+                fadeProgress = Math.min(1, pitDeathDelayTimerRef.current / 180);
+            }
+            ctx.fillStyle = `rgba(0, 0, 0, ${fadeProgress})`;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
         }
     };
 
@@ -526,7 +571,6 @@ function Game() {
 
     return React.createElement('div', { id: 'game-container' },
         
-        // HUD (показываем только когда играем или на паузе)
         (gameState === 'playing' || gameState === 'paused') ? React.createElement(React.Fragment, null,
             React.createElement('div', { className: 'hud-left' }, 
                 React.createElement('span', null, `FOOD: ${playerRef.current.foodEaten} / ${playerRef.current.foodTarget}`),
@@ -541,7 +585,6 @@ function Game() {
 
         React.createElement('canvas', { ref: canvasRef, width: 1200, height: 600 }),
 
-        // Кнопки в игре (Пауза и Фуллскрин)
         gameState === 'playing' ? React.createElement(React.Fragment, null,
             React.createElement('button', {
                 id: 'btn-fullscreen', className: 'game-btn', onClick: toggleFullscreen, 'aria-label': 'Fullscreen'
@@ -551,15 +594,12 @@ function Game() {
             }, '❚❚')
         ) : null,
         
-        // ГЛАВНОЕ МЕНЮ
         gameState === 'menu' ? React.createElement('div', { className: 'menu-overlay' },
             React.createElement('div', { className: 'title' }, 'LACOSTE', React.createElement('br'), 'RUNNER'),
             React.createElement('div', { className: 'subtitle' }, 'VICE CITY EDITION'),
-            
             React.createElement('div', { style: { display: 'flex', gap: '10px', marginBottom: '15px' } },
                 React.createElement('button', { className: 'btn', onClick: toggleFullscreen }, '⛶ На весь экран')
             ),
-
             React.createElement('div', { className: 'settings' },
                 React.createElement('button', { className: `btn ${timeOfDay === 'day' ? 'active' : ''}`, onClick: () => setTimeOfDay('day') }, '☀️ Day'),
                 React.createElement('button', { className: `btn ${timeOfDay === 'night' ? 'active' : ''}`, onClick: () => setTimeOfDay('night') }, '🌙 Night')
@@ -572,7 +612,6 @@ function Game() {
             )
         ) : null,
 
-        // МЕНЮ ПАУЗЫ
         gameState === 'paused' ? React.createElement('div', { className: 'menu-overlay' },
             React.createElement('div', { className: 'title', style: { color: '#00FFFF', textShadow: '2px 2px 0px #FF007F' } }, 'PAUSED'),
             React.createElement('button', { className: 'btn btn-start', onClick: () => setGameState('playing'), style: { marginBottom: '10px' } }, 'Resume'),
@@ -583,7 +622,6 @@ function Game() {
             )
         ) : null,
         
-        // ЭКРАН СМЕРТИ
         gameState === 'gameover' ? React.createElement('div', { className: 'menu-overlay' },
             React.createElement('div', { className: 'title', style: {color: 'red', textShadow: '2px 2px 0px #000'} }, 'BUSTED'),
             React.createElement('div', { className: 'subtitle', style: {color: 'white', marginBottom: '10px'} }, 'The employees caught you!'),
