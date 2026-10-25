@@ -11,6 +11,11 @@ const GROUND_Y = 530;
 const BASE_SPEED = 4.0; 
 
 // === РЕЕСТР ПЕРСОНАЖЕЙ ===
+// foodEmojis      — из какого набора спавнится еда для этого персонажа
+// eatEmoji        — какой эмодзи триггерит eat-анимацию (по умолчанию none = никогда)
+// eatFolder       — папка с кадрами «сидит и ест» (1.png ... eatFrameCount.png)
+// eatFrameCount   — сколько кадров в eat-анимации
+// eatDuration     — сколько секунд длится поедание
 const CHARACTERS = {
     crocodile: {
         id: 'crocodile',
@@ -20,25 +25,22 @@ const CHARACTERS = {
         frameCount: 12,
         baseWidth: 165.4,
         baseHeight: 110.3,
+        foodEmojis: ['🍗', '🍔', '🍕', '🥩'],
     },
     panda: {
         id: 'panda',
         name: 'Panda',
         emoji: '🐼',
         folder: 'source/characters/panda',
-        frameCount: 20,
+        frameCount: 8,
         baseWidth: 160,
         baseHeight: 120,
+        foodEmojis: ['🎋'],
+        eatEmoji: '🎋',
+        eatFolder: 'source/characters/panda/eating',
+        eatFrameCount: 8,
+        eatDuration: 5.5,
     },
-    // wolf: {
-    //     id: 'wolf',
-    //     name: 'Wolf',
-    //     emoji: '🐺',
-    //     folder: 'source/characters/wolf',
-    //     frameCount: 12,
-    //     baseWidth: 175,
-    //     baseHeight: 115,
-    // },
 };
 
 function Game() {
@@ -77,15 +79,34 @@ function Game() {
     const currentFrameRef = useRef(0); 
     const lastFrameTimeRef = useRef(0); 
 
+    // >>> Кадры поедания
+    const eatFramesRef = useRef([]);
+    const eatFrameIdxRef = useRef(0);
+    const lastEatFrameTimeRef = useRef(0);
+    const isEatingRef = useRef(false);
+    const eatTimerRef = useRef(0);
+
     useEffect(() => {
         localStorage.setItem('lacosteCharacter', character);
         walkFramesRef.current = [];
         currentFrameRef.current = 0;
+        eatFramesRef.current = [];
+        eatFrameIdxRef.current = 0;
+        isEatingRef.current = false;
+        eatTimerRef.current = 0;
+
         const char = CHARACTERS[character] || CHARACTERS.crocodile;
         for (let i = 1; i <= char.frameCount; i++) {
             const img = new Image();
             img.src = `${char.folder}/${i}.png`;
             walkFramesRef.current.push(img);
+        }
+        if (char.eatFolder && char.eatFrameCount) {
+            for (let i = 1; i <= char.eatFrameCount; i++) {
+                const img = new Image();
+                img.src = `${char.eatFolder}/${i}.png`;
+                eatFramesRef.current.push(img);
+            }
         }
     }, [character]);
 
@@ -93,9 +114,9 @@ function Game() {
     const pitAudioRef = useRef(null);
     const pitAudioEndedRef = useRef(false);
     const barrelAudioRef = useRef(null);
-    const splashAudioRef = useRef(null);   // >>> Звук спотыкания о лужу
-    const nightAmbientRef = useRef(null);  // Ночной эмбиент
-    const dayAmbientRef = useRef(null);    // >>> Дневной эмбиент
+    const splashAudioRef = useRef(null);
+    const nightAmbientRef = useRef(null);
+    const dayAmbientRef = useRef(null);
 
     useEffect(() => {
         const pitAudio = new Audio('source/sounds/fall_in_pit.wav');
@@ -106,10 +127,9 @@ function Game() {
         barrelAudio.preload = 'auto';
         barrelAudioRef.current = barrelAudio;
 
-        // >>> Звук спотыкания о лужу (на 20% быстрее)
-        const splashAudio = new Audio('source/sounds/splash.mp3');
+        const splashAudio = new Audio('source/sounds/splash.wav');
         splashAudio.preload = 'auto';
-        splashAudio.playbackRate = 1.2; // +20% скорость
+        splashAudio.playbackRate = 1.2;
         splashAudioRef.current = splashAudio;
 
         const nightAmbient = new Audio('source/sounds/night_forest.mp3');
@@ -118,7 +138,6 @@ function Game() {
         nightAmbient.preload = 'auto';
         nightAmbientRef.current = nightAmbient;
 
-        // >>> Дневной эмбиент
         const dayAmbient = new Audio('source/sounds/forest_day.wav');
         dayAmbient.loop = true;
         dayAmbient.volume = 0.25;
@@ -134,30 +153,20 @@ function Game() {
         };
     }, []);
 
-    // >>> Переключение дневного/ночного эмбиента
     useEffect(() => {
         const nightAudio = nightAmbientRef.current;
         const dayAudio = dayAmbientRef.current;
         if (!nightAudio || !dayAudio) return;
-
-        if (timeOfDay === 'night') {
-            nightAudio.play().catch(() => {});
-            dayAudio.pause();
-        } else {
-            dayAudio.play().catch(() => {});
-            nightAudio.pause();
-        }
+        if (timeOfDay === 'night') { nightAudio.play().catch(() => {}); dayAudio.pause(); }
+        else { dayAudio.play().catch(() => {}); nightAudio.pause(); }
     }, [timeOfDay]);
 
-    // >>> Обход автоплея: если игра загрузилась сразу с выбранным днём/ночью
     useEffect(() => {
         const tryPlay = () => {
             if (timeOfDayRef.current === 'night') {
-                const n = nightAmbientRef.current;
-                if (n && n.paused) n.play().catch(() => {});
+                const n = nightAmbientRef.current; if (n && n.paused) n.play().catch(() => {});
             } else {
-                const d = dayAmbientRef.current;
-                if (d && d.paused) d.play().catch(() => {});
+                const d = dayAmbientRef.current; if (d && d.paused) d.play().catch(() => {});
             }
         };
         tryPlay();
@@ -221,8 +230,8 @@ function Game() {
     const explosionImg = useRef(new Image());
 
     useEffect(() => {
-        landscapeImg.current.src = 'source/cartoon_forest.png'; 
-        landscapeNightImg.current.src = 'source/cartoon_forest_n.png';
+        landscapeImg.current.src = 'source/landscape.jpg'; 
+        landscapeNightImg.current.src = 'source/landscape_n.jpg';
         puddleImg.current.src = 'source/puddle.png';
         puddleNightImg.current.src = 'source/puddle_n.png';
         rockImg.current.src = 'source/rock.png'; 
@@ -271,7 +280,7 @@ function Game() {
             e.preventDefault();
             if (gameState === 'menu') setGameState('playing');
             else if (gameState === 'gameover') resetGame();
-            else if (gameState === 'playing' && !playerRef.current.isJumping && !isTrippingRef.current && !isFallingIntoPitRef.current && !isPitDeathDelayRef.current && !isBarrelFlyingRef.current) {
+            else if (gameState === 'playing' && !playerRef.current.isJumping && !isTrippingRef.current && !isFallingIntoPitRef.current && !isPitDeathDelayRef.current && !isBarrelFlyingRef.current && !isEatingRef.current) {
                 const p = playerRef.current;
                 const baseMult = 1.0 + Math.floor(distanceRef.current / 100) * 0.04;
                 p.jumpMult = calculateJumpMultiplier(p.height, baseMult, speedPenaltyRef.current);
@@ -303,7 +312,7 @@ function Game() {
             if (e.target.closest('.game-btn') || e.target.closest('.btn') || e.target.closest('.char-btn')) return;
             e.preventDefault();
             if (gameState !== 'playing') return;
-            if (playerRef.current.isJumping || isTrippingRef.current || isFallingIntoPitRef.current || isPitDeathDelayRef.current || isBarrelFlyingRef.current) return;
+            if (playerRef.current.isJumping || isTrippingRef.current || isFallingIntoPitRef.current || isPitDeathDelayRef.current || isBarrelFlyingRef.current || isEatingRef.current) return;
 
             const p = playerRef.current;
             const baseMult = 1.0 + Math.floor(distanceRef.current / 100) * 0.04;
@@ -352,6 +361,11 @@ function Game() {
         pitFallTimerRef.current = 0; pitVelocityRef.current = 0;
         isPitDeathDelayRef.current = false; pitDeathDelayTimerRef.current = 0;
 
+        // >>> Сброс eat-состояния
+        isEatingRef.current = false;
+        eatTimerRef.current = 0;
+        eatFrameIdxRef.current = 0;
+
         pitAudioEndedRef.current = false;
         if (pitAudioRef.current) { pitAudioRef.current.pause(); pitAudioRef.current.currentTime = 0; }
 
@@ -367,13 +381,11 @@ function Game() {
         }
     };
 
-    // >>> handleHit принимает тип препятствия, чтобы играть splash только для лужи
     const handleHit = (index, type) => {
         if (isTrippingRef.current) return;
         obstaclesRef.current.splice(index, 1);
         healthRef.current -= 1; setHealth(healthRef.current);
 
-        // Звук спотыкания о лужу (на 20% быстрее)
         if (type === 'puddle' && splashAudioRef.current) {
             splashAudioRef.current.currentTime = 0;
             splashAudioRef.current.playbackRate = 1.2;
@@ -416,6 +428,56 @@ function Game() {
 
         const diff = difficultyRef.current;
         const diffMult = diff === 'easy' ? 0.8 : diff === 'medium' ? 1.8 : 2.3;
+
+        // >>> СОСТОЯНИЕ ПОЕДАНИЯ (панда сидит и ест бамбук)
+        if (isEatingRef.current) {
+            eatTimerRef.current++;
+
+            // Анимация поедания
+            const now = Date.now();
+            if (now - lastEatFrameTimeRef.current > 120 && eatFramesRef.current.length > 0) {
+                eatFrameIdxRef.current = (eatFrameIdxRef.current + 1) % eatFramesRef.current.length;
+                lastEatFrameTimeRef.current = now;
+            }
+
+            // Мир продолжает ехать
+            const baseSpeedMultEat = 1.0 + Math.floor(distanceRef.current / 100) * 0.04;
+            const effectiveSpeedMultEat = Math.max(1.0, baseSpeedMultEat * speedPenaltyRef.current);
+            const currentSpeedEat = BASE_SPEED * effectiveSpeedMultEat * diffMult;
+
+            distanceRef.current += currentSpeedEat * 0.03;
+            setScore(Math.floor(distanceRef.current));
+            setSpeedDisplay((effectiveSpeedMultEat * diffMult).toFixed(2));
+            bgOffsetRef.current -= currentSpeedEat;
+
+            obstaclesRef.current.forEach(o => { o.x -= currentSpeedEat; });
+            obstaclesRef.current = obstaclesRef.current.filter(o => o.x + o.width > 0);
+            foodsRef.current.forEach(f => { f.x -= currentSpeedEat; });
+            foodsRef.current = foodsRef.current.filter(f => f.x + f.width > 0);
+
+            explosionsRef.current.forEach(e => e.timer++);
+            explosionsRef.current = explosionsRef.current.filter(e => e.timer < e.maxTimer);
+
+            // Панда сидит на земле, не двигается
+            p.isJumping = false;
+            p.velocityY = 0;
+            p.y = GROUND_Y - p.height;
+            p.tilt = 0;
+            p.bob = 0;
+
+            // Окончание поедания
+            const eatDurationFrames = (char.eatDuration || 5) * 60;
+            if (eatTimerRef.current >= eatDurationFrames) {
+                isEatingRef.current = false;
+                eatTimerRef.current = 0;
+                eatFrameIdxRef.current = 0;
+                currentFrameRef.current = 0;
+                lastFrameTimeRef.current = Date.now();
+                spawnTimerRef.current = 0;
+                spawnCooldownRef.current = 90;
+            }
+            return;
+        }
         
         if (isFallingIntoPitRef.current) {
             pitFallTimerRef.current++; pitVelocityRef.current += 0.2; p.y += pitVelocityRef.current;
@@ -437,7 +499,6 @@ function Game() {
             const audioDone = pitAudioEndedRef.current || !pitAudioRef.current;
             const fallbackDone = pitDeathDelayTimerRef.current > 600;
             const minDelayPassed = pitDeathDelayTimerRef.current > 20;
-
             if ((audioDone && minDelayPassed) || fallbackDone) {
                 isPitDeathDelayRef.current = false; handleGameOver(); return;
             }
@@ -446,12 +507,10 @@ function Game() {
         
         if (isBarrelFlyingRef.current) {
             barrelFlyVelocityYRef.current += GRAVITY; p.y += barrelFlyVelocityYRef.current; p.tilt = Math.max(p.tilt - 0.03, -0.4);
-            
             const backSpeed = 10 * diffMult; 
             bgOffsetRef.current += backSpeed;
             obstaclesRef.current.forEach(o => { o.x += backSpeed; }); foodsRef.current.forEach(f => { f.x += backSpeed; });
             setSpeedDisplay("REVERSE");
-            
             if (p.y >= GROUND_Y - p.height) {
                 p.y = GROUND_Y - p.height; isBarrelFlyingRef.current = false; barrelFlyVelocityYRef.current = 0;
                 isTrippingRef.current = true; tripTimerRef.current = 0; pendingBarrelDamageRef.current = true; p.tilt = 0;
@@ -503,6 +562,7 @@ function Game() {
             }
         }
 
+        // === СПАВН ===
         if (!isTrippingRef.current) {
             if (spawnCooldownRef.current > 0) { spawnCooldownRef.current--; spawnTimerRef.current = 0; } 
             else {
@@ -531,13 +591,16 @@ function Game() {
                 }
             }
 
+            // >>> Спавн еды из набора текущего персонажа
+            const foodMult = char.eatFolder ? 3.0 : 1.0;
+            const foodList = char.foodEmojis || ['🍗', '🍔', '🍕', '🥩'];
+
             foodTimerRef.current += (currentSpeed / BASE_SPEED);
-            if (foodTimerRef.current > 100 + Math.random() * 80) { 
+            if (foodTimerRef.current > (100 + Math.random() * 80) * foodMult) { 
                 let isSafeToSpawn = true;
                 for (let obs of obstaclesRef.current) { if (obs.x + obs.width > canvas.width - 300) { isSafeToSpawn = false; break; } }
                 if (isSafeToSpawn) {
-                    const foodEmojis = ['🍗', '🍔', '🍕', '🥩'];
-                    const randomFood = foodEmojis[Math.floor(Math.random() * foodEmojis.length)];
+                    const randomFood = foodList[Math.floor(Math.random() * foodList.length)];
                     const foodY = Math.random() > 0.5 ? GROUND_Y - 80 : GROUND_Y - 40;
                     foodsRef.current.push({ x: canvas.width, y: foodY, width: 40, height: 40, emoji: randomFood });
                     foodTimerRef.current = 0; 
@@ -573,24 +636,39 @@ function Game() {
                         p.velocityY = 0; p.isJumping = false; p.isHoldingJump = false;
                         return;
                     } else if (obs.type === 'barrel') { handleBarrelHit(i); break; } 
-                    else { 
-                        // >>> Передаём тип в handleHit, чтобы проиграть splash для лужи
-                        handleHit(i, obs.type); 
-                        break; 
-                    }
+                    else { handleHit(i, obs.type); break; }
                 }
             }
         }
 
+        // >>> Столкновение с едой + триггер поедания бамбука
         foodsRef.current = foodsRef.current.filter(food => {
             const hitboxX = p.x + 20; const hitboxY = p.y + 20; const hitboxWidth = p.width - 40; const hitboxHeight = p.height - 20;
             if (hitboxX < food.x + food.width && hitboxX + hitboxWidth > food.x && hitboxY < food.y + food.height && hitboxY + hitboxHeight > food.y) {
+                const isEatTrigger = char.eatEmoji && food.emoji === char.eatEmoji && !isTrippingRef.current;
+
+                // Рост/лечение
                 p.foodEaten++;
                 if (p.foodEaten >= p.foodTarget) {
                     p.width += 2; p.height += 1.3; p.y = GROUND_Y - p.height; 
                     p.foodEaten = 0; p.foodTarget = p.foodTarget + 1;
                     healthRef.current = Math.min(6, healthRef.current + 1); setHealth(healthRef.current);
                 }
+
+                // Запуск анимации поедания
+                if (isEatTrigger) {
+                    isEatingRef.current = true;
+                    eatTimerRef.current = 0;
+                    eatFrameIdxRef.current = 0;
+                    lastEatFrameTimeRef.current = Date.now();
+                    p.y = GROUND_Y - p.height;
+                    p.velocityY = 0;
+                    p.isJumping = false;
+                    p.isHoldingJump = false;
+                    p.tilt = 0;
+                    p.bob = 0;
+                }
+
                 return false; 
             }
             return true;
@@ -607,7 +685,6 @@ function Game() {
 
             const gameLoop = (time) => {
                 if (gameState !== 'playing') return;
-
                 let deltaTime = time - lastTimeRef.current;
                 lastTimeRef.current = time;
                 if (deltaTime > 250) deltaTime = 250; 
@@ -620,16 +697,12 @@ function Game() {
                     accumulatorRef.current -= FRAME_TIME;
                     loops++;
                 }
-
                 if (gameState !== 'playing') return;
-
                 const canvas = canvasRef.current;
                 const ctx = canvas.getContext('2d');
                 draw(ctx, canvas);
-
                 requestRef.current = requestAnimationFrame(gameLoop);
             };
-
             requestRef.current = requestAnimationFrame(gameLoop);
         }
         return () => cancelAnimationFrame(requestRef.current);
@@ -643,10 +716,9 @@ function Game() {
     };
 
     const draw = (ctx, canvas) => {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    // >>> Защита от «залипания» globalAlpha между кадрами
-    ctx.globalAlpha = 1.0;
-    const p = playerRef.current;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.globalAlpha = 1.0;
+        const p = playerRef.current;
         const bgImg = pickImg(landscapeImg, landscapeNightImg);
 
         if (bgImg.complete && bgImg.naturalWidth > 0) {
@@ -664,9 +736,15 @@ function Game() {
             else { ctx.fillStyle = 'black'; ctx.beginPath(); ctx.ellipse(obs.x + obs.width / 2, obs.y + obs.height / 2, obs.width / 2, obs.height / 2, 0, 0, Math.PI * 2); ctx.fill(); }
         }
 
-        const frames = walkFramesRef.current;
-        const frameIdx = frames.length > 0 ? (currentFrameRef.current % frames.length) : 0;
-        const charImg = frames[frameIdx];
+        // >>> Кадр персонажа: eat > walk
+        let charImg;
+        if (isEatingRef.current && eatFramesRef.current.length > 0) {
+            charImg = eatFramesRef.current[eatFrameIdxRef.current % eatFramesRef.current.length];
+        } else {
+            const frames = walkFramesRef.current;
+            const frameIdx = frames.length > 0 ? (currentFrameRef.current % frames.length) : 0;
+            charImg = frames[frameIdx];
+        }
 
         if (isFallingIntoPitRef.current || isPitDeathDelayRef.current) {
             if (charImg && charImg.complete && charImg.naturalWidth > 0) {
@@ -705,8 +783,15 @@ function Game() {
             }
         });
 
+        // Еда — всегда непрозрачная
+        ctx.save();
+        ctx.globalAlpha = 1.0;
         ctx.textBaseline = 'bottom';
-        foodsRef.current.forEach(food => { ctx.font = `40px Arial`; ctx.fillText(food.emoji, food.x, food.y + food.height); });
+        foodsRef.current.forEach(food => { 
+            ctx.font = `40px Arial`; 
+            ctx.fillText(food.emoji, food.x, food.y + food.height); 
+        });
+        ctx.restore();
 
         obstaclesRef.current.forEach(obs => {
             if ((isFallingIntoPitRef.current || isPitDeathDelayRef.current) && obs === pitTargetRef.current) return;
