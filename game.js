@@ -59,7 +59,7 @@ const CHARACTERS = {
         baseHeight: 120,
         foodEmojis: ['🎋'],
         eatEmoji: '🎋',
-        eatFolder: 'source/characters/panda_eat',
+        eatFolder: 'source/characters/panda/eating',
         eatFrameCount: 8,
         eatDuration: 5.5,
     },
