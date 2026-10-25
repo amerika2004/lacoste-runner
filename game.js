@@ -144,7 +144,7 @@ function Game() {
     };
 
     const handleKeyDown = useCallback((e) => {
-        // >>> ПАУЗА / RESUME по Escape
+        // ПАУЗА / RESUME по Escape
         if (e.code === 'Escape') {
             e.preventDefault();
             if (gameState === 'playing') setGameState('paused');
@@ -166,7 +166,6 @@ function Game() {
             } else if (gameState === 'gameover') {
                 resetGame();
             } else if (gameState === 'playing' && !playerRef.current.isJumping && !isTrippingRef.current && !isFallingIntoPitRef.current && !isPitDeathDelayRef.current && !isBarrelFlyingRef.current) {
-                // >>> gameState === 'playing' — чтобы не прыгать в паузе
                 const p = playerRef.current;
                 const baseMult = 1.0 + Math.floor(distanceRef.current / 100) * 0.04;
                 p.jumpMult = calculateJumpMultiplier(p.height, baseMult, speedPenaltyRef.current);
@@ -192,12 +191,15 @@ function Game() {
         };
     }, [handleKeyDown, handleKeyUp]);
 
-    // >>> МОБИЛЬНАЯ АДАПТАЦИЯ: тап по канвасу = прыжок
+    // МОБИЛЬНАЯ АДАПТАЦИЯ: тап по канвасу = прыжок
     useEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
 
         const handleTouchStart = (e) => {
+            // Если тапнули на кнопку паузы, не прыгаем
+            if (e.target.closest('.pause-btn')) return;
+
             e.preventDefault();
             if (gameState !== 'playing') return;
             if (playerRef.current.isJumping) return;
@@ -845,7 +847,6 @@ function Game() {
         }
     };
 
-    // >>> RAF-цикл: останавливается при паузе (gameState !== 'playing')
     useEffect(() => {
         if (gameState === 'playing') {
             requestRef.current = requestAnimationFrame(updateGame);
@@ -868,26 +869,30 @@ function Game() {
 
     return React.createElement('div', { id: 'game-container' },
         
+        // Левый HUD (Сердечки и Еда) с адаптивным шрифтом
         React.createElement('div', { 
             style: { 
-                position: 'absolute', top: '20px', left: '20px',
+                position: 'absolute', top: '2%', left: '2%',
                 fontFamily: "'Courier New', Courier, monospace", 
-                fontSize: '20px', color: '#00FF41',
+                fontSize: 'clamp(12px, 2.5vmin, 20px)',
+                color: '#00FF41',
                 textShadow: '2px 2px 0 #000', zIndex: 10, letterSpacing: '1px',
                 display: 'flex', flexDirection: 'column', gap: '5px'
             } 
         }, 
             React.createElement('span', null, `FOOD: ${playerRef.current.foodEaten} / ${playerRef.current.foodTarget}`),
-            React.createElement('span', { style: { fontSize: '28px', letterSpacing: '5px', marginTop: '5px' } }, getHearts())
+            React.createElement('span', { style: { fontSize: 'clamp(16px, 3.5vmin, 28px)', letterSpacing: '5px', marginTop: '5px' } }, getHearts())
         ),
 
+        // Правый HUD (Сила, Скорость, Рекорд) с адаптивным шрифтом
         React.createElement('div', { 
             style: { 
-                position: 'absolute', top: '20px', right: '20px', 
+                position: 'absolute', top: '2%', right: '2%', 
                 fontFamily: "'Courier New', Courier, monospace", 
-                fontSize: '22px', color: '#ff007f', 
+                fontSize: 'clamp(12px, 2.5vmin, 22px)',
+                color: '#ff007f', 
                 textShadow: '2px 2px 0 #000', zIndex: 10, letterSpacing: '2px',
-                display: 'flex', gap: '20px'
+                display: 'flex', gap: 'clamp(5px, 2vmin, 20px)'
             } 
         }, 
             React.createElement('span', { style: {color: '#FFD700'} }, `POWER x${powerDisplay}`),
@@ -897,7 +902,7 @@ function Game() {
 
         React.createElement('canvas', { ref: canvasRef, width: 1200, height: 600 }),
 
-        // >>> Кнопка паузы (только во время игры)
+        // Кнопка паузы
         gameState === 'playing' ? React.createElement('button', {
             className: 'pause-btn',
             onClick: () => setGameState('paused'),
@@ -924,7 +929,7 @@ function Game() {
             React.createElement('p', { style: {color: '#888', fontSize: '12px'} }, 'Press N or use menu to switch Day / Night')
         ) : null,
 
-        // >>> Оверлей паузы
+        // Оверлей паузы
         gameState === 'paused' ? React.createElement('div', { className: 'menu-overlay' },
             React.createElement('div', { className: 'title', style: { color: '#00FFFF', textShadow: '4px 4px 0px #FF007F' } }, 'PAUSED'),
             React.createElement('div', { className: 'subtitle' }, 'Take a breath'),
