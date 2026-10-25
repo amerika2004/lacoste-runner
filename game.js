@@ -480,6 +480,11 @@ function Game() {
         const diff = difficultyRef.current;
         const diffMult = diff === 'easy' ? 0.8 : diff === 'medium' ? 1.8 : 2.3;
 
+        // >>> Скорость анимации поедания зависит от сложности
+        // Easy — медленно (жус ~1.5x медленнее), Medium — норма, Hard — быстро (1.5x)
+        const eatAnimSpeed = diff === 'easy' ? 0.65 : diff === 'medium' ? 1.0 : 1.5;
+        const eatFrameDelay = 120 / eatAnimSpeed;
+
         // >>> Всегда обновляем частицы (даже после еды)
         eatParticlesRef.current.forEach(pt => {
             pt.x += pt.vx;
@@ -494,7 +499,8 @@ function Game() {
             eatTimerRef.current++;
 
             // Анимация еды
-            if (Date.now() - lastEatFrameTimeRef.current > 120 && eatFramesRef.current.length > 0) {
+            // Анимация еды (скорость зависит от сложности)
+            if (Date.now() - lastEatFrameTimeRef.current > eatFrameDelay && eatFramesRef.current.length > 0) {
                 eatFrameIdxRef.current = (eatFrameIdxRef.current + 1) % eatFramesRef.current.length;
                 lastEatFrameTimeRef.current = Date.now();
             }
