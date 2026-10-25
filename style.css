@@ -11,7 +11,7 @@ body, html {
     padding: 0;
     width: 100%;
     height: 100vh;         /* fallback */
-    height: 100dvh;        /* современные браузеры: динамическая высота вьюпорта */
+    height: 100dvh;        /* современные браузеры: динамическая высота */
     background-color: var(--bg-color);
     font-family: 'Bebas Neue', sans-serif;
     overflow: hidden;
@@ -35,20 +35,26 @@ body, html {
     align-items: center;
 }
 
+/* >>> СТРОГИЕ ПРОПОРЦИИ 2:1 >>> */
 #game-container {
     position: relative;
-    box-sizing: border-box;                    /* >>> критично: рамка не увеличивает размер */
-    width: min(100vw, calc(100vh * 2));        /* fallback для старых браузеров */
-    width: min(100vw, calc(100dvh * 2));       /* современные: пропорция 2:1, заполняет экран */
-    height: min(100vh, calc(100vw / 2));       /* fallback */
-    height: min(100dvh, calc(100vw / 2));      /* современные */
+    box-sizing: border-box;
+    
+    /* Контейнер всегда вписывает экран, сохраняя 2:1 */
+    width: min(100vw, calc(100dvh * 2)); 
+    height: min(100dvh, calc(100vw / 2)); 
+    
+    /* Фоллбэк для старых браузеров */
+    width: min(100vw, calc(100vh * 2));
+    height: min(100vh, calc(100vw / 2));
+
     border: 4px solid var(--gta-pink);
     box-shadow: 0 0 20px var(--gta-pink), inset 0 0 20px var(--gta-pink);
     overflow: hidden;
     background: #111;
 }
 
-/* >>> На ПК (мышь + широкий экран) — прежнее поведение: кап 1200×600 */
+/* На ПК с мышкой оставляем прежний фиксированный размер, если экран большой */
 @media (pointer: fine) and (min-width: 1220px) {
     #game-container {
         width: 1200px;
@@ -66,39 +72,44 @@ body, html {
     justify-content: center;
     align-items: center;
     z-index: 10;
+    padding: 2% 5%;
+    box-sizing: border-box;
+    text-align: center;
 }
 
+/* >>> АДАПТИВНЫЕ ШРИФТЫ >>> */
 .title {
-    font-size: 80px;
+    font-size: clamp(32px, 8vmin, 80px);
     color: var(--gta-pink);
-    text-shadow: 4px 4px 0px var(--gta-cyan), -2px -2px 0px var(--gta-green);
-    margin-bottom: 10px;
+    text-shadow: 3px 3px 0px var(--gta-cyan), -2px -2px 0px var(--gta-green);
+    margin-bottom: clamp(5px, 2vmin, 10px);
     text-transform: uppercase;
     letter-spacing: 2px;
-    text-align: center;
     line-height: 0.9;
 }
 
 .subtitle {
-    font-size: 24px;
+    font-size: clamp(14px, 3vmin, 24px);
     color: var(--gta-green);
-    margin-bottom: 40px;
+    margin-bottom: clamp(15px, 5vmin, 40px);
     letter-spacing: 4px;
 }
 
 .settings {
     display: flex;
-    gap: 15px;
-    margin-bottom: 40px;
+    gap: clamp(10px, 3vmin, 15px);
+    margin-bottom: clamp(15px, 5vmin, 40px);
+    flex-wrap: wrap;
+    justify-content: center;
 }
 
 .btn {
     background: transparent;
     color: white;
     border: 2px solid white;
-    padding: 10px 20px;
+    padding: clamp(5px, 2vmin, 10px) clamp(10px, 4vmin, 20px);
     font-family: 'Bebas Neue', sans-serif;
-    font-size: 24px;
+    font-size: clamp(16px, 4vmin, 24px);
     cursor: pointer;
     transition: all 0.2s;
     text-transform: uppercase;
@@ -106,7 +117,7 @@ body, html {
     -webkit-tap-highlight-color: transparent;
 }
 
-.btn:hover {
+.btn:hover, .btn:active {
     background: white;
     color: black;
 }
@@ -120,49 +131,43 @@ body, html {
 .btn-start {
     border-color: var(--gta-green);
     color: var(--gta-green);
-    font-size: 32px;
-    padding: 15px 50px;
+    font-size: clamp(20px, 6vmin, 32px);
+    padding: clamp(10px, 3vmin, 15px) clamp(20px, 8vmin, 50px);
 }
 
-.btn-start:hover {
+.btn-start:hover, .btn-start:active {
     background: var(--gta-green);
     color: black;
     box-shadow: 0 0 20px var(--gta-green);
+}
+
+.menu-overlay p {
+    font-size: clamp(12px, 2.5vmin, 16px) !important;
+    margin: clamp(4px, 1vmin, 10px) 0 !important;
 }
 
 canvas {
     display: block;
     width: 100%;
     height: 100%;
-    object-fit: contain;   /* сохраняет 2:1, добавляет letterbox только если экран не 2:1 */
+    object-fit: contain;
     touch-action: none;
 }
 
-/* HUD (Счет) */
-.hud {
-    position: absolute;
-    top: 20px;
-    right: 20px;
-    font-size: 30px;
-    color: var(--gta-cyan);
-    text-shadow: 2px 2px 0 #000;
-    z-index: 5;
-}
-
-/* >>> Кнопка паузы (видна во время игры) */
+/* Кнопка паузы */
 .pause-btn {
     position: absolute;
-    bottom: calc(20px + env(safe-area-inset-bottom, 0px));
-    right: calc(20px + env(safe-area-inset-right, 0px));
+    bottom: calc(15px + env(safe-area-inset-bottom, 0px));
+    right: calc(15px + env(safe-area-inset-right, 0px));
     z-index: 15;
-    width: 56px;
-    height: 56px;
+    width: clamp(48px, 10vmin, 68px);
+    height: clamp(48px, 10vmin, 68px);
     border-radius: 50%;
     background: rgba(0, 0, 0, 0.55);
     border: 3px solid var(--gta-pink);
     color: var(--gta-pink);
     font-family: 'Bebas Neue', sans-serif;
-    font-size: 22px;
+    font-size: clamp(20px, 5vmin, 26px);
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -175,18 +180,6 @@ canvas {
     line-height: 1;
 }
 
-/* >>> На тач-устройствах — крупнее для удобного нажатия */
-@media (pointer: coarse) {
-    .pause-btn {
-        width: 68px;
-        height: 68px;
-        font-size: 26px;
-        bottom: calc(24px + env(safe-area-inset-bottom, 0px));
-        right: calc(24px + env(safe-area-inset-right, 0px));
-    }
-}
-
-.pause-btn:hover,
 .pause-btn:active {
     background: rgba(255, 0, 127, 0.25);
     box-shadow: 0 0 25px rgba(255, 0, 127, 0.9);
