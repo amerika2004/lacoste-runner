@@ -61,7 +61,7 @@ const CHARACTERS = {
         eatEmoji: '🎋',
         eatFolder: 'source/characters/panda/eating',
         eatFrameCount: 8,
-        eatDuration: 5.5,
+        eatDuration: 3.0,
     },
 };
 
