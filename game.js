@@ -6,16 +6,57 @@ const FLIP_CROC = false;
 const GRAVITY = 0.75;        
 const JUMP_FORCE = -10.5;    
 const HOLD_THRUST = 0.45;    
-const BASE_HEIGHT = 110.3;   
 
 const GROUND_Y = 530; 
 const BASE_SPEED = 4.0; 
-const FRAME_COUNT = 12; 
+
+// === РЕЕСТР ПЕРСОНАЖЕЙ ===
+// Каждый персонаж загружается из своей папки.
+// Кадры должны называться 1.png ... N.png
+const CHARACTERS = {
+    crocodile: {
+        id: 'crocodile',
+        name: 'Crocodile',
+        emoji: '🐊',
+        folder: 'source/walk_animation',
+        frameCount: 12,
+        baseWidth: 165.4,
+        baseHeight: 110.3,
+    },
+    // === КАК ДОБАВИТЬ НОВОГО ПЕРСОНАЖА ===
+    // 1. Создай папку: source/characters/имя/
+    // 2. Загрузи туда 12 PNG кадров: 1.png, 2.png, ..., 12.png
+    // 3. Раскомментируй и настрой блок ниже:
+    //
+    // panda: {
+    //     id: 'panda',
+    //     name: 'Panda',
+    //     emoji: '🐼',
+    //     folder: 'source/characters/panda',
+    //     frameCount: 12,
+    //     baseWidth: 160,     // стартовая ширина спрайта на канвасе
+    //     baseHeight: 120,    // стартовая высота спрайта
+    // },
+    //
+    // wolf: {
+    //     id: 'wolf',
+    //     name: 'Wolf',
+    //     emoji: '🐺',
+    //     folder: 'source/characters/wolf',
+    //     frameCount: 12,
+    //     baseWidth: 175,
+    //     baseHeight: 115,
+    // },
+};
 
 function Game() {
     const [gameState, setGameState] = useState('menu');
     const [timeOfDay, setTimeOfDay] = useState(() => localStorage.getItem('lacosteTimeOfDay') || 'day');
     const [difficulty, setDifficulty] = useState(() => localStorage.getItem('lacosteDifficulty') || 'hard');
+    const [character, setCharacter] = useState(() => {
+        const saved = localStorage.getItem('lacosteCharacter');
+        return (saved && CHARACTERS[saved]) ? saved : 'crocodile';
+    });
     
     const [score, setScore] = useState(0);
     const [speedDisplay, setSpeedDisplay] = useState(1.0); 
@@ -26,7 +67,6 @@ function Game() {
     const canvasRef = useRef(null);
     const requestRef = useRef();
     
-    // Рефы для стейтов, чтобы читать их в игровом цикле без перезапуска
     const timeOfDayRef = useRef(timeOfDay);
     const difficultyRef = useRef(difficulty);
 
@@ -39,6 +79,23 @@ function Game() {
         difficultyRef.current = difficulty;
         localStorage.setItem('lacosteDifficulty', difficulty);
     }, [difficulty]);
+
+    // === ЗАГРУЗКА КАДРОВ ПЕРСОНАЖА (зависит от выбора) ===
+    const walkFramesRef = useRef([]); 
+    const currentFrameRef = useRef(0); 
+    const lastFrameTimeRef = useRef(0); 
+
+    useEffect(() => {
+        localStorage.setItem('lacosteCharacter', character);
+        walkFramesRef.current = [];
+        currentFrameRef.current = 0;
+        const char = CHARACTERS[character] || CHARACTERS.crocodile;
+        for (let i = 1; i <= char.frameCount; i++) {
+            const img = new Image();
+            img.src = `${char.folder}/${i}.png`;
+            walkFramesRef.current.push(img);
+        }
+    }, [character]);
 
     // === АУДИО ===
     const pitAudioRef = useRef(null);
@@ -61,8 +118,10 @@ function Game() {
     }, []);
     
     // === ИГРОВЫЕ РЕФЫ ===
+    const initChar = CHARACTERS[character] || CHARACTERS.crocodile;
     const playerRef = useRef({
-        x: 100, y: GROUND_Y - 110.3, width: 165.4, height: 110.3,
+        x: 100, y: GROUND_Y - initChar.baseHeight, 
+        width: initChar.baseWidth, height: initChar.baseHeight,
         velocityY: 0, isJumping: false, isHoldingJump: false, jumpMult: 1.0,
         tilt: 0, bob: 0, foodEaten: 0, foodTarget: 1
     });
@@ -72,7 +131,6 @@ function Game() {
     const explosionsRef = useRef([]);
     
     const distanceRef = useRef(0);
-    const speedMultiplierRef = useRef(1.0);
     const spawnTimerRef = useRef(0);
     const foodTimerRef = useRef(0);
     const bgOffsetRef = useRef(0); 
@@ -95,11 +153,7 @@ function Game() {
     const isPitDeathDelayRef = useRef(false);
     const pitDeathDelayTimerRef = useRef(0);
 
-    const walkFramesRef = useRef([]); 
-    const currentFrameRef = useRef(0); 
-    const lastFrameTimeRef = useRef(0); 
-
-    // === ИЗОБРАЖЕНИЯ ===
+    // === СТАТИЧНЫЕ ИЗОБРАЖЕНИЯ (не зависят от персонажа) ===
     const landscapeImg = useRef(new Image());
     const landscapeNightImg = useRef(new Image());
     const puddleImg = useRef(new Image());
@@ -115,9 +169,6 @@ function Game() {
     const explosionImg = useRef(new Image());
 
     useEffect(() => {
-        for (let i = 1; i <= FRAME_COUNT; i++) {
-            const img = new Image(); img.src = `source/walk_animation/${i}.png`; walkFramesRef.current.push(img);
-        }
         landscapeImg.current.src = 'source/landscape.jpg'; 
         landscapeNightImg.current.src = 'source/landscape_n.jpg';
         puddleImg.current.src = 'source/puddle.png';
@@ -133,8 +184,10 @@ function Game() {
         explosionImg.current.src = 'source/explosion.png';
     }, []);
 
+    // Базовый рост меряется относительно роста самого персонажа.
     const calculateJumpMultiplier = (playerHeight, gameSpeed, penalty = 1.0) => {
-        const sizeFactor = Math.sqrt(playerHeight / BASE_HEIGHT);
+        const char = CHARACTERS[character] || CHARACTERS.crocodile;
+        const sizeFactor = Math.sqrt(playerHeight / char.baseHeight);
         const speedFactor = 1 + (gameSpeed - 1) * 0.10;
         return Math.max(1.0, sizeFactor * speedFactor * penalty);
     };
@@ -176,7 +229,7 @@ function Game() {
                 p.isHoldingJump = true;
             }
         }
-    }, [gameState]);
+    }, [gameState, character]);
 
     const handleKeyUp = useCallback((e) => {
         if (e.code === 'Space' || e.code === 'ArrowUp') playerRef.current.isHoldingJump = false;
@@ -196,7 +249,7 @@ function Game() {
         if (!canvas) return;
 
         const handleTouchStart = (e) => {
-            if (e.target.closest('.game-btn') || e.target.closest('.btn')) return;
+            if (e.target.closest('.game-btn') || e.target.closest('.btn') || e.target.closest('.char-btn')) return;
             e.preventDefault();
             if (gameState !== 'playing') return;
             if (playerRef.current.isJumping || isTrippingRef.current || isFallingIntoPitRef.current || isPitDeathDelayRef.current || isBarrelFlyingRef.current) return;
@@ -210,7 +263,7 @@ function Game() {
         };
 
         const handleTouchEnd = (e) => {
-            if (e.target.closest('.game-btn') || e.target.closest('.btn')) return;
+            if (e.target.closest('.game-btn') || e.target.closest('.btn') || e.target.closest('.char-btn')) return;
             if (gameState !== 'playing') return;
             e.preventDefault();
             playerRef.current.isHoldingJump = false;
@@ -225,16 +278,18 @@ function Game() {
             canvas.removeEventListener('touchend', handleTouchEnd);
             canvas.removeEventListener('touchcancel', handleTouchEnd);
         };
-    }, [gameState]);
+    }, [gameState, character]);
 
     const resetGame = () => {
+        const char = CHARACTERS[character] || CHARACTERS.crocodile;
         playerRef.current = {
-            x: 100, y: GROUND_Y - 110.3, width: 165.4, height: 110.3,
+            x: 100, y: GROUND_Y - char.baseHeight, 
+            width: char.baseWidth, height: char.baseHeight,
             velocityY: 0, isJumping: false, isHoldingJump: false, jumpMult: 1.0,
             tilt: 0, bob: 0, foodEaten: 0, foodTarget: 1 
         };
         obstaclesRef.current = []; foodsRef.current = []; explosionsRef.current = [];
-        distanceRef.current = 0; speedMultiplierRef.current = 1.0; spawnTimerRef.current = 0;
+        distanceRef.current = 0; spawnTimerRef.current = 0;
         foodTimerRef.current = 0; bgOffsetRef.current = 0; currentFrameRef.current = 0; 
         spawnCooldownRef.current = 0;
 
@@ -278,10 +333,8 @@ function Game() {
         const obs = obstaclesRef.current[index]; if (!obs) return;
         const canvas = canvasRef.current; const p = playerRef.current;
         
-        // Взрыв
         explosionsRef.current.push({ x: obs.x + obs.width / 2, y: obs.y + obs.height / 2, size: obs.height * 6, timer: 0, maxTimer: 30 });
         
-        // Звук взрыва
         if (barrelAudioRef.current) {
             barrelAudioRef.current.currentTime = 0;
             barrelAudioRef.current.play().catch(e => console.warn("Audio blocked", e));
@@ -296,14 +349,13 @@ function Game() {
         p.velocityY = 0; p.isJumping = false; p.isHoldingJump = false; p.tilt = 0;
     };
 
-    // === ЧИСТАЯ ЛОГИКА ИГРЫ (Вызывается ровно 60 раз в секунду) ===
     const updateLogic = () => {
         const canvas = canvasRef.current;
         const p = playerRef.current;
+        const char = CHARACTERS[character] || CHARACTERS.crocodile;
 
-        // Коэффициенты сложности
         const diff = difficultyRef.current;
-        const diffMult = diff === 'easy' ? 0.80 : diff === 'medium' ? 1.6 : 2.2;
+        const diffMult = diff === 'easy' ? 0.55 : diff === 'medium' ? 1.125 : 1.5;
         
         if (isFallingIntoPitRef.current) {
             pitFallTimerRef.current++; pitVelocityRef.current += 0.2; p.y += pitVelocityRef.current;
@@ -386,11 +438,11 @@ function Game() {
         if (!p.isJumping && !isTrippingRef.current) {
             const now = Date.now(); const frameDelay = Math.max(30, 100 - (currentSpeed * 5)); 
             if (now - lastFrameTimeRef.current > frameDelay) {
-                currentFrameRef.current = (currentFrameRef.current + 1) % FRAME_COUNT; lastFrameTimeRef.current = now;
+                currentFrameRef.current = (currentFrameRef.current + 1) % char.frameCount; 
+                lastFrameTimeRef.current = now;
             }
         }
 
-        // СПАВН
         if (!isTrippingRef.current) {
             if (spawnCooldownRef.current > 0) { spawnCooldownRef.current--; spawnTimerRef.current = 0; } 
             else {
@@ -436,7 +488,6 @@ function Game() {
         obstaclesRef.current.forEach(obs => { obs.x -= currentSpeed; }); obstaclesRef.current = obstaclesRef.current.filter(obs => obs.x + obs.width > 0);
         foodsRef.current.forEach(food => { food.x -= currentSpeed; }); foodsRef.current = foodsRef.current.filter(food => food.x + food.width > 0);
 
-        // КОЛЛИЗИИ
         if (!isTrippingRef.current) {
             for (let i = obstaclesRef.current.length - 1; i >= 0; i--) {
                 let obs = obstaclesRef.current[i];
@@ -482,7 +533,6 @@ function Game() {
         });
     };
 
-    // === ФИКСИРОВАННЫЙ ЦИКЛ (60 FPS) ===
     const lastTimeRef = useRef(0);
     const accumulatorRef = useRef(0);
 
@@ -499,9 +549,7 @@ function Game() {
                 if (deltaTime > 250) deltaTime = 250; 
                 accumulatorRef.current += deltaTime;
 
-                const TARGET_FPS = 60;
-                const FRAME_TIME = 1000 / TARGET_FPS;
-
+                const FRAME_TIME = 1000 / 60;
                 let loops = 0;
                 while (accumulatorRef.current >= FRAME_TIME && loops < 5) {
                     updateLogic();
@@ -521,7 +569,7 @@ function Game() {
             requestRef.current = requestAnimationFrame(gameLoop);
         }
         return () => cancelAnimationFrame(requestRef.current);
-    }, [gameState]);
+    }, [gameState, character]);
 
     const pickImg = (dayImg, nightImg) => timeOfDayRef.current === 'night' ? nightImg.current : dayImg.current;
     const drawObstacleImage = (ctx, obs, dayImg, nightImg, fallbackColor) => {
@@ -550,16 +598,20 @@ function Game() {
             else { ctx.fillStyle = 'black'; ctx.beginPath(); ctx.ellipse(obs.x + obs.width / 2, obs.y + obs.height / 2, obs.width / 2, obs.height / 2, 0, 0, Math.PI * 2); ctx.fill(); }
         }
 
-        const crocImg = walkFramesRef.current[currentFrameRef.current];
+        // Кадр текущего персонажа (безопасное получение)
+        const frames = walkFramesRef.current;
+        const frameIdx = frames.length > 0 ? (currentFrameRef.current % frames.length) : 0;
+        const charImg = frames[frameIdx];
+
         if (isFallingIntoPitRef.current || isPitDeathDelayRef.current) {
-            if (crocImg && crocImg.complete && crocImg.naturalWidth > 0) {
+            if (charImg && charImg.complete && charImg.naturalWidth > 0) {
                 ctx.save(); ctx.beginPath(); ctx.rect(0, 0, canvas.width, GROUND_Y); ctx.clip();
                 ctx.save(); const centerX = p.x + p.width / 2; const centerY = p.y + p.height / 2;
                 ctx.translate(centerX, centerY); ctx.rotate(p.tilt); if (FLIP_CROC) ctx.scale(-1, 1);
-                ctx.drawImage(crocImg, -p.width / 2, -p.height / 2, p.width, p.height); ctx.restore(); ctx.restore();
+                ctx.drawImage(charImg, -p.width / 2, -p.height / 2, p.width, p.height); ctx.restore(); ctx.restore();
             }
         } else {
-            if (crocImg && crocImg.complete && crocImg.naturalWidth > 0) {
+            if (charImg && charImg.complete && charImg.naturalWidth > 0) {
                 ctx.save();
                 let fallAngle = 0, yOffset = 0, flyTilt = 0;
                 if (isBarrelFlyingRef.current) flyTilt = p.tilt;
@@ -573,7 +625,7 @@ function Game() {
                 const centerX = p.x + p.width / 2; const centerY = p.y + p.height / 2 + (p.isJumping ? 0 : (isTrippingRef.current ? yOffset : p.bob));
                 ctx.translate(centerX, centerY); ctx.rotate(p.tilt + fallAngle + flyTilt);
                 if (FLIP_CROC) ctx.scale(-1, 1); 
-                ctx.drawImage(crocImg, -p.width / 2, -p.height / 2, p.width, p.height); ctx.restore();
+                ctx.drawImage(charImg, -p.width / 2, -p.height / 2, p.width, p.height); ctx.restore();
             } else { ctx.fillStyle = 'red'; ctx.fillRect(p.x, p.y, p.width, p.height); }
         }
 
@@ -621,6 +673,26 @@ function Game() {
         return h.join(' ');
     };
 
+    // Универсальная сетка выбора персонажа (используется в меню и на экране смерти)
+    const renderCharacterGrid = () => React.createElement('div', { className: 'character-grid' },
+        Object.values(CHARACTERS).map(char => 
+            React.createElement('button', {
+                key: char.id,
+                className: `char-btn ${character === char.id ? 'active' : ''}`,
+                onClick: () => setCharacter(char.id),
+                title: char.name
+            },
+                React.createElement('img', {
+                    src: `${char.folder}/1.png`,
+                    alt: '',
+                    draggable: false,
+                    onError: (e) => { e.target.style.visibility = 'hidden'; }
+                }),
+                React.createElement('span', null, char.name)
+            )
+        )
+    );
+
     return React.createElement('div', { id: 'game-container' },
         
         (gameState === 'playing' || gameState === 'paused') ? React.createElement(React.Fragment, null,
@@ -645,6 +717,9 @@ function Game() {
         gameState === 'menu' ? React.createElement('div', { className: 'menu-overlay' },
             React.createElement('div', { className: 'title' }, 'LACOSTE', React.createElement('br'), 'RUNNER'),
             React.createElement('div', { className: 'subtitle' }, 'VICE CITY EDITION'),
+
+            // >>> ВЫБОР ПЕРСОНАЖА
+            renderCharacterGrid(),
             
             React.createElement('div', { className: 'settings' },
                 React.createElement('button', { className: `btn ${difficulty === 'easy' ? 'active' : ''}`, onClick: () => setDifficulty('easy') }, 'Easy'),
@@ -683,8 +758,13 @@ function Game() {
             React.createElement('div', { className: 'title', style: {color: 'red', textShadow: '2px 2px 0px #000'} }, 'BUSTED'),
             React.createElement('div', { className: 'subtitle', style: {color: 'white', marginBottom: '10px'} }, 'The employees caught you!'),
             React.createElement('div', { className: 'subtitle' }, 'DIST: ', Math.floor(score), 'm | HI: ', highScore, 'm'),
+
+            // >>> ВЫБОР ПЕРСОНАЖА и на экране смерти
+            renderCharacterGrid(),
+
             React.createElement('div', { className: 'settings' },
                 React.createElement('button', { className: 'btn', onClick: toggleFullscreen }, '⛶ Fullscreen'),
+                React.createElement('button', { className: 'btn', onClick: () => setGameState('menu') }, 'Menu'),
                 React.createElement('button', { className: 'btn btn-start', onClick: startGame }, 'Try Again')
             )
         ) : null
