@@ -23,11 +23,6 @@ const CHARACTERS = {
         baseWidth: 165.4,
         baseHeight: 110.3,
     },
-    // === КАК ДОБАВИТЬ НОВОГО ПЕРСОНАЖА ===
-    // 1. Создай папку: source/characters/имя/
-    // 2. Загрузи туда кадры: 1.png, 2.png, ..., N.png
-    // 3. Раскомментируй блок ниже и укажи свои значения:
-    //
     panda: {
         id: 'panda',
         name: 'Panda',
@@ -37,7 +32,6 @@ const CHARACTERS = {
         baseWidth: 160,
         baseHeight: 120,
     },
-    //
     // wolf: {
     //     id: 'wolf',
     //     name: 'Wolf',
@@ -101,6 +95,7 @@ function Game() {
     const pitAudioRef = useRef(null);
     const pitAudioEndedRef = useRef(false);
     const barrelAudioRef = useRef(null);
+    const nightAmbientRef = useRef(null); // >>> Ссылка на ночной эмбиент
 
     useEffect(() => {
         const pitAudio = new Audio('source/sounds/fall_in_pit.wav');
@@ -111,11 +106,50 @@ function Game() {
         barrelAudio.preload = 'auto';
         barrelAudioRef.current = barrelAudio;
 
+        // >>> Инициализация ночного звука
+        const nightAmbient = new Audio('source/sounds/night_forest.mp3');
+        nightAmbient.loop = true;
+        nightAmbient.volume = 0.25; // Немного приглушенный фон
+        nightAmbient.preload = 'auto';
+        nightAmbientRef.current = nightAmbient;
+
         return () => {
             pitAudio.pause(); pitAudio.src = '';
             barrelAudio.pause(); barrelAudio.src = '';
+            nightAmbient.pause(); nightAmbient.src = '';
         };
     }, []);
+
+    // >>> Логика включения/выключения ночного звука
+    useEffect(() => {
+        const audio = nightAmbientRef.current;
+        if (!audio) return;
+        if (timeOfDay === 'night') {
+            audio.play().catch(() => {
+                // Браузер может заблокировать автозапуск, если нет действия пользователя
+            });
+        } else {
+            audio.pause();
+        }
+    }, [timeOfDay]);
+
+    // >>> Обход блокировки автовоспроизведения (если игра загрузилась сразу с ночным режимом)
+    useEffect(() => {
+        if (timeOfDay !== 'night') return;
+        const tryPlay = () => {
+            const audio = nightAmbientRef.current;
+            if (audio && audio.paused) {
+                audio.play().catch(() => {});
+            }
+        };
+        tryPlay();
+        window.addEventListener('pointerdown', tryPlay, { once: true });
+        window.addEventListener('keydown', tryPlay, { once: true });
+        return () => {
+            window.removeEventListener('pointerdown', tryPlay);
+            window.removeEventListener('keydown', tryPlay);
+        };
+    }, [timeOfDay]);
     
     // === ИГРОВЫЕ РЕФЫ ===
     const initChar = CHARACTERS[character] || CHARACTERS.crocodile;
@@ -671,7 +705,6 @@ function Game() {
         return h.join(' ');
     };
 
-    // >>> ПАНЕЛЬ ВЫБОРА ПЕРСОНАЖЕЙ (справа, с эмодзи)
     const renderCharacterPanel = () => React.createElement('div', { className: 'char-panel' },
         React.createElement('div', { className: 'char-panel-title' }, 'Hero'),
         Object.values(CHARACTERS).map(char =>
@@ -712,7 +745,6 @@ function Game() {
             React.createElement('div', { className: 'title' }, 'LACOSTE', React.createElement('br'), 'RUNNER'),
             React.createElement('div', { className: 'subtitle' }, 'VICE CITY EDITION'),
 
-            // >>> Панель выбора персонажей справа
             renderCharacterPanel(),
             
             React.createElement('div', { className: 'settings' },
@@ -753,7 +785,6 @@ function Game() {
             React.createElement('div', { className: 'subtitle', style: {color: 'white', marginBottom: '10px'} }, 'The employees caught you!'),
             React.createElement('div', { className: 'subtitle' }, 'DIST: ', Math.floor(score), 'm | HI: ', highScore, 'm'),
 
-            // >>> Панель выбора персонажей справа (и на экране смерти)
             renderCharacterPanel(),
 
             React.createElement('div', { className: 'settings' },
