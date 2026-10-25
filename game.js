@@ -28,15 +28,15 @@ const CHARACTERS = {
     // 2. Загрузи туда кадры: 1.png, 2.png, ..., N.png
     // 3. Раскомментируй блок ниже и укажи свои значения:
     //
-    // panda: {
-    //     id: 'panda',
-    //     name: 'Panda',
-    //     emoji: '🐼',
-    //     folder: 'source/characters/panda',
-    //     frameCount: 12,
-    //     baseWidth: 160,
-    //     baseHeight: 120,
-    // },
+    panda: {
+        id: 'panda',
+        name: 'Panda',
+        emoji: '🐼',
+        folder: 'source/characters/panda',
+        frameCount: 12,
+        baseWidth: 160,
+        baseHeight: 120,
+    },
     //
     // wolf: {
     //     id: 'wolf',
