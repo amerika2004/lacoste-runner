@@ -10,12 +10,34 @@ const HOLD_THRUST = 0.45;
 const GROUND_Y = 530; 
 const BASE_SPEED = 4.0; 
 
+// === РЕЕСТР ФОНОВ ===
+// groundOffset   — на сколько пикселей опустить землю/персонажа/препятствия (30px = 5%)
+// obstacleTypes  — какие препятствия могут спавниться
+// foodEmojis     — если задан, еда всегда из этого набора (перебивает набор персонажа)
+const BACKGROUNDS = {
+    default: {
+        id: 'default',
+        name: 'Forest',
+        emoji: '🌳',
+        dayImg: 'source/landscape.jpg',
+        nightImg: 'source/landscape_n.jpg',
+        groundOffset: 0,
+        obstacleTypes: ['barrel', 'rock', 'cactus', 'puddle', 'pit'],
+        foodEmojis: null,
+    },
+    cartoon: {
+        id: 'cartoon',
+        name: 'Cartoon',
+        emoji: '🌲',
+        dayImg: 'source/cartoon_forest.png',
+        nightImg: 'source/cartoon_forest_n.png',
+        groundOffset: 30,
+        obstacleTypes: ['rock', 'puddle', 'pit'],
+        foodEmojis: ['🎋'],
+    },
+};
+
 // === РЕЕСТР ПЕРСОНАЖЕЙ ===
-// foodEmojis      — из какого набора спавнится еда для этого персонажа
-// eatEmoji        — какой эмодзи триггерит eat-анимацию (по умолчанию none = никогда)
-// eatFolder       — папка с кадрами «сидит и ест» (1.png ... eatFrameCount.png)
-// eatFrameCount   — сколько кадров в eat-анимации
-// eatDuration     — сколько секунд длится поедание
 const CHARACTERS = {
     crocodile: {
         id: 'crocodile',
@@ -32,12 +54,12 @@ const CHARACTERS = {
         name: 'Panda',
         emoji: '🐼',
         folder: 'source/characters/panda',
-        frameCount: 8,
+        frameCount: 20,
         baseWidth: 160,
         baseHeight: 120,
         foodEmojis: ['🎋'],
         eatEmoji: '🎋',
-        eatFolder: 'source/characters/panda/eating',
+        eatFolder: 'source/characters/panda_eat',
         eatFrameCount: 8,
         eatDuration: 5.5,
     },
@@ -47,6 +69,10 @@ function Game() {
     const [gameState, setGameState] = useState('menu');
     const [timeOfDay, setTimeOfDay] = useState(() => localStorage.getItem('lacosteTimeOfDay') || 'day');
     const [difficulty, setDifficulty] = useState(() => localStorage.getItem('lacosteDifficulty') || 'hard');
+    const [background, setBackground] = useState(() => {
+        const saved = localStorage.getItem('lacosteBackground');
+        return (saved && BACKGROUNDS[saved]) ? saved : 'default';
+    });
     const [character, setCharacter] = useState(() => {
         const saved = localStorage.getItem('lacosteCharacter');
         return (saved && CHARACTERS[saved]) ? saved : 'crocodile';
@@ -63,6 +89,10 @@ function Game() {
     
     const timeOfDayRef = useRef(timeOfDay);
     const difficultyRef = useRef(difficulty);
+    const backgroundRef = useRef(background);
+
+    // >>> GROUND_Y с учётом фона
+    const groundYRef = useRef(GROUND_Y + (BACKGROUNDS[background]?.groundOffset || 0));
 
     useEffect(() => {
         timeOfDayRef.current = timeOfDay;
@@ -74,17 +104,25 @@ function Game() {
         localStorage.setItem('lacosteDifficulty', difficulty);
     }, [difficulty]);
 
+    useEffect(() => {
+        backgroundRef.current = background;
+        localStorage.setItem('lacosteBackground', background);
+        const bg = BACKGROUNDS[background] || BACKGROUNDS.default;
+        groundYRef.current = GROUND_Y + (bg.groundOffset || 0);
+    }, [background]);
+
     // === ЗАГРУЗКА КАДРОВ ПЕРСОНАЖА ===
     const walkFramesRef = useRef([]); 
     const currentFrameRef = useRef(0); 
     const lastFrameTimeRef = useRef(0); 
 
-    // >>> Кадры поедания
     const eatFramesRef = useRef([]);
     const eatFrameIdxRef = useRef(0);
     const lastEatFrameTimeRef = useRef(0);
     const isEatingRef = useRef(false);
     const eatTimerRef = useRef(0);
+    const eatSpeedFactorRef = useRef(1.0); // 1 = нормальная скорость, 0 = стоим
+    const eatParticlesRef = useRef([]);     // частицы бамбука
 
     useEffect(() => {
         localStorage.setItem('lacosteCharacter', character);
@@ -94,6 +132,8 @@ function Game() {
         eatFrameIdxRef.current = 0;
         isEatingRef.current = false;
         eatTimerRef.current = 0;
+        eatSpeedFactorRef.current = 1.0;
+        eatParticlesRef.current = [];
 
         const char = CHARACTERS[character] || CHARACTERS.crocodile;
         for (let i = 1; i <= char.frameCount; i++) {
@@ -180,8 +220,9 @@ function Game() {
     
     // === ИГРОВЫЕ РЕФЫ ===
     const initChar = CHARACTERS[character] || CHARACTERS.crocodile;
+    const initGroundY = GROUND_Y + (BACKGROUNDS[background]?.groundOffset || 0);
     const playerRef = useRef({
-        x: 100, y: GROUND_Y - initChar.baseHeight, 
+        x: 100, y: initGroundY - initChar.baseHeight, 
         width: initChar.baseWidth, height: initChar.baseHeight,
         velocityY: 0, isJumping: false, isHoldingJump: false, jumpMult: 1.0,
         tilt: 0, bob: 0, foodEaten: 0, foodTarget: 1
@@ -214,9 +255,7 @@ function Game() {
     const isPitDeathDelayRef = useRef(false);
     const pitDeathDelayTimerRef = useRef(0);
 
-    // === СТАТИЧНЫЕ ИЗОБРАЖЕНИЯ ===
-    const landscapeImg = useRef(new Image());
-    const landscapeNightImg = useRef(new Image());
+    // === СТАТИЧНЫЕ ИЗОБРАЖЕНИЯ ПРЕПЯТСТВИЙ ===
     const puddleImg = useRef(new Image());
     const puddleNightImg = useRef(new Image());
     const rockImg = useRef(new Image()); 
@@ -229,9 +268,17 @@ function Game() {
     const cactusNightImg = useRef(new Image());
     const explosionImg = useRef(new Image());
 
+    // >>> ФОНЫ грузим все сразу, чтобы можно было переключать
+    const backgroundImagesRef = useRef({});
     useEffect(() => {
-        landscapeImg.current.src = 'source/landscape.jpg'; 
-        landscapeNightImg.current.src = 'source/landscape_n.jpg';
+        Object.values(BACKGROUNDS).forEach(bg => {
+            const day = new Image(); day.src = bg.dayImg;
+            const night = new Image(); night.src = bg.nightImg;
+            backgroundImagesRef.current[bg.id] = { day, night };
+        });
+    }, []);
+
+    useEffect(() => {
         puddleImg.current.src = 'source/puddle.png';
         puddleNightImg.current.src = 'source/puddle_n.png';
         rockImg.current.src = 'source/rock.png'; 
@@ -342,8 +389,9 @@ function Game() {
 
     const resetGame = () => {
         const char = CHARACTERS[character] || CHARACTERS.crocodile;
+        const gy = groundYRef.current;
         playerRef.current = {
-            x: 100, y: GROUND_Y - char.baseHeight, 
+            x: 100, y: gy - char.baseHeight, 
             width: char.baseWidth, height: char.baseHeight,
             velocityY: 0, isJumping: false, isHoldingJump: false, jumpMult: 1.0,
             tilt: 0, bob: 0, foodEaten: 0, foodTarget: 1 
@@ -361,10 +409,11 @@ function Game() {
         pitFallTimerRef.current = 0; pitVelocityRef.current = 0;
         isPitDeathDelayRef.current = false; pitDeathDelayTimerRef.current = 0;
 
-        // >>> Сброс eat-состояния
         isEatingRef.current = false;
         eatTimerRef.current = 0;
         eatFrameIdxRef.current = 0;
+        eatSpeedFactorRef.current = 1.0;
+        eatParticlesRef.current = [];
 
         pitAudioEndedRef.current = false;
         if (pitAudioRef.current) { pitAudioRef.current.pause(); pitAudioRef.current.currentTime = 0; }
@@ -396,7 +445,7 @@ function Game() {
         
         isTrippingRef.current = true; tripTimerRef.current = 0; isBarrelTripRef.current = false;
         const p = playerRef.current;
-        p.y = GROUND_Y - p.height; p.velocityY = 0; p.isJumping = false; p.tilt = 0;
+        p.y = groundYRef.current - p.height; p.velocityY = 0; p.isJumping = false; p.tilt = 0;
         speedPenaltyRef.current = speedPenaltyRef.current * 0.65;
     };
 
@@ -425,29 +474,47 @@ function Game() {
         const canvas = canvasRef.current;
         const p = playerRef.current;
         const char = CHARACTERS[character] || CHARACTERS.crocodile;
+        const gy = groundYRef.current;
+        const bgConfig = BACKGROUNDS[backgroundRef.current] || BACKGROUNDS.default;
 
         const diff = difficultyRef.current;
         const diffMult = diff === 'easy' ? 0.8 : diff === 'medium' ? 1.8 : 2.3;
 
-        // >>> СОСТОЯНИЕ ПОЕДАНИЯ (панда сидит и ест бамбук)
+        // >>> Всегда обновляем частицы (даже после еды)
+        eatParticlesRef.current.forEach(pt => {
+            pt.x += pt.vx;
+            pt.y += pt.vy;
+            pt.vy += 0.15;
+            pt.life--;
+        });
+        eatParticlesRef.current = eatParticlesRef.current.filter(pt => pt.life > 0);
+
+        // >>> СОСТОЯНИЕ ПОЕДАНИЯ
         if (isEatingRef.current) {
             eatTimerRef.current++;
 
-            // Анимация поедания
-            const now = Date.now();
-            if (now - lastEatFrameTimeRef.current > 120 && eatFramesRef.current.length > 0) {
+            // Анимация еды
+            if (Date.now() - lastEatFrameTimeRef.current > 120 && eatFramesRef.current.length > 0) {
                 eatFrameIdxRef.current = (eatFrameIdxRef.current + 1) % eatFramesRef.current.length;
-                lastEatFrameTimeRef.current = now;
+                lastEatFrameTimeRef.current = Date.now();
             }
 
-            // Мир продолжает ехать
+            // Плавное замедление мира за первые 12 кадров
+            if (eatTimerRef.current < 12) {
+                eatSpeedFactorRef.current = 1 - eatTimerRef.current / 12;
+            } else {
+                eatSpeedFactorRef.current = 0;
+            }
+            const eatSpeedFactor = eatSpeedFactorRef.current;
+
+            // Движение мира с учётом eatSpeedFactor
             const baseSpeedMultEat = 1.0 + Math.floor(distanceRef.current / 100) * 0.04;
             const effectiveSpeedMultEat = Math.max(1.0, baseSpeedMultEat * speedPenaltyRef.current);
-            const currentSpeedEat = BASE_SPEED * effectiveSpeedMultEat * diffMult;
+            const currentSpeedEat = BASE_SPEED * effectiveSpeedMultEat * diffMult * eatSpeedFactor;
 
             distanceRef.current += currentSpeedEat * 0.03;
             setScore(Math.floor(distanceRef.current));
-            setSpeedDisplay((effectiveSpeedMultEat * diffMult).toFixed(2));
+            setSpeedDisplay(eatSpeedFactor > 0.01 ? (effectiveSpeedMultEat * diffMult * eatSpeedFactor).toFixed(2) : "0.00");
             bgOffsetRef.current -= currentSpeedEat;
 
             obstaclesRef.current.forEach(o => { o.x -= currentSpeedEat; });
@@ -458,14 +525,29 @@ function Game() {
             explosionsRef.current.forEach(e => e.timer++);
             explosionsRef.current = explosionsRef.current.filter(e => e.timer < e.maxTimer);
 
-            // Панда сидит на земле, не двигается
+            // Панда стоит на месте с bounce
             p.isJumping = false;
             p.velocityY = 0;
-            p.y = GROUND_Y - p.height;
+            p.y = gy - p.height;
             p.tilt = 0;
-            p.bob = 0;
+            p.bob = Math.sin(Date.now() / 150) * 3;
 
-            // Окончание поедания
+            // Спавним частицы бамбука каждые 6 кадров
+            if (eatTimerRef.current % 6 === 0) {
+                eatParticlesRef.current.push({
+                    x: p.x + p.width / 2 + (Math.random() - 0.5) * p.width * 0.3,
+                    y: p.y + p.height * 0.3,
+                    vx: (Math.random() - 0.5) * 3,
+                    vy: -1.5 - Math.random() * 2,
+                    life: 45,
+                    maxLife: 45,
+                    size: 3 + Math.random() * 4,
+                    rot: Math.random() * Math.PI * 2,
+                    rotSpeed: (Math.random() - 0.5) * 0.3,
+                });
+            }
+
+            // Окончание еды
             const eatDurationFrames = (char.eatDuration || 5) * 60;
             if (eatTimerRef.current >= eatDurationFrames) {
                 isEatingRef.current = false;
@@ -477,11 +559,14 @@ function Game() {
                 spawnCooldownRef.current = 90;
             }
             return;
+        } else {
+            // Плавное ускорение после еды
+            eatSpeedFactorRef.current = Math.min(1, eatSpeedFactorRef.current + 0.083);
         }
         
         if (isFallingIntoPitRef.current) {
             pitFallTimerRef.current++; pitVelocityRef.current += 0.2; p.y += pitVelocityRef.current;
-            if (p.y > GROUND_Y + 30 || pitFallTimerRef.current > 400) {
+            if (p.y > gy + 30 || pitFallTimerRef.current > 400) {
                 isFallingIntoPitRef.current = false; isPitDeathDelayRef.current = true; pitDeathDelayTimerRef.current = 0;
 
                 pitAudioEndedRef.current = false;
@@ -511,8 +596,8 @@ function Game() {
             bgOffsetRef.current += backSpeed;
             obstaclesRef.current.forEach(o => { o.x += backSpeed; }); foodsRef.current.forEach(f => { f.x += backSpeed; });
             setSpeedDisplay("REVERSE");
-            if (p.y >= GROUND_Y - p.height) {
-                p.y = GROUND_Y - p.height; isBarrelFlyingRef.current = false; barrelFlyVelocityYRef.current = 0;
+            if (p.y >= gy - p.height) {
+                p.y = gy - p.height; isBarrelFlyingRef.current = false; barrelFlyVelocityYRef.current = 0;
                 isTrippingRef.current = true; tripTimerRef.current = 0; pendingBarrelDamageRef.current = true; p.tilt = 0;
             }
             explosionsRef.current.forEach(e => e.timer++); explosionsRef.current = explosionsRef.current.filter(e => e.timer < e.maxTimer);
@@ -534,10 +619,11 @@ function Game() {
         const baseSpeedMult = 1.0 + Math.floor(distanceRef.current / 100) * 0.04;
         const effectiveSpeedMult = Math.max(1.0, baseSpeedMult * speedPenaltyRef.current);
 
-        let currentSpeed = 0;
+        // >>> Умножаем на eatSpeedFactor (для плавного восстановления после еды)
+        const currentSpeed = BASE_SPEED * effectiveSpeedMult * diffMult * eatSpeedFactorRef.current;
+
         if (!isTrippingRef.current) {
-            currentSpeed = BASE_SPEED * effectiveSpeedMult * diffMult;
-            setSpeedDisplay((effectiveSpeedMult * diffMult).toFixed(2));
+            setSpeedDisplay((effectiveSpeedMult * diffMult * eatSpeedFactorRef.current).toFixed(2));
             distanceRef.current += (currentSpeed * 0.03); 
             setScore(Math.floor(distanceRef.current)); 
             bgOffsetRef.current -= currentSpeed;
@@ -549,7 +635,7 @@ function Game() {
             p.velocityY += GRAVITY; if (p.isHoldingJump) p.velocityY -= HOLD_THRUST * p.jumpMult;
             p.y += p.velocityY; p.tilt = p.velocityY * 0.025; p.tilt = Math.max(-0.35, Math.min(0.35, p.tilt)); 
             if (p.y <= 0) { p.y = 0; if (p.velocityY < 0) p.velocityY = 0; }
-            if (p.y >= GROUND_Y - p.height) { p.y = GROUND_Y - p.height; p.velocityY = 0; p.isJumping = false; p.tilt = 0; }
+            if (p.y >= gy - p.height) { p.y = gy - p.height; p.velocityY = 0; p.isJumping = false; p.tilt = 0; }
         } else if (!isTrippingRef.current) {
             p.bob = Math.sin(Date.now() / 80) * 2.5; p.tilt = 0;
         }
@@ -572,7 +658,8 @@ function Game() {
                 for (let obs of obstaclesRef.current) { if (obs.x + obs.width > canvas.width - 350) { gapOk = false; break; } }
                 
                 if (gapOk && spawnTimerRef.current > Math.max(70, 140 - currentSpeed * 3) + Math.random() * 40) {
-                    const types = ['barrel', 'rock', 'cactus', 'puddle', 'pit']; 
+                    // >>> Типы препятствий из настроек фона
+                    const types = bgConfig.obstacleTypes || ['barrel', 'rock', 'cactus', 'puddle', 'pit']; 
                     const randomType = types[Math.floor(Math.random() * types.length)];
                     let width = 40, height = 40, yOffset = 0;
                     if (randomType === 'rock') { width = 120; height = 120; yOffset = 30; } 
@@ -586,14 +673,14 @@ function Game() {
                     const scale = 1.0 + Math.random() * (maxScale - 1.0);
                     width *= scale; height *= scale; yOffset *= scale;
 
-                    obstaclesRef.current.push({ x: canvas.width, y: GROUND_Y - height + yOffset, width: width, height: height, type: randomType });
+                    obstaclesRef.current.push({ x: canvas.width, y: gy - height + yOffset, width: width, height: height, type: randomType });
                     spawnTimerRef.current = 0;
                 }
             }
 
-            // >>> Спавн еды из набора текущего персонажа
+            // >>> Еда: сначала фон, потом персонаж
+            const foodList = bgConfig.foodEmojis || char.foodEmojis || ['🍗', '🍔', '🍕', '🥩'];
             const foodMult = char.eatFolder ? 3.0 : 1.0;
-            const foodList = char.foodEmojis || ['🍗', '🍔', '🍕', '🥩'];
 
             foodTimerRef.current += (currentSpeed / BASE_SPEED);
             if (foodTimerRef.current > (100 + Math.random() * 80) * foodMult) { 
@@ -601,7 +688,7 @@ function Game() {
                 for (let obs of obstaclesRef.current) { if (obs.x + obs.width > canvas.width - 300) { isSafeToSpawn = false; break; } }
                 if (isSafeToSpawn) {
                     const randomFood = foodList[Math.floor(Math.random() * foodList.length)];
-                    const foodY = Math.random() > 0.5 ? GROUND_Y - 80 : GROUND_Y - 40;
+                    const foodY = Math.random() > 0.5 ? gy - 80 : gy - 40;
                     foodsRef.current.push({ x: canvas.width, y: foodY, width: 40, height: 40, emoji: randomFood });
                     foodTimerRef.current = 0; 
                 }
@@ -641,34 +728,30 @@ function Game() {
             }
         }
 
-        // >>> Столкновение с едой + триггер поедания бамбука
         foodsRef.current = foodsRef.current.filter(food => {
             const hitboxX = p.x + 20; const hitboxY = p.y + 20; const hitboxWidth = p.width - 40; const hitboxHeight = p.height - 20;
             if (hitboxX < food.x + food.width && hitboxX + hitboxWidth > food.x && hitboxY < food.y + food.height && hitboxY + hitboxHeight > food.y) {
                 const isEatTrigger = char.eatEmoji && food.emoji === char.eatEmoji && !isTrippingRef.current;
 
-                // Рост/лечение
                 p.foodEaten++;
                 if (p.foodEaten >= p.foodTarget) {
-                    p.width += 2; p.height += 1.3; p.y = GROUND_Y - p.height; 
+                    p.width += 2; p.height += 1.3; p.y = gy - p.height; 
                     p.foodEaten = 0; p.foodTarget = p.foodTarget + 1;
                     healthRef.current = Math.min(6, healthRef.current + 1); setHealth(healthRef.current);
                 }
 
-                // Запуск анимации поедания
                 if (isEatTrigger) {
                     isEatingRef.current = true;
                     eatTimerRef.current = 0;
                     eatFrameIdxRef.current = 0;
                     lastEatFrameTimeRef.current = Date.now();
-                    p.y = GROUND_Y - p.height;
+                    p.y = gy - p.height;
                     p.velocityY = 0;
                     p.isJumping = false;
                     p.isHoldingJump = false;
                     p.tilt = 0;
                     p.bob = 0;
                 }
-
                 return false; 
             }
             return true;
@@ -706,7 +789,7 @@ function Game() {
             requestRef.current = requestAnimationFrame(gameLoop);
         }
         return () => cancelAnimationFrame(requestRef.current);
-    }, [gameState, character]);
+    }, [gameState, character, background]);
 
     const pickImg = (dayImg, nightImg) => timeOfDayRef.current === 'night' ? nightImg.current : dayImg.current;
     const drawObstacleImage = (ctx, obs, dayImg, nightImg, fallbackColor) => {
@@ -719,7 +802,10 @@ function Game() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.globalAlpha = 1.0;
         const p = playerRef.current;
-        const bgImg = pickImg(landscapeImg, landscapeNightImg);
+        const gy = groundYRef.current;
+        const bgConfig = BACKGROUNDS[backgroundRef.current] || BACKGROUNDS.default;
+        const bgImages = backgroundImagesRef.current[bgConfig.id] || { day: new Image(), night: new Image() };
+        const bgImg = timeOfDayRef.current === 'night' ? bgImages.night : bgImages.day;
 
         if (bgImg.complete && bgImg.naturalWidth > 0) {
             const scale = canvas.height / bgImg.naturalHeight; const exactWidth = Math.ceil(bgImg.naturalWidth * scale);
@@ -748,7 +834,7 @@ function Game() {
 
         if (isFallingIntoPitRef.current || isPitDeathDelayRef.current) {
             if (charImg && charImg.complete && charImg.naturalWidth > 0) {
-                ctx.save(); ctx.beginPath(); ctx.rect(0, 0, canvas.width, GROUND_Y); ctx.clip();
+                ctx.save(); ctx.beginPath(); ctx.rect(0, 0, canvas.width, gy); ctx.clip();
                 ctx.save(); const centerX = p.x + p.width / 2; const centerY = p.y + p.height / 2;
                 ctx.translate(centerX, centerY); ctx.rotate(p.tilt); if (FLIP_CROC) ctx.scale(-1, 1);
                 ctx.drawImage(charImg, -p.width / 2, -p.height / 2, p.width, p.height); ctx.restore(); ctx.restore();
@@ -757,6 +843,13 @@ function Game() {
             if (charImg && charImg.complete && charImg.naturalWidth > 0) {
                 ctx.save();
                 let fallAngle = 0, yOffset = 0, flyTilt = 0;
+
+                // >>> Аркадность: "чавкающая" пульсация размера
+                let chewScale = 1.0;
+                if (isEatingRef.current) {
+                    chewScale = 1.0 + Math.sin(Date.now() / 80) * 0.05;
+                }
+
                 if (isBarrelFlyingRef.current) flyTilt = p.tilt;
                 if (isTrippingRef.current) {
                     const fallProgress = Math.min(1, tripTimerRef.current / 15); const standProgress = Math.max(0, (tripTimerRef.current - 40) / 80);
@@ -765,12 +858,41 @@ function Game() {
                     fallAngle = dir * (Math.PI / 2) * flatAmount; yOffset = -((p.width - p.height) / 2) * flatAmount;
                     if (Math.floor(tripTimerRef.current / 10) % 2 === 1) ctx.globalAlpha = 0.5;
                 }
-                const centerX = p.x + p.width / 2; const centerY = p.y + p.height / 2 + (p.isJumping ? 0 : (isTrippingRef.current ? yOffset : p.bob));
-                ctx.translate(centerX, centerY); ctx.rotate(p.tilt + fallAngle + flyTilt);
+
+                const centerX = p.x + p.width / 2; 
+                const centerY = p.y + p.height / 2 + (p.isJumping ? 0 : (isTrippingRef.current ? yOffset : p.bob));
+                
+                ctx.translate(centerX, centerY); 
+                ctx.rotate(p.tilt + fallAngle + flyTilt);
                 if (FLIP_CROC) ctx.scale(-1, 1); 
-                ctx.drawImage(charImg, -p.width / 2, -p.height / 2, p.width, p.height); ctx.restore();
+                
+                const dW = p.width * chewScale;
+                const dH = p.height * chewScale;
+                ctx.drawImage(charImg, -dW / 2, -dH / 2, dW, dH); 
+                ctx.restore();
             } else { ctx.fillStyle = 'red'; ctx.fillRect(p.x, p.y, p.width, p.height); }
         }
+
+        // >>> Частицы бамбука (аркадность)
+        eatParticlesRef.current.forEach(pt => {
+            const alpha = pt.life / pt.maxLife;
+            ctx.save();
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = '#4CAF50';
+            ctx.translate(pt.x, pt.y);
+            if (pt.rot !== undefined) ctx.rotate(pt.rot);
+            // Листик/точка
+            ctx.beginPath();
+            ctx.ellipse(0, 0, pt.size, pt.size * 0.5, 0, 0, Math.PI * 2);
+            ctx.fill();
+            // Светлая сердцевина
+            ctx.fillStyle = '#8BC34A';
+            ctx.beginPath();
+            ctx.arc(0, 0, pt.size * 0.4, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+            if (pt.rotSpeed) pt.rot = (pt.rot || 0) + pt.rotSpeed;
+        });
 
         explosionsRef.current.forEach(expl => {
             const progress = expl.timer / expl.maxTimer; const scale = 1 + progress * 0.5; const alpha = 1 - progress; const size = expl.size * scale;
@@ -783,7 +905,7 @@ function Game() {
             }
         });
 
-        // Еда — всегда непрозрачная
+        // Еда
         ctx.save();
         ctx.globalAlpha = 1.0;
         ctx.textBaseline = 'bottom';
@@ -838,6 +960,17 @@ function Game() {
         )
     );
 
+    // >>> Панель выбора фона
+    const renderBackgroundPanel = () => React.createElement('div', { className: 'settings', style: { marginTop: '-5px' } },
+        Object.values(BACKGROUNDS).map(bg =>
+            React.createElement('button', {
+                key: bg.id,
+                className: `btn ${background === bg.id ? 'active' : ''}`,
+                onClick: () => setBackground(bg.id)
+            }, `${bg.emoji} ${bg.name}`)
+        )
+    );
+
     return React.createElement('div', { id: 'game-container' },
         
         (gameState === 'playing' || gameState === 'paused') ? React.createElement(React.Fragment, null,
@@ -864,6 +997,9 @@ function Game() {
             React.createElement('div', { className: 'subtitle' }, 'VICE CITY EDITION'),
 
             renderCharacterPanel(),
+
+            // >>> Выбор фона
+            renderBackgroundPanel(),
             
             React.createElement('div', { className: 'settings' },
                 React.createElement('button', { className: `btn ${difficulty === 'easy' ? 'active' : ''}`, onClick: () => setDifficulty('easy') }, 'Easy'),
