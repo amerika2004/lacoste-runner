@@ -33,7 +33,7 @@ const CHARACTERS = {
         name: 'Panda',
         emoji: '🐼',
         folder: 'source/characters/panda',
-        frameCount: 12,
+        frameCount: 20,
         baseWidth: 160,
         baseHeight: 120,
     },
