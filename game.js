@@ -158,7 +158,7 @@ function Game() {
         barrelAudio.preload = 'auto';
         barrelAudioRef.current = barrelAudio;
 
-        const splashAudio = new Audio('source/sounds/splash.wav');
+        const splashAudio = new Audio('source/sounds/splash.mp3');
         splashAudio.preload = 'auto';
         splashAudio.playbackRate = 1.2;
         splashAudioRef.current = splashAudio;
