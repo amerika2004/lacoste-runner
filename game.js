@@ -853,6 +853,28 @@ window.__bootGame = function () {
     if (window.__GAME_STARTED__) return;
     window.__GAME_STARTED__ = true;
     root.render(React.createElement(Game));
+    // >>> УНИВЕРСАЛЬНЫЙ КОМПОНЕНТ ДЛЯ ВСЕХ UI ПАКЕТОВ
+function AllPacksUI({ gameState }) {
+    const [uis, setUis] = React.useState([...window.PackUIs]);
+
+    useEffect(() => {
+        // Как только loader.js загрузит пакеты, они добавятся в массив
+        const id = setInterval(() => {
+            if (uis.length !== window.PackUIs.length) {
+                setUis([...window.PackUIs]);
+            }
+        }, 500);
+        return () => clearInterval(id);
+    }, [uis.length]);
+
+    return React.createElement(React.Fragment, null,
+        uis.map((UI, i) => React.createElement(UI, { key: i, gameState }))
+    );
+}
+
+// ...
+// В твоём главном JSX добавь ОДИН элемент:
+// React.createElement(AllPacksUI, { gameState })
 };
 
 // Если loader.js не подключён (например, старый index.html) — запускаем сразу.
