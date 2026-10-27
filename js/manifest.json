@@ -4,6 +4,7 @@
     "js/plugins/characters/panda.js",
     "js/plugins/world.js",
     "js/plugins/player.js",
+    "js/plugins/food.js",
     "js/plugins/combo.js",
     "js/plugins/audio.js",
     "js/plugins/weather.js",
