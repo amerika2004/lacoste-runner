@@ -289,6 +289,7 @@ function Game() {
             player: playerRef, obstacles: obstaclesRef, foods: foodsRef,
             distance: distanceRef, health: healthRef, combo: comboRef,
             comboMult: comboMultRef, settings: settingsRef,
+            setHealth: setHealth, setScore: setScore,
             getGameState: () => gameState
         };
     }, [gameState]);
@@ -515,9 +516,11 @@ function Game() {
         const effectiveSpeedMult = Math.max(1.0, baseSpeedMult * speedPenaltyRef.current);
         let currentSpeed = 0;
         if (!isTrippingRef.current) {
-            currentSpeed = BASE_SPEED * effectiveSpeedMult * diffMult * eatSpeedFactorRef.current;
+            const _spd = window.GameRefs?.modifiers?.speed || 1.0;
+            const _scr = window.GameRefs?.modifiers?.scoreMult || 1;
+            currentSpeed = BASE_SPEED * effectiveSpeedMult * diffMult * eatSpeedFactorRef.current * _spd;
             setSpeedDisplay((effectiveSpeedMult * diffMult * eatSpeedFactorRef.current).toFixed(2));
-            distanceRef.current += (currentSpeed * 0.03 * comboMultRef.current); setScore(Math.floor(distanceRef.current)); bgOffsetRef.current -= currentSpeed;
+            distanceRef.current += (currentSpeed * 0.03 * comboMultRef.current * _scr);
         } else setSpeedDisplay("0.00");
 
         const currentPower = calculateJumpMultiplier(p.height, baseSpeedMult, speedPenaltyRef.current); setPowerDisplay(currentPower.toFixed(2));
