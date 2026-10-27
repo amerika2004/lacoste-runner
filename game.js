@@ -16,7 +16,21 @@ const DEFAULT_SETTINGS = {
     emojiStyle: 'apple',
     comboEnabled: true,
 };
-
+// >>> GLOBAL EVENT BUS (для модулей)
+window.GameEvents = {
+    listeners: {},
+    on(event, callback) {
+        if (!this.listeners[event]) this.listeners[event] = [];
+        this.listeners[event].push(callback);
+    },
+    emit(event, data) {
+        if (this.listeners[event]) {
+            this.listeners[event].forEach(cb => {
+                try { cb(data); } catch (e) { console.error('EventBus error:', e); }
+            });
+        }
+    }
+};
 // ======================= RENDER ENGINE =======================
 const RenderEngine = (function () {
     // >>> PACK 2 hooks (заполняется из js/pack2.js)
@@ -394,30 +408,24 @@ function Game() {
         resetCombo();
         pitAudioEndedRef.current = false; if (pitAudioRef.current) { pitAudioRef.current.pause(); pitAudioRef.current.currentTime = 0; }
         RenderEngine.reset(); setScore(0); setSpeedDisplay(1.0); setPowerDisplay(1.0); setGameState('playing');
-                // >>> PACK 2: старт игры
-        if (window.Pack2Hooks && typeof window.Pack2Hooks.onGameStart === 'function') {
-            window.Pack2Hooks.onGameStart({
-                distance: 0,
-                character,
-                background,
-                timeOfDay,
-            });
-        }
+        window.GameEvents.emit('start', {
+            character: CHARACTERS[character],
+            background: BACKGROUNDS[background],
+            timeOfDay
+        });
     };
 
     const handleGameOver = () => { RenderEngine.reset(); if (pitAudioRef.current) pitAudioRef.current.pause(); setGameState('gameover'); if (Math.floor(distanceRef.current) > highScore) { const newHigh = Math.floor(distanceRef.current); setHighScore(newHigh); localStorage.setItem('lacosteHighScore', newHigh); }         // >>> PACK 2: смерть — статистика
-        if (window.Pack2Hooks && typeof window.Pack2Hooks.onGameOver === 'function') {
-            window.Pack2Hooks.onGameOver({
-                distance: Math.floor(distanceRef.current),
-                score: Math.floor(distanceRef.current),
-                health: healthRef.current,
-                character,
-                background,
-                timeOfDay,
-                foodEaten: playerRef.current.foodEaten,
-                combo: comboRef.current,
-            });
-        } 
+        window.GameEvents.emit('gameover', {
+            distance: Math.floor(distanceRef.current),
+            score: Math.floor(distanceRef.current),
+            health: healthRef.current,
+            character: character,
+            background: background,
+            timeOfDay: timeOfDay,
+            foodEaten: playerRef.current.foodEaten,
+            combo: comboRef.current
+        }); 
     };
 
     const handleHit = (index, type) => {
@@ -432,6 +440,7 @@ function Game() {
         isTrippingRef.current = true; tripTimerRef.current = 0; isBarrelTripRef.current = false;
         const p = playerRef.current; p.y = groundYRef.current - p.height; p.velocityY = 0; p.isJumping = false; p.tilt = 0;
         speedPenaltyRef.current = speedPenaltyRef.current * 0.65;
+        window.GameEvents.emit('hit', { type, index });
     };
 
     const handleBarrelHit = (index) => {
@@ -447,6 +456,7 @@ function Game() {
         obstaclesRef.current.splice(index, 1); obstaclesRef.current = obstaclesRef.current.filter(o => (o.x + o.width) > p.x && o.x < canvas.width); foodsRef.current = foodsRef.current.filter(f => f.x < canvas.width);
         spawnCooldownRef.current = 90; spawnTimerRef.current = 0; isBarrelFlyingRef.current = true; isBarrelTripRef.current = true; barrelFlyVelocityYRef.current = -20;
         p.velocityY = 0; p.isJumping = false; p.isHoldingJump = false; p.tilt = 0;
+        window.GameEvents.emit('hit', { type, index });
     };
 
     const updateLogic = () => {
@@ -602,9 +612,7 @@ function Game() {
             }
             return true;
         });
-                // >>> PACK 2: тик каждый кадр (погода, эффекты, уведомления)
-        if (window.Pack2Hooks && typeof window.Pack2Hooks.onTick === 'function') {
-            window.Pack2Hooks.onTick({
+            window.GameEvents.emit('tick', {
                 distance: distanceRef.current,
                 speed: currentSpeed,
                 health: healthRef.current,
@@ -614,8 +622,9 @@ function Game() {
                 player: playerRef.current,
                 groundY: gy,
                 settings: settingsRef.current,
+                combo: comboRef.current,
+                foodEaten: playerRef.current.foodEaten
             });
-        }
     };
         const describeScene = () => {
         const char = CHARACTERS[character] || CHARACTERS.crocodile;
@@ -833,8 +842,8 @@ function Game() {
                 )
             )
         ),
-                               // >>> PACK 2: слой для тостов, статистики, контролов, погоды
-        window.Pack2UI ? window.Pack2UI({ gameState, distanceRef }) : null
+// >>> СЛОЙ ДЛЯ ВСЕХ UI ПАКЕТОВ
+window.GameEvents.emit('ui-mount', { gameState });
     );
 }
 
