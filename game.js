@@ -1,46 +1,21 @@
-// ======================= 0. СИСТЕМА ПЛАГИНОВ =======================
-window.GameEvents = {
+const { useState, useEffect, useRef, useCallback } = React;
+
+// === ПЛАГИННАЯ ИНФРАСТРУКТУРА ===
+window.GameEvents = window.GameEvents || {
     listeners: {},
-    on(event, cb) {
-        if (!this.listeners[event]) this.listeners[event] = [];
-        this.listeners[event].push(cb);
-    },
-    emit(event, data) {
-        if (this.listeners[event]) {
-            this.listeners[event].forEach(cb => { try { cb(data); } catch (e) { console.error(`[EventBus] ${event}:`, e); } });
-        }
-    }
+    on(event, cb) { if (!this.listeners[event]) this.listeners[event] = []; this.listeners[event].push(cb); },
+    emit(event, data) { if (this.listeners[event]) this.listeners[event].forEach(cb => { try { cb(data); } catch(e) { console.error(e); } }); }
 };
-
-window.PackUIs = [];
-window.GameCharacters = {};
-
-window.GameBoot = {
+window.PackUIs = window.PackUIs || [];
+window.GameBoot = window.GameBoot || {
     triggered: false,
     callbacks: [],
-    onReady(cb) {
-        if (this.triggered) { try { cb(); } catch(e) { console.error(e); } return; }
-        this.callbacks.push(cb);
-    },
-    trigger() {
-        if (this.triggered) return;
-        this.triggered = true;
-        window.__MODULES_READY__ = true;
-        if (window.GameCharacters) {
-            Object.keys(window.GameCharacters).forEach(k => {
-                if (!CHARACTERS[k]) CHARACTERS[k] = window.GameCharacters[k];
-            });
-        }
-        this.callbacks.forEach(cb => { try { cb(); } catch(e) { console.error(e); } });
-        this.callbacks = [];
-    }
+    onReady(cb) { if (this.triggered) { try { cb(); } catch(e){ console.error(e); } return; } this.callbacks.push(cb); },
+    trigger() { if (this.triggered) return; this.triggered = true; this.callbacks.forEach(cb => { try { cb(); } catch(e){ console.error(e); } }); this.callbacks = []; }
 };
-
-const { useState, useEffect, useRef, useCallback } = React;
 
 const FLIP_CROC = false; 
 
-// === НАСТРОЙКИ ФИЗИКИ ===
 const GRAVITY = 0.75;        
 const JUMP_FORCE = -10.5;    
 const HOLD_THRUST = 0.45;    
@@ -54,10 +29,6 @@ const DEFAULT_SETTINGS = {
     soundEnabled: true, graphics: 'high',
 };
 
-// ==================================================================
-// 2D RENDER ENGINE
-// Полностью изолированный визуальный слой. Не зависит от React.
-// ==================================================================
 const RenderEngine = (function () {
     const QUALITY = {
         low:    { parallax: false, bloom: false, particles: false, shake: false, trail: false, vignette: false, flash: false, maxParticles: 0 },
@@ -66,16 +37,9 @@ const RenderEngine = (function () {
     };
 
     const state = {
-        quality: 'high',
-        config: QUALITY.high,
-        particles: [],
-        shakeTime: 0,
-        shakeIntensity: 0,
-        flashAlpha: 0,
-        flashColor: '255,0,0',
-        time: 0,
-        trail: [],
-        cache: { vignetteCanvas: null, particleSprite: null },
+        quality: 'high', config: QUALITY.high, particles: [],
+        shakeTime: 0, shakeIntensity: 0, flashAlpha: 0, flashColor: '255,0,0',
+        time: 0, trail: [], cache: { vignetteCanvas: null, particleSprite: null },
     };
 
     function makeVignette(width, height) {
@@ -109,15 +73,10 @@ const RenderEngine = (function () {
             state.config = QUALITY[q] || QUALITY.high;
             if (!state.config.particles) state.particles = [];
         },
-
         reset() {
-            state.particles = [];
-            state.shakeTime = 0;
-            state.shakeIntensity = 0;
-            state.flashAlpha = 0;
-            state.trail = [];
+            state.particles = []; state.shakeTime = 0; state.shakeIntensity = 0;
+            state.flashAlpha = 0; state.trail = [];
         },
-
         spawnParticles(x, y, count, opts = {}) {
             if (!state.config.particles) return;
             const colors = opts.colors || ['#FF007F', '#00FFFF', '#FFD700', '#FFFFFF'];
@@ -126,64 +85,45 @@ const RenderEngine = (function () {
                 const a = Math.random() * Math.PI * 2;
                 const v = Math.random() * speed + 1;
                 state.particles.push({
-                    x, y,
-                    vx: Math.cos(a) * v,
-                    vy: Math.sin(a) * v - 1,
-                    life: opts.life || 40,
-                    maxLife: opts.life || 40,
+                    x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 1,
+                    life: opts.life || 40, maxLife: opts.life || 40,
                     size: (opts.size || 4) * (0.6 + Math.random() * 0.8),
                     color: colors[Math.floor(Math.random() * colors.length)],
                     gravity: opts.gravity != null ? opts.gravity : 0.15,
-                    rot: Math.random() * Math.PI * 2,
-                    rotSpeed: (Math.random() - 0.5) * 0.3,
+                    rot: Math.random() * Math.PI * 2, rotSpeed: (Math.random() - 0.5) * 0.3,
                     shape: opts.shape || 'circle',
                 });
             }
         },
-
         shake(intensity = 8, duration = 20) {
             if (!state.config.shake) return;
             state.shakeIntensity = Math.max(state.shakeIntensity, intensity);
             state.shakeTime = Math.max(state.shakeTime, duration);
         },
-
         flash(color = '255,0,0', alpha = 0.5) {
             if (!state.config.flash) return;
-            state.flashAlpha = alpha;
-            state.flashColor = color;
+            state.flashAlpha = alpha; state.flashColor = color;
         },
-
         pushTrail(x, y, w, h, img) {
             if (!state.config.trail || !img) return;
             state.trail.push({ x, y, w, h, img, life: 12, maxLife: 12 });
             if (state.trail.length > 8) state.trail.shift();
         },
-
         update() {
             state.time++;
             for (let i = state.particles.length - 1; i >= 0; i--) {
                 const p = state.particles[i];
-                p.x += p.vx;
-                p.y += p.vy;
-                p.vy += p.gravity;
-                p.vx *= 0.98;
-                p.life--;
-                p.rot += p.rotSpeed;
+                p.x += p.vx; p.y += p.vy; p.vy += p.gravity; p.vx *= 0.98;
+                p.life--; p.rot += p.rotSpeed;
                 if (p.life <= 0) state.particles.splice(i, 1);
             }
-            if (state.shakeTime > 0) {
-                state.shakeTime--;
-                if (state.shakeTime === 0) state.shakeIntensity = 0;
-            }
-            if (state.flashAlpha > 0) {
-                state.flashAlpha = Math.max(0, state.flashAlpha - 0.05);
-            }
+            if (state.shakeTime > 0) { state.shakeTime--; if (state.shakeTime === 0) state.shakeIntensity = 0; }
+            if (state.flashAlpha > 0) state.flashAlpha = Math.max(0, state.flashAlpha - 0.05);
             for (let i = state.trail.length - 1; i >= 0; i--) {
                 state.trail[i].life--;
                 if (state.trail[i].life <= 0) state.trail.splice(i, 1);
             }
         },
-
         draw(ctx, canvas, scene) {
             const { config } = state;
             const W = canvas.width, H = canvas.height;
@@ -198,12 +138,10 @@ const RenderEngine = (function () {
             ctx.save();
             ctx.translate(shakeX, shakeY);
 
-            // 1. ПАРАЛЛАКС-ФОН
             const { bg } = scene;
             if (bg.img && bg.img.complete && bg.img.naturalWidth > 0) {
                 const scale = H / bg.img.naturalHeight;
                 const exactWidth = Math.ceil(bg.img.naturalWidth * scale);
-
                 if (config.parallax) {
                     ctx.globalAlpha = 0.5;
                     let farOffset = Math.floor((bg.offset * 0.4) % exactWidth);
@@ -213,7 +151,6 @@ const RenderEngine = (function () {
                     }
                     ctx.globalAlpha = 1;
                 }
-
                 let offset = Math.floor(bg.offset % exactWidth);
                 if (offset > 0) offset -= exactWidth;
                 for (let i = offset; i < W; i += exactWidth) {
@@ -224,12 +161,10 @@ const RenderEngine = (function () {
                 ctx.fillRect(0, 0, W, H);
             }
 
-            // 2. ПИТ-ОВЕРЛЕЙ
             if (scene.pitOverlay && scene.pitOverlay.img && scene.pitOverlay.img.complete) {
                 ctx.drawImage(scene.pitOverlay.img, scene.pitOverlay.x, scene.pitOverlay.y, scene.pitOverlay.w, scene.pitOverlay.h);
             }
 
-            // 3. TRAIL
             if (config.trail) {
                 state.trail.forEach(t => {
                     const a = (t.life / t.maxLife) * 0.4;
@@ -240,14 +175,12 @@ const RenderEngine = (function () {
                 });
             }
 
-            // 4. ПЕРСОНАЖ
             const p = scene.player;
             if (p.img && p.img.complete && p.img.naturalWidth > 0) {
                 ctx.save();
                 let fallAngle = 0, yOffset = 0, flyTilt = 0;
                 let chewScale = 1.0;
                 if (p.isEating) chewScale = 1.0 + Math.sin(Date.now() / 80) * 0.05;
-
                 if (p.isBarrelFlying) flyTilt = p.tilt;
                 if (p.isTripping) {
                     const fallProgress = Math.min(1, p.tripTimer / 15);
@@ -258,7 +191,6 @@ const RenderEngine = (function () {
                     yOffset = -((p.w - p.h) / 2) * flatAmount;
                     if (Math.floor(p.tripTimer / 10) % 2 === 1) ctx.globalAlpha = 0.5;
                 }
-
                 const centerX = p.x + p.w / 2;
                 const centerY = p.y + p.h / 2 + (p.isJumping ? 0 : (p.isTripping ? yOffset : p.bob));
                 ctx.translate(centerX, centerY);
@@ -272,7 +204,6 @@ const RenderEngine = (function () {
                 ctx.fillRect(p.x, p.y, p.w, p.h);
             }
 
-            // 5. ЕДА
             ctx.save();
             ctx.globalAlpha = 1.0;
             ctx.textBaseline = 'bottom';
@@ -282,7 +213,6 @@ const RenderEngine = (function () {
             });
             ctx.restore();
 
-            // 6. ПРЕПЯТСТВИЯ
             const { images, pickImg } = scene;
             scene.obstacles.forEach(obs => {
                 if (scene.isPitDeath && scene.pitTarget === obs) return;
@@ -301,7 +231,6 @@ const RenderEngine = (function () {
                 }
             });
 
-            // 7. ВЗРЫВЫ
             scene.explosions.forEach(expl => {
                 const progress = expl.timer / expl.maxTimer;
                 const scale = 1 + progress * 0.5;
@@ -324,7 +253,6 @@ const RenderEngine = (function () {
                 }
             });
 
-            // 8. ЧАСТИЦЫ
             if (config.particles) {
                 if (!state.cache.particleSprite) state.cache.particleSprite = makeParticleSprite();
                 const sprite = state.cache.particleSprite;
@@ -351,7 +279,6 @@ const RenderEngine = (function () {
                 });
             }
 
-            // 9. BLOOM
             if (config.bloom) {
                 ctx.save();
                 ctx.globalCompositeOperation = 'lighter';
@@ -378,7 +305,6 @@ const RenderEngine = (function () {
                 ctx.restore();
             }
 
-            // 10. VIGNETTE
             if (config.vignette) {
                 if (!state.cache.vignetteCanvas || state.cache.vignetteCanvas.width !== W) {
                     state.cache.vignetteCanvas = makeVignette(W, H);
@@ -386,13 +312,11 @@ const RenderEngine = (function () {
                 ctx.drawImage(state.cache.vignetteCanvas, 0, 0);
             }
 
-            // 11. HIT FLASH
             if (state.flashAlpha > 0) {
                 ctx.fillStyle = `rgba(${state.flashColor},${state.flashAlpha})`;
                 ctx.fillRect(0, 0, W, H);
             }
 
-            // 12. DEATH FADE
             if (scene.deathFade != null) {
                 ctx.fillStyle = `rgba(0,0,0,${scene.deathFade})`;
                 ctx.fillRect(0, 0, W, H);
@@ -403,7 +327,6 @@ const RenderEngine = (function () {
     };
 })();
 
-// === РЕЕСТР ФОНОВ ===
 const BACKGROUNDS = {
     default: {
         id: 'default', name: 'Forest', emoji: '🌳',
@@ -421,7 +344,6 @@ const BACKGROUNDS = {
     },
 };
 
-// === РЕЕСТР ПЕРСОНАЖЕЙ ===
 const CHARACTERS = {
     crocodile: {
         id: 'crocodile', name: 'Crocodile', emoji: '🐊',
@@ -465,6 +387,10 @@ function Game() {
     });
     const [showSettings, setShowSettings] = useState(false);
 
+    // === COMBO REFS (для плагина) ===
+    const comboRef = useRef(0);
+    const comboMultRef = useRef(1);
+
     useEffect(() => {
         localStorage.setItem('lacosteSettings', JSON.stringify(settings));
         RenderEngine.setQuality(settings.graphics);
@@ -492,7 +418,6 @@ function Game() {
         groundYRef.current = GROUND_Y + (bg.groundOffset || 0);
     }, [background]);
 
-    // === КАДРЫ ПЕРСОНАЖА ===
     const walkFramesRef = useRef([]); 
     const currentFrameRef = useRef(0); 
     const lastFrameTimeRef = useRef(0); 
@@ -528,7 +453,6 @@ function Game() {
         }
     }, [character]);
 
-    // === АУДИО ===
     const pitAudioRef = useRef(null);
     const pitAudioEndedRef = useRef(false);
     const barrelAudioRef = useRef(null);
@@ -639,7 +563,6 @@ function Game() {
         };
     }, []);
     
-    // === ИГРОВЫЕ РЕФЫ ===
     const initChar = CHARACTERS[character] || CHARACTERS.crocodile;
     const initGroundY = GROUND_Y + (BACKGROUNDS[background]?.groundOffset || 0);
     const playerRef = useRef({
@@ -676,7 +599,6 @@ function Game() {
     const isPitDeathDelayRef = useRef(false);
     const pitDeathDelayTimerRef = useRef(0);
 
-    // === СТАТИЧНЫЕ ИЗОБРАЖЕНИЯ ===
     const puddleImg = useRef(new Image());
     const puddleNightImg = useRef(new Image());
     const rockImg = useRef(new Image()); 
@@ -730,6 +652,23 @@ function Game() {
         }
     };
 
+    // === COMBO: эмит для плагина ===
+    const resetCombo = () => {
+        comboRef.current = 0;
+        comboMultRef.current = 1;
+        window.GameEvents.emit('combo_changed', { mult: 0, count: 0 });
+    };
+
+    const addCombo = () => {
+        comboRef.current++;
+        let mult = 1;
+        if (comboRef.current >= 8) mult = 5;
+        else if (comboRef.current >= 5) mult = 3;
+        else if (comboRef.current >= 3) mult = 2;
+        comboMultRef.current = mult;
+        window.GameEvents.emit('combo_changed', { mult: comboRef.current, count: comboRef.current });
+    };
+
     const handleKeyDown = useCallback((e) => {
         if (e.code === 'Escape') {
             e.preventDefault();
@@ -755,6 +694,8 @@ function Game() {
                 p.velocityY = JUMP_FORCE * p.jumpMult;
                 p.isJumping = true;
                 p.isHoldingJump = true;
+                addCombo();
+                window.GameEvents.emit('jump', { x: p.x, y: p.y });
                 RenderEngine.spawnParticles(p.x + p.width / 2, p.y + p.height, 6, {
                     colors: ['#FFFFFF', '#AAAAAA'], speed: 2, life: 20, size: 2, gravity: 0.1
                 });
@@ -791,6 +732,8 @@ function Game() {
             p.velocityY = JUMP_FORCE * p.jumpMult;
             p.isJumping = true;
             p.isHoldingJump = true;
+            addCombo();
+            window.GameEvents.emit('jump', { x: p.x, y: p.y });
             RenderEngine.spawnParticles(p.x + p.width / 2, p.y + p.height, 6, {
                 colors: ['#FFFFFF', '#AAAAAA'], speed: 2, life: 20, size: 2, gravity: 0.1
             });
@@ -844,8 +787,10 @@ function Game() {
         pitAudioEndedRef.current = false;
         if (pitAudioRef.current) { pitAudioRef.current.pause(); pitAudioRef.current.currentTime = 0; }
 
+        resetCombo();
         RenderEngine.reset();
         setScore(0); setSpeedDisplay(1.0); setPowerDisplay(1.0); setGameState('playing');
+        window.GameEvents.emit('game_start', { character, background, timeOfDay, settings: settingsRef.current });
     };
 
     const handleGameOver = () => {
@@ -856,6 +801,7 @@ function Game() {
             const newHigh = Math.floor(distanceRef.current);
             setHighScore(newHigh); localStorage.setItem('lacosteHighScore', newHigh);
         }
+        window.GameEvents.emit('gameover', { distance: Math.floor(distanceRef.current), health: healthRef.current, character, background, timeOfDay });
     };
 
     const handleHit = (index, type) => {
@@ -874,6 +820,8 @@ function Game() {
         RenderEngine.spawnParticles(playerRef.current.x + playerRef.current.width / 2, playerRef.current.y + playerRef.current.height / 2, 15, {
             colors: ['#FF007F', '#FFFFFF'], speed: 4, life: 25, size: 3, gravity: 0.15
         });
+        resetCombo();
+        window.GameEvents.emit('hit', { health: healthRef.current, type });
 
         if (healthRef.current <= 0) { handleGameOver(); return; }
         
@@ -901,6 +849,8 @@ function Game() {
         });
         RenderEngine.shake(12, 20);
         RenderEngine.flash('255,150,0', 0.3);
+        resetCombo();
+        window.GameEvents.emit('barrel_hit', { x: obs.x, y: obs.y });
 
         obstaclesRef.current.splice(index, 1);
         obstaclesRef.current = obstaclesRef.current.filter(o => (o.x + o.width) > p.x && o.x < canvas.width);
@@ -927,17 +877,11 @@ function Game() {
             if (eatFramesRef.current.length > 0) {
                 const totalFrames = (char.eatDuration || 4) * 60;
                 const framesPerStep = totalFrames / eatFramesRef.current.length;
-                eatFrameIdxRef.current = Math.min(
-                    eatFramesRef.current.length - 1,
-                    Math.floor(eatTimerRef.current / framesPerStep)
-                );
+                eatFrameIdxRef.current = Math.min(eatFramesRef.current.length - 1, Math.floor(eatTimerRef.current / framesPerStep));
             }
 
-            if (eatTimerRef.current < 12) {
-                eatSpeedFactorRef.current = 1 - eatTimerRef.current / 12;
-            } else {
-                eatSpeedFactorRef.current = 0;
-            }
+            if (eatTimerRef.current < 12) eatSpeedFactorRef.current = 1 - eatTimerRef.current / 12;
+            else eatSpeedFactorRef.current = 0;
             const eatSpeedFactor = eatSpeedFactorRef.current;
 
             const baseSpeedMultEat = 1.0 + Math.floor(distanceRef.current / 100) * 0.04;
@@ -957,31 +901,21 @@ function Game() {
             explosionsRef.current.forEach(e => e.timer++);
             explosionsRef.current = explosionsRef.current.filter(e => e.timer < e.maxTimer);
 
-            p.isJumping = false;
-            p.velocityY = 0;
-            p.y = gy - p.height;
-            p.tilt = 0;
+            p.isJumping = false; p.velocityY = 0; p.y = gy - p.height; p.tilt = 0;
             p.bob = Math.sin(Date.now() / 150) * 3;
 
             const particleEvery = gfxQuality === 'low' ? 15 : gfxQuality === 'medium' ? 9 : 6;
             if (eatTimerRef.current % particleEvery === 0) {
-                RenderEngine.spawnParticles(
-                    p.x + p.width / 2 + (Math.random() - 0.5) * p.width * 0.3,
-                    p.y + p.height * 0.3,
-                    1,
-                    { colors: ['#4CAF50', '#8BC34A'], speed: 2, life: 45, size: 3, gravity: 0.15, shape: 'leaf' }
-                );
+                RenderEngine.spawnParticles(p.x + p.width / 2 + (Math.random() - 0.5) * p.width * 0.3, p.y + p.height * 0.3, 1, {
+                    colors: ['#4CAF50', '#8BC34A'], speed: 2, life: 45, size: 3, gravity: 0.15, shape: 'leaf'
+                });
             }
 
             const eatDurationFrames = (char.eatDuration || 4) * 60;
             if (eatTimerRef.current >= eatDurationFrames) {
-                isEatingRef.current = false;
-                eatTimerRef.current = 0;
-                eatFrameIdxRef.current = 0;
-                currentFrameRef.current = 0;
-                lastFrameTimeRef.current = Date.now();
-                spawnTimerRef.current = 0;
-                spawnCooldownRef.current = 90;
+                isEatingRef.current = false; eatTimerRef.current = 0; eatFrameIdxRef.current = 0;
+                currentFrameRef.current = 0; lastFrameTimeRef.current = Date.now();
+                spawnTimerRef.current = 0; spawnCooldownRef.current = 90;
             }
             return;
         } else {
@@ -992,7 +926,6 @@ function Game() {
             pitFallTimerRef.current++; pitVelocityRef.current += 0.2; p.y += pitVelocityRef.current;
             if (p.y > gy + 30 || pitFallTimerRef.current > 400) {
                 isFallingIntoPitRef.current = false; isPitDeathDelayRef.current = true; pitDeathDelayTimerRef.current = 0;
-
                 pitAudioEndedRef.current = false;
                 const a = pitAudioRef.current;
                 if (a && settingsRef.current.soundEnabled) {
@@ -1070,7 +1003,6 @@ function Game() {
             if (now - lastFrameTimeRef.current > frameDelay) {
                 currentFrameRef.current = (currentFrameRef.current + 1) % char.frameCount; 
                 lastFrameTimeRef.current = now;
-                // Trail
                 const frames = walkFramesRef.current;
                 const idx = frames.length > 0 ? currentFrameRef.current % frames.length : 0;
                 const trailImg = frames[idx];
@@ -1187,13 +1119,17 @@ function Game() {
                     p.tilt = 0;
                     p.bob = 0;
                 }
+                window.GameEvents.emit('eat', { type: 'normal', emoji: food.emoji });
                 return false; 
             }
             return true;
         });
+
+        if (Math.floor(distanceRef.current) % 5 === 0) {
+            window.GameEvents.emit('world_tick', { distance: distanceRef.current, health: healthRef.current });
+        }
     };
 
-    // === СБОРКА СЦЕНЫ ДЛЯ ДВИЖКА ===
     const describeScene = () => {
         const char = CHARACTERS[character] || CHARACTERS.crocodile;
         const gy = groundYRef.current;
@@ -1219,18 +1155,12 @@ function Game() {
             },
             groundY: gy,
             player: {
-                x: playerRef.current.x,
-                y: playerRef.current.y,
-                w: playerRef.current.width,
-                h: playerRef.current.height,
-                tilt: playerRef.current.tilt,
-                bob: playerRef.current.bob,
-                isJumping: playerRef.current.isJumping,
-                img: charImg,
-                isEating: isEatingRef.current,
-                isTripping: isTrippingRef.current,
-                tripTimer: tripTimerRef.current,
-                isBarrelTrip: isBarrelTripRef.current,
+                x: playerRef.current.x, y: playerRef.current.y,
+                w: playerRef.current.width, h: playerRef.current.height,
+                tilt: playerRef.current.tilt, bob: playerRef.current.bob,
+                isJumping: playerRef.current.isJumping, img: charImg,
+                isEating: isEatingRef.current, isTripping: isTrippingRef.current,
+                tripTimer: tripTimerRef.current, isBarrelTrip: isBarrelTripRef.current,
                 isBarrelFlying: isBarrelFlyingRef.current,
             },
             obstacles: obstaclesRef.current.map(o => ({ x: o.x, y: o.y, w: o.width, h: o.height, type: o.type })),
@@ -1271,6 +1201,7 @@ function Game() {
                 while (accumulatorRef.current >= FRAME_TIME && loops < 5) {
                     updateLogic();
                     RenderEngine.update();
+                    window.GameEvents.emit('tick');
                     accumulatorRef.current -= FRAME_TIME;
                     loops++;
                 }
@@ -1279,6 +1210,7 @@ function Game() {
                 const ctx = canvas.getContext('2d');
                 const scene = describeScene();
                 RenderEngine.draw(ctx, canvas, scene);
+                window.GameEvents.emit('render_frame', { ctx });
                 requestRef.current = requestAnimationFrame(gameLoop);
             };
             requestRef.current = requestAnimationFrame(gameLoop);
@@ -1490,9 +1422,31 @@ function Game() {
                     }, 'RESET')
                 )
             )
+        ),
+
+        // === РЕНДЕР ПЛАГИНОВ (UI из all_in_one.js) ===
+        ...(window.PackUIs || []).map((UI, i) =>
+            React.createElement(UI, { key: 'plugin-' + i, gameState, setGameState })
         )
     );
 }
 
+// === ЗАПУСК С ОЖИДАНИЕМ ПЛАГИНОВ ===
 const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(React.createElement(Game));
+
+function boot() {
+    if (window.__BOOTED__) return;
+    window.__BOOTED__ = true;
+    console.log('%c🎮 Booting React...', 'color:#FF007F;font-weight:bold');
+    root.render(React.createElement(Game));
+}
+
+window.GameBoot.onReady(boot);
+
+// Фоллбэк: если loader.js не подключён — стартуем через 3 секунды
+setTimeout(() => {
+    if (!window.__BOOTED__) {
+        console.warn('⚠️ Loader timeout — booting without plugins');
+        window.GameBoot.trigger();
+    }
+}, 3000);
