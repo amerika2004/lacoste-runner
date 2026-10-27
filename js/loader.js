@@ -1,37 +1,81 @@
 (function () {
     'use strict';
+    const startTime = performance.now();
 
+    // === 1. ПРЕДЗАГРУЗКА КАРТИНОК (не блокирует загрузку скриптов) ===
+    function preloadStaticImages() {
+        if (!window.GameConfig) return;
+        const cfg = window.GameConfig;
+
+        // Фоны
+        Object.values(cfg.BACKGROUNDS).forEach(bg => {
+            new Image().src = bg.dayImg;
+            new Image().src = bg.nightImg;
+        });
+
+        // Препятствия
+        const obstacles = new Set();
+        Object.values(cfg.BACKGROUNDS).forEach(bg => {
+            (bg.obstacleTypes || []).forEach(t => obstacles.add(t));
+        });
+        obstacles.forEach(t => {
+            new Image().src = `source/${t}.png`;
+            new Image().src = `source/${t}_n.png`;
+        });
+
+        // Взрыв
+        new Image().src = 'source/explosion.png';
+        console.log('%c🖼️ Preloading static images...', 'color:#00FFFF');
+    }
+
+    // === 2. ЗАГРУЗКА СКРИПТА ===
+    // async:false = скрипты выполняются строго в порядке добавления,
+    // но браузер СКАЧИВАЕТ их параллельно.
     function loadScript(src) {
         return new Promise((resolve) => {
             const s = document.createElement('script');
             s.src = src;
-            s.async = false; // Критично: гарантирует, что плагины грузятся строго по порядку
-            s.onload = () => { console.log(`✅ Loaded: ${src}`); resolve(); };
-            s.onerror = () => { console.error(`❌ Failed: ${src}`); resolve(); };
+            s.async = false;
+            s.onload = () => {
+                console.log(`%c✅ ${src} (${(performance.now() - startTime).toFixed(0)}ms)`, 'color:#00FF41');
+                resolve();
+            };
+            s.onerror = () => {
+                console.error(`❌ Failed: ${src}`);
+                resolve();
+            };
             document.body.appendChild(s);
         });
     }
 
-    async function loadAll() {
+    // === 3. ГЛАВНЫЙ ЗАПУСК ===
+    async function boot() {
+        // Стартуем предзагрузку картинок СРАЗУ (fire-and-forget)
+        preloadStaticImages();
+
+        // Читаем манифест
         let modules = [];
         try {
-            // Добавляем ?t=..., чтобы браузер не кэшировал старый манифест
             const res = await fetch('js/manifest.json?t=' + Date.now(), { cache: 'no-store' });
             const data = await res.json();
             modules = data.modules || [];
         } catch (e) {
-            console.warn('manifest.json not found, loading without plugins', e);
+            console.warn('⚠️ manifest.json not found', e);
         }
 
-        for (const src of modules) {
-            await loadScript(src);
-        }
+        // Запускаем ВСЕ скрипты параллельно, но они выполнятся по порядку из manifest
+        await Promise.all(modules.map(loadScript));
 
-        console.log('%c🚀 All modules ready! Booting React...', 'color:#00FF41;font-weight:bold');
-        
-        // Даем сигнал движку (game.js), что всё загружено и можно запускать React
-        window.__MODULES_READY__ = true;
+        const elapsed = (performance.now() - startTime).toFixed(0);
+        console.log(`%c🚀 All modules ready in ${elapsed}ms`, 'color:#FFD700;font-weight:bold;font-size:14px');
+
+        // Мгновенный старт React
+        if (window.GameBoot) {
+            window.GameBoot.trigger();
+        } else {
+            window.__MODULES_READY__ = true;
+        }
     }
 
-    loadAll();
+    boot();
 })();
