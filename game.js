@@ -5,10 +5,10 @@ const FLIP_CROC = false;
 const GRAVITY = 0.75;        
 const JUMP_FORCE = -10.5;    
 const HOLD_THRUST = 0.45;    
+
 const GROUND_Y = 530; 
 const BASE_SPEED = 4.0; 
 const SPEED_MULTIPLIER = 0.8;
-const FRAME_COUNT = 12;
 
 const DEFAULT_SETTINGS = {
     sfxVolume: 0.7, ambientVolume: 0.25, masterVolume: 1.0,
@@ -16,30 +16,6 @@ const DEFAULT_SETTINGS = {
     emojiStyle: 'apple',
     comboEnabled: true,
 };
-
-const BACKGROUNDS = {
-    default: { id: 'default', name: 'Forest', emoji: '🌳', dayImg: 'source/landscape.jpg', nightImg: 'source/landscape_n.jpg', groundOffset: 0, obstacleTypes: ['barrel', 'rock', 'cactus', 'puddle', 'pit'], foodEmojis: null },
-    cartoon: { id: 'cartoon', name: 'Cartoon', emoji: '🌲', dayImg: 'source/cartoon_forest.png', nightImg: 'source/cartoon_forest_n.png', groundOffset: 30, obstacleTypes: ['rock', 'puddle', 'pit'], foodEmojis: ['🎋'] },
-};
-
-const CHARACTERS = {
-    crocodile: { id: 'crocodile', name: 'Crocodile', emoji: '🐊', folder: 'source/characters/crocodile', frameCount: 12, baseWidth: 165.4, baseHeight: 110.3, foodEmojis: ['🍗', '🍔', '🍕', '🥩'] },
-    panda: { id: 'panda', name: 'Panda', emoji: '🐼', folder: 'source/characters/panda', frameCount: 20, baseWidth: 160, baseHeight: 120, foodEmojis: ['🎋'], eatEmoji: '🎋', eatFolder: 'source/characters/panda/eating', eatFrameCount: 8, eatDuration: 4.0 },
-};
-
-const FOOD_TYPES = {
-    normal:  { weight: 70, color: '#FFFFFF', emoji: null },
-    golden:  { weight: 15, color: '#FFD700', emoji: '⭐', scoreBonus: 50 },
-    rare:    { weight: 10, color: '#00FFFF', emoji: '💎', healBonus: 2 },
-    poison:  { weight: 5,  color: '#8B00FF', emoji: '☠', speedPenalty: 0.1 },
-};
-
-function pickFoodType() {
-    const r = Math.random() * 100;
-    let acc = 0;
-    for (const [key, val] of Object.entries(FOOD_TYPES)) { acc += val.weight; if (r < acc) return key; }
-    return 'normal';
-}
 
 // ======================= RENDER ENGINE =======================
 const RenderEngine = (function () {
@@ -49,10 +25,8 @@ const RenderEngine = (function () {
         high:   { parallax: true,  bloom: true,  particles: true,  shake: true,  trail: true,  vignette: true,  flash: true,  maxParticles: 500 },
     };
     const state = { quality: 'high', config: QUALITY.high, particles: [], shakeTime: 0, shakeIntensity: 0, flashAlpha: 0, flashColor: '255,0,0', time: 0, trail: [], cache: { vignetteCanvas: null, particleSprite: null } };
-    
     function makeVignette(w, h) { const c = document.createElement('canvas'); c.width = w; c.height = h; const ctx = c.getContext('2d'); const g = ctx.createRadialGradient(w/2, h/2, Math.min(w,h)*0.3, w/2, h/2, Math.max(w,h)*0.7); g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,0.65)'); ctx.fillStyle = g; ctx.fillRect(0, 0, w, h); return c; }
     function makeParticleSprite() { const c = document.createElement('canvas'); c.width = c.height = 16; const ctx = c.getContext('2d'); const g = ctx.createRadialGradient(8, 8, 0, 8, 8, 8); g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.5, 'rgba(255,200,100,0.6)'); g.addColorStop(1, 'rgba(255,100,0,0)'); ctx.fillStyle = g; ctx.fillRect(0, 0, 16, 16); return c; }
-    
     return {
         setQuality(q) { state.quality = q; state.config = QUALITY[q] || QUALITY.high; if (!state.config.particles) state.particles = []; },
         reset() { state.particles = []; state.shakeTime = 0; state.shakeIntensity = 0; state.flashAlpha = 0; state.trail = []; },
@@ -69,6 +43,7 @@ const RenderEngine = (function () {
             ctx.save();
             ctx.translate(shakeX, shakeY);
 
+            // 1. BACKGROUND (parallax)
             const { bg } = scene;
             if (bg.img && bg.img.complete && bg.img.naturalWidth > 0) {
                 const scale = H / bg.img.naturalHeight;
@@ -85,14 +60,17 @@ const RenderEngine = (function () {
                 for (let i = offset; i < W; i += exactWidth) ctx.drawImage(bg.img, i, 0, exactWidth, H);
             } else { ctx.fillStyle = bg.fallbackColor; ctx.fillRect(0, 0, W, H); }
 
+            // 2. PIT OVERLAY
             if (scene.pitOverlay && scene.pitOverlay.img && scene.pitOverlay.img.complete) {
                 ctx.drawImage(scene.pitOverlay.img, scene.pitOverlay.x, scene.pitOverlay.y, scene.pitOverlay.w, scene.pitOverlay.h);
             }
 
+            // 3. TRAIL
             if (config.trail) {
                 state.trail.forEach(t => { const a = (t.life / t.maxLife) * 0.4; ctx.save(); ctx.globalAlpha = a; ctx.drawImage(t.img, t.x, t.y, t.w, t.h); ctx.restore(); });
             }
 
+            // 4. PLAYER
             const p = scene.player;
             if (p.img && p.img.complete && p.img.naturalWidth > 0) {
                 ctx.save();
@@ -119,6 +97,7 @@ const RenderEngine = (function () {
                 ctx.restore();
             } else { ctx.fillStyle = 'red'; ctx.fillRect(p.x, p.y, p.w, p.h); }
 
+            // 5. FOOD (with colored glow for special types)
             ctx.save();
             ctx.globalAlpha = 1.0;
             ctx.textBaseline = 'bottom';
@@ -135,6 +114,7 @@ const RenderEngine = (function () {
             ctx.shadowBlur = 0;
             ctx.restore();
 
+            // 6. OBSTACLES
             const { images, pickImg } = scene;
             scene.obstacles.forEach(obs => {
                 if (scene.isPitDeath && scene.pitTarget === obs) return;
@@ -148,6 +128,7 @@ const RenderEngine = (function () {
                 else { ctx.fillStyle = fallback; ctx.fillRect(obs.x, obs.y, obs.w, obs.h); }
             });
 
+            // 7. EXPLOSIONS
             scene.explosions.forEach(expl => {
                 const progress = expl.timer / expl.maxTimer;
                 const scale = 1 + progress * 0.5;
@@ -164,6 +145,7 @@ const RenderEngine = (function () {
                 }
             });
 
+            // 8. PARTICLES
             if (config.particles) {
                 if (!state.cache.particleSprite) state.cache.particleSprite = makeParticleSprite();
                 const sprite = state.cache.particleSprite;
@@ -178,6 +160,7 @@ const RenderEngine = (function () {
                 });
             }
 
+            // 9. BLOOM
             if (config.bloom) {
                 ctx.save();
                 ctx.globalCompositeOperation = 'lighter';
@@ -193,16 +176,19 @@ const RenderEngine = (function () {
                 ctx.restore();
             }
 
+            // 10. VIGNETTE
             if (config.vignette) {
                 if (!state.cache.vignetteCanvas || state.cache.vignetteCanvas.width !== W) state.cache.vignetteCanvas = makeVignette(W, H);
                 ctx.drawImage(state.cache.vignetteCanvas, 0, 0);
             }
 
+            // 11. FLASH
             if (state.flashAlpha > 0) {
                 ctx.fillStyle = `rgba(${state.flashColor},${state.flashAlpha})`;
                 ctx.fillRect(0, 0, W, H);
             }
 
+            // 12. DEATH FADE
             if (scene.deathFade != null) {
                 ctx.fillStyle = `rgba(0,0,0,${scene.deathFade})`;
                 ctx.fillRect(0, 0, W, H);
@@ -213,12 +199,35 @@ const RenderEngine = (function () {
     };
 })();
 
+// ======================= BACKGROUNDS / CHARACTERS =======================
+const BACKGROUNDS = {
+    default: { id: 'default', name: 'Forest', emoji: '🌳', dayImg: 'source/landscape.jpg', nightImg: 'source/landscape_n.jpg', groundOffset: 0, obstacleTypes: ['barrel', 'rock', 'cactus', 'puddle', 'pit'], foodEmojis: null },
+    cartoon: { id: 'cartoon', name: 'Cartoon', emoji: '🌲', dayImg: 'source/cartoon_forest.png', nightImg: 'source/cartoon_forest_n.png', groundOffset: 30, obstacleTypes: ['rock', 'puddle', 'pit'], foodEmojis: ['🎋'] },
+};
+
+const CHARACTERS = {
+    crocodile: { id: 'crocodile', name: 'Crocodile', emoji: '🐊', folder: 'source/characters/crocodile', frameCount: 12, baseWidth: 165.4, baseHeight: 110.3, foodEmojis: ['🍗', '🍔', '🍕', '🥩'] },
+    panda: { id: 'panda', name: 'Panda', emoji: '🐼', folder: 'source/characters/panda', frameCount: 20, baseWidth: 160, baseHeight: 120, foodEmojis: ['🎋'], eatEmoji: '🎋', eatFolder: 'source/characters/panda/eating', eatFrameCount: 8, eatDuration: 4.0 },
+};
+
+const FOOD_TYPES = {
+    normal:  { weight: 70, color: '#FFFFFF', emoji: null },
+    golden:  { weight: 15, color: '#FFD700', emoji: '⭐', scoreBonus: 50 },
+    rare:    { weight: 10, color: '#00FFFF', emoji: '💎', healBonus: 2 },
+    poison:  { weight: 5,  color: '#8B00FF', emoji: '☠', speedPenalty: 0.1 },
+};
+function pickFoodType() {
+    const r = Math.random() * 100;
+    let acc = 0;
+    for (const [key, val] of Object.entries(FOOD_TYPES)) { acc += val.weight; if (r < acc) return key; }
+    return 'normal';
+}
+
 function Game() {
     const [gameState, setGameState] = useState('menu');
     const [timeOfDay, setTimeOfDay] = useState(() => localStorage.getItem('lacosteTimeOfDay') || 'day');
     const [background, setBackground] = useState(() => { const s = localStorage.getItem('lacosteBackground'); return (s && BACKGROUNDS[s]) ? s : 'default'; });
     const [character, setCharacter] = useState(() => { const s = localStorage.getItem('lacosteCharacter'); return (s && CHARACTERS[s]) ? s : 'crocodile'; });
-    
     const [score, setScore] = useState(0);
     const [speedDisplay, setSpeedDisplay] = useState(1.0);
     const [powerDisplay, setPowerDisplay] = useState(1.0);
@@ -226,13 +235,18 @@ function Game() {
     const [highScore, setHighScore] = useState(() => parseInt(localStorage.getItem('lacosteHighScore')) || 0);
     const [comboDisplay, setComboDisplay] = useState({ mult: 1, count: 0 });
 
-    const [settings, setSettings] = useState(() => {
-        try { const s = JSON.parse(localStorage.getItem('lacosteSettings') || '{}'); return { ...DEFAULT_SETTINGS, ...s, comboEnabled: s.comboEnabled !== false }; } 
-        catch { return { ...DEFAULT_SETTINGS }; }
-    });
+    const [settings, setSettings] = useState(() => { try { const s = JSON.parse(localStorage.getItem('lacosteSettings') || '{}'); return { ...DEFAULT_SETTINGS, ...s }; } catch { return { ...DEFAULT_SETTINGS }; } });
     const [showSettings, setShowSettings] = useState(false);
 
+    useEffect(() => {
+        localStorage.setItem('lacosteSettings', JSON.stringify(settings));
+        RenderEngine.setQuality(settings.graphics);
+        document.body.className = `emoji-${settings.emojiStyle}`;
+    }, [settings]);
+
     const settingsRef = useRef(settings);
+    useEffect(() => { settingsRef.current = settings; }, [settings]);
+
     const canvasRef = useRef(null);
     const requestRef = useRef();
     const timeOfDayRef = useRef(timeOfDay);
@@ -241,8 +255,54 @@ function Game() {
 
     useEffect(() => { timeOfDayRef.current = timeOfDay; localStorage.setItem('lacosteTimeOfDay', timeOfDay); }, [timeOfDay]);
     useEffect(() => { backgroundRef.current = background; localStorage.setItem('lacosteBackground', background); const bg = BACKGROUNDS[background] || BACKGROUNDS.default; groundYRef.current = GROUND_Y + (bg.groundOffset || 0); }, [background]);
-    useEffect(() => { localStorage.setItem('lacosteSettings', JSON.stringify(settings)); RenderEngine.setQuality(settings.graphics); document.body.className = `emoji-${settings.emojiStyle}`; settingsRef.current = settings; }, [settings]);
 
+    // Frames
+    const walkFramesRef = useRef([]); const currentFrameRef = useRef(0); const lastFrameTimeRef = useRef(0);
+    const eatFramesRef = useRef([]); const eatFrameIdxRef = useRef(0); const isEatingRef = useRef(false); const eatTimerRef = useRef(0); const eatSpeedFactorRef = useRef(1.0);
+
+    useEffect(() => {
+        localStorage.setItem('lacosteCharacter', character);
+        walkFramesRef.current = []; currentFrameRef.current = 0; eatFramesRef.current = []; eatFrameIdxRef.current = 0;
+        isEatingRef.current = false; eatTimerRef.current = 0; eatSpeedFactorRef.current = 1.0;
+        const char = CHARACTERS[character] || CHARACTERS.crocodile;
+        for (let i = 1; i <= char.frameCount; i++) { const img = new Image(); img.src = `${char.folder}/${i}.png`; walkFramesRef.current.push(img); }
+        if (char.eatFolder && char.eatFrameCount) { for (let i = 1; i <= char.eatFrameCount; i++) { const img = new Image(); img.src = `${char.eatFolder}/${i}.png`; eatFramesRef.current.push(img); } }
+    }, [character]);
+
+    // Audio
+    const pitAudioRef = useRef(null); const pitAudioEndedRef = useRef(false);
+    const barrelAudioRef = useRef(null); const splashAudioRef = useRef(null); const jumpAudioRef = useRef(null);
+    const nightAmbientRef = useRef(null); const dayAmbientRef = useRef(null);
+
+    useEffect(() => {
+        const pitAudio = new Audio('source/sounds/fall_in_pit.wav'); pitAudio.preload = 'auto'; pitAudioRef.current = pitAudio;
+        const barrelAudio = new Audio('source/sounds/barrel_explosion.wav'); barrelAudio.preload = 'auto'; barrelAudioRef.current = barrelAudio;
+        const splashAudio = new Audio('source/sounds/splash.wav'); splashAudio.preload = 'auto'; splashAudio.playbackRate = 1.2; splashAudioRef.current = splashAudio;
+        const jumpAudio = new Audio('source/sounds/jump.wav'); jumpAudio.preload = 'auto'; jumpAudioRef.current = jumpAudio;
+        const nightAmbient = new Audio('source/sounds/night_forest.mp3'); nightAmbient.loop = true; nightAmbient.preload = 'auto'; nightAmbientRef.current = nightAmbient;
+        const dayAmbient = new Audio('source/sounds/forest_day.wav'); dayAmbient.loop = true; dayAmbient.preload = 'auto'; dayAmbientRef.current = dayAmbient;
+        return () => { pitAudio.pause(); pitAudio.src = ''; barrelAudio.pause(); barrelAudio.src = ''; splashAudio.pause(); splashAudio.src = ''; jumpAudio.pause(); jumpAudio.src = ''; nightAmbient.pause(); nightAmbient.src = ''; dayAmbient.pause(); dayAmbient.src = ''; };
+    }, []);
+
+    useEffect(() => {
+        const s = settings;
+        [pitAudioRef, barrelAudioRef, splashAudioRef, jumpAudioRef].forEach(ref => { if (ref.current) ref.current.volume = s.soundEnabled ? s.sfxVolume * s.masterVolume : 0; });
+        [nightAmbientRef, dayAmbientRef].forEach(ref => { if (ref.current) ref.current.volume = s.soundEnabled ? s.ambientVolume * s.masterVolume : 0; });
+    }, [settings]);
+
+    useEffect(() => {
+        const isPaused = gameState === 'paused' || showSettings || gameState === 'menu' || gameState === 'gameover';
+        if (isPaused) { if (pitAudioRef.current) pitAudioRef.current.pause(); if (barrelAudioRef.current) barrelAudioRef.current.pause(); if (splashAudioRef.current) splashAudioRef.current.pause(); if (jumpAudioRef.current) jumpAudioRef.current.pause(); if (nightAmbientRef.current) nightAmbientRef.current.pause(); if (dayAmbientRef.current) dayAmbientRef.current.pause(); }
+        else if (settingsRef.current.soundEnabled && gameState === 'playing') { if (timeOfDayRef.current === 'night' && nightAmbientRef.current) nightAmbientRef.current.play().catch(() => {}); else if (timeOfDayRef.current === 'day' && dayAmbientRef.current) dayAmbientRef.current.play().catch(() => {}); }
+    }, [gameState, showSettings]);
+
+    useEffect(() => {
+        const tryPlay = () => { if (!settingsRef.current.soundEnabled || gameState !== 'playing' || showSettings) return; if (timeOfDayRef.current === 'night') { const n = nightAmbientRef.current; if (n && n.paused) n.play().catch(() => {}); } else { const d = dayAmbientRef.current; if (d && d.paused) d.play().catch(() => {}); } };
+        tryPlay(); window.addEventListener('pointerdown', tryPlay, { once: true }); window.addEventListener('keydown', tryPlay, { once: true });
+        return () => { window.removeEventListener('pointerdown', tryPlay); window.removeEventListener('keydown', tryPlay); };
+    }, []);
+
+    // Game refs
     const initChar = CHARACTERS[character] || CHARACTERS.crocodile;
     const initGroundY = GROUND_Y + (BACKGROUNDS[background]?.groundOffset || 0);
     const playerRef = useRef({ x: 100, y: initGroundY - initChar.baseHeight, width: initChar.baseWidth, height: initChar.baseHeight, velocityY: 0, isJumping: false, isHoldingJump: false, jumpMult: 1.0, tilt: 0, bob: 0, foodEaten: 0, foodTarget: 1 });
@@ -254,10 +314,7 @@ function Game() {
     const isPitDeathDelayRef = useRef(false); const pitDeathDelayTimerRef = useRef(0);
     const comboRef = useRef(0); const comboMultRef = useRef(1);
 
-    const walkFramesRef = useRef([]); const currentFrameRef = useRef(0); const lastFrameTimeRef = useRef(0);
-    const eatFramesRef = useRef([]); const eatFrameIdxRef = useRef(0); const isEatingRef = useRef(false); const eatTimerRef = useRef(0); const eatSpeedFactorRef = useRef(1.0);
-
-    const landscapeImg = useRef(new Image()); const landscapeNightImg = useRef(new Image());
+    // Images
     const puddleImg = useRef(new Image()); const puddleNightImg = useRef(new Image());
     const rockImg = useRef(new Image()); const rockNightImg = useRef(new Image());
     const pitImg = useRef(new Image()); const pitNightImg = useRef(new Image());
@@ -266,46 +323,33 @@ function Game() {
     const explosionImg = useRef(new Image());
     const backgroundImagesRef = useRef({});
 
-    useEffect(() => {
-        for (let i = 1; i <= FRAME_COUNT; i++) { const img = new Image(); img.src = `source/walk_animation/${i}.png`; walkFramesRef.current.push(img); }
-        landscapeImg.current.src = 'source/landscape.jpg'; landscapeNightImg.current.src = 'source/landscape_n.jpg';
-        puddleImg.current.src = 'source/puddle.png'; puddleNightImg.current.src = 'source/puddle_n.png';
-        rockImg.current.src = 'source/rock.png'; rockNightImg.current.src = 'source/rock_n.png';
-        pitImg.current.src = 'source/pit.png'; pitNightImg.current.src = 'source/pit_n.png';
-        barrelImg.current.src = 'source/barrel.png'; barrelNightImg.current.src = 'source/barrel_n.png';
-        cactusImg.current.src = 'source/cactus.png'; cactusNightImg.current.src = 'source/cactus_n.png';
-        explosionImg.current.src = 'source/explosion.png';
-    }, []);
-
-    useEffect(() => {
-        Object.values(BACKGROUNDS).forEach(bg => { const day = new Image(); day.src = bg.dayImg; const night = new Image(); night.src = bg.nightImg; backgroundImagesRef.current[bg.id] = { day, night }; });
-    }, []);
-
-    const pitAudioRef = useRef(null); const pitAudioEndedRef = useRef(false); const barrelAudioRef = useRef(null); const splashAudioRef = useRef(null); const jumpAudioRef = useRef(null);
-    const nightAmbientRef = useRef(null); const dayAmbientRef = useRef(null);
-
-    useEffect(() => {
-        pitAudioRef.current = new Audio('source/sounds/fall_in_pit.wav');
-        barrelAudioRef.current = new Audio('source/sounds/barrel_explosion.wav');
-        splashAudioRef.current = new Audio('source/sounds/splash.wav'); splashAudioRef.current.playbackRate = 1.2;
-        jumpAudioRef.current = new Audio('source/sounds/jump.wav');
-        nightAmbientRef.current = new Audio('source/sounds/night_forest.mp3'); nightAmbientRef.current.loop = true;
-        dayAmbientRef.current = new Audio('source/sounds/forest_day.wav'); dayAmbientRef.current.loop = true;
-    }, []);
+    useEffect(() => { Object.values(BACKGROUNDS).forEach(bg => { const day = new Image(); day.src = bg.dayImg; const night = new Image(); night.src = bg.nightImg; backgroundImagesRef.current[bg.id] = { day, night }; }); }, []);
+    useEffect(() => { puddleImg.current.src = 'source/puddle.png'; puddleNightImg.current.src = 'source/puddle_n.png'; rockImg.current.src = 'source/rock.png'; rockNightImg.current.src = 'source/rock_n.png'; pitImg.current.src = 'source/pit.png'; pitNightImg.current.src = 'source/pit_n.png'; barrelImg.current.src = 'source/barrel.png'; barrelNightImg.current.src = 'source/barrel_n.png'; cactusImg.current.src = 'source/cactus.png'; cactusNightImg.current.src = 'source/cactus_n.png'; explosionImg.current.src = 'source/explosion.png'; }, []);
 
     const calculateJumpMultiplier = (playerHeight, gameSpeed, penalty = 1.0) => { const char = CHARACTERS[character] || CHARACTERS.crocodile; const sizeFactor = Math.sqrt(playerHeight / char.baseHeight); const speedFactor = 1 + (gameSpeed - 1) * 0.10; return Math.max(1.0, sizeFactor * speedFactor * penalty); };
     const toggleFullscreen = () => { if (!document.fullscreenElement) { document.documentElement.requestFullscreen().catch((err) => console.warn("Fullscreen error:", err)); if (screen.orientation && screen.orientation.lock) { screen.orientation.lock('landscape').catch((err) => console.warn("Orientation lock error:", err)); } } else { if (document.exitFullscreen) document.exitFullscreen(); } };
 
     const resetCombo = () => { comboRef.current = 0; comboMultRef.current = 1; setComboDisplay({ mult: 1, count: 0 }); };
-    const addCombo = () => { if (!settingsRef.current.comboEnabled) return; comboRef.current++; let mult = 1; if (comboRef.current >= 8) mult = 5; else if (comboRef.current >= 5) mult = 3; else if (comboRef.current >= 3) mult = 2; comboMultRef.current = mult; setComboDisplay({ mult, count: comboRef.current }); };
+    const addCombo = () => {
+        if (!settingsRef.current.comboEnabled) return;
+        comboRef.current++;
+        let mult = 1;
+        if (comboRef.current >= 8) mult = 5;
+        else if (comboRef.current >= 5) mult = 3;
+        else if (comboRef.current >= 3) mult = 2;
+        comboMultRef.current = mult;
+        setComboDisplay({ mult, count: comboRef.current });
+    };
 
     const doJump = (p) => {
         if (p.isJumping || isTrippingRef.current || isFallingIntoPitRef.current || isPitDeathDelayRef.current || isBarrelFlyingRef.current || isEatingRef.current) return;
         const baseMult = 1.0 + Math.floor(distanceRef.current / 100) * 0.04;
         p.jumpMult = calculateJumpMultiplier(p.height, baseMult, speedPenaltyRef.current);
-        p.velocityY = JUMP_FORCE * p.jumpMult; p.isJumping = true; p.isHoldingJump = true;
+        p.velocityY = JUMP_FORCE * p.jumpMult;
+        p.isJumping = true; p.isHoldingJump = true;
         addCombo();
         if (jumpAudioRef.current && settingsRef.current.soundEnabled) { jumpAudioRef.current.currentTime = 0; jumpAudioRef.current.play().catch(() => {}); }
+        if (navigator.vibrate) navigator.vibrate(15);
         RenderEngine.spawnParticles(p.x + p.width / 2, p.y + p.height, 6, { colors: ['#FFFFFF', '#AAAAAA'], speed: 2, life: 20, size: 2, gravity: 0.1 });
     };
 
@@ -346,8 +390,11 @@ function Game() {
     const handleHit = (index, type) => {
         if (isTrippingRef.current) return;
         obstaclesRef.current.splice(index, 1); healthRef.current -= 1; setHealth(healthRef.current);
-        if (type === 'puddle' && splashAudioRef.current && settingsRef.current.soundEnabled) { splashAudioRef.current.currentTime = 0; splashAudioRef.current.play().catch(() => {}); }
-        RenderEngine.flash('255,0,0', 0.4); RenderEngine.shake(6, 12); resetCombo();
+        if (type === 'puddle' && splashAudioRef.current && settingsRef.current.soundEnabled) { splashAudioRef.current.currentTime = 0; splashAudioRef.current.playbackRate = 1.2; splashAudioRef.current.play().catch(() => {}); }
+        RenderEngine.flash('255,0,0', 0.4); RenderEngine.shake(6, 12);
+        RenderEngine.spawnParticles(playerRef.current.x + playerRef.current.width / 2, playerRef.current.y + playerRef.current.height / 2, 15, { colors: ['#FF007F', '#FFFFFF'], speed: 4, life: 25, size: 3, gravity: 0.15 });
+        resetCombo();
+        if (navigator.vibrate) navigator.vibrate([30, 50, 30]);
         if (healthRef.current <= 0) { handleGameOver(); return; }
         isTrippingRef.current = true; tripTimerRef.current = 0; isBarrelTripRef.current = false;
         const p = playerRef.current; p.y = groundYRef.current - p.height; p.velocityY = 0; p.isJumping = false; p.tilt = 0;
@@ -361,7 +408,9 @@ function Game() {
         explosionsRef.current.push({ x: obs.x + obs.width / 2, y: obs.y + obs.height / 2, size: obs.height * 6, timer: 0, maxTimer: 30 });
         if (barrelAudioRef.current && settingsRef.current.soundEnabled) { barrelAudioRef.current.currentTime = 0; barrelAudioRef.current.play().catch(() => {}); }
         RenderEngine.spawnParticles(obs.x + obs.width / 2, obs.y + obs.height / 2, 30, { colors: ['#FF007F', '#FFD700', '#FFAA00', '#FFFFFF'], speed: 8, life: 40, size: 5, gravity: 0.2, shape: 'circle' });
-        RenderEngine.shake(12, 20); RenderEngine.flash('255,150,0', 0.3); resetCombo();
+        RenderEngine.shake(12, 20); RenderEngine.flash('255,150,0', 0.3);
+        resetCombo();
+        if (navigator.vibrate) navigator.vibrate([40, 60, 40]);
         obstaclesRef.current.splice(index, 1); obstaclesRef.current = obstaclesRef.current.filter(o => (o.x + o.width) > p.x && o.x < canvas.width); foodsRef.current = foodsRef.current.filter(f => f.x < canvas.width);
         spawnCooldownRef.current = 90; spawnTimerRef.current = 0; isBarrelFlyingRef.current = true; isBarrelTripRef.current = true; barrelFlyVelocityYRef.current = -20;
         p.velocityY = 0; p.isJumping = false; p.isHoldingJump = false; p.tilt = 0;
@@ -394,12 +443,13 @@ function Game() {
 
         if (isFallingIntoPitRef.current) {
             pitFallTimerRef.current++; pitVelocityRef.current += 0.2; p.y += pitVelocityRef.current;
-            if (p.y > gy + 30 || pitFallTimerRef.current > 400) { isFallingIntoPitRef.current = false; isPitDeathDelayRef.current = true; pitDeathDelayTimerRef.current = 0; if (pitAudioRef.current && settingsRef.current.soundEnabled) pitAudioRef.current.play().catch(() => {}); }
+            if (p.y > gy + 30 || pitFallTimerRef.current > 400) { isFallingIntoPitRef.current = false; isPitDeathDelayRef.current = true; pitDeathDelayTimerRef.current = 0; pitAudioEndedRef.current = false; const a = pitAudioRef.current; if (a && settingsRef.current.soundEnabled) { a.currentTime = 0; a.onended = () => { pitAudioEndedRef.current = true; }; a.onerror = () => { pitAudioEndedRef.current = true; }; a.play().catch(() => { pitAudioEndedRef.current = true; }); } else pitAudioEndedRef.current = true; }
             return;
         }
         if (isPitDeathDelayRef.current) {
             pitDeathDelayTimerRef.current++;
-            if (pitDeathDelayTimerRef.current > 180) { isPitDeathDelayRef.current = false; handleGameOver(); return; }
+            const audioDone = pitAudioEndedRef.current || !pitAudioRef.current || !settingsRef.current.soundEnabled;
+            if ((audioDone && pitDeathDelayTimerRef.current > 20) || pitDeathDelayTimerRef.current > 600) { isPitDeathDelayRef.current = false; handleGameOver(); return; }
             return;
         }
         if (isBarrelFlyingRef.current) {
@@ -416,6 +466,7 @@ function Game() {
             if (pendingBarrelDamageRef.current && tripTimerRef.current >= 15) { pendingBarrelDamageRef.current = false; healthRef.current -= 1; setHealth(healthRef.current); speedPenaltyRef.current = speedPenaltyRef.current * 0.65; if (healthRef.current <= 0) { handleGameOver(); return; } }
             if (tripTimerRef.current > 120) { isTrippingRef.current = false; tripTimerRef.current = 0; }
         }
+
         explosionsRef.current.forEach(e => e.timer++); explosionsRef.current = explosionsRef.current.filter(e => e.timer < e.maxTimer);
 
         const baseSpeedMult = 1.0 + Math.floor(distanceRef.current / 100) * 0.04;
@@ -424,7 +475,8 @@ function Game() {
         if (!isTrippingRef.current) {
             currentSpeed = BASE_SPEED * effectiveSpeedMult * diffMult * eatSpeedFactorRef.current;
             setSpeedDisplay((effectiveSpeedMult * diffMult * eatSpeedFactorRef.current).toFixed(2));
-            distanceRef.current += (currentSpeed * 0.03 * comboMultRef.current); setScore(Math.floor(distanceRef.current)); bgOffsetRef.current -= currentSpeed;
+            distanceRef.current += (currentSpeed * 0.03 * comboMultRef.current);
+            setScore(Math.floor(distanceRef.current)); bgOffsetRef.current -= currentSpeed;
         } else setSpeedDisplay("0.00");
 
         const currentPower = calculateJumpMultiplier(p.height, baseSpeedMult, speedPenaltyRef.current); setPowerDisplay(currentPower.toFixed(2));
@@ -464,6 +516,7 @@ function Game() {
                     spawnTimerRef.current = 0;
                 }
             }
+
             const foodList = bgConfig.foodEmojis || char.foodEmojis || ['🍗', '🍔', '🍕', '🥩'];
             const foodMult = char.eatFolder ? 3.0 : 1.0;
             foodTimerRef.current += (currentSpeed / BASE_SPEED);
@@ -496,7 +549,7 @@ function Game() {
                 else if (obs.type === 'pit') { const w = obs.width * 0.5, h = obs.height * 0.5; obsHitboxX = obs.x + (obs.width - w) / 2 + obs.width * 0.35; obsHitboxWidth = w; obsHitboxY = obs.y + (obs.height - h) / 2; obsHitboxHeight = h; }
                 else if (obs.type === 'cactus') { const pad = obs.width * 0.3; obsHitboxX = obs.x + pad; obsHitboxWidth = obs.width - pad * 2; }
                 if (hitboxX < obsHitboxX + obsHitboxWidth && hitboxX + hitboxWidth > obsHitboxX && hitboxY < obsHitboxY + obsHitboxHeight && hitboxY + hitboxHeight > obsHitboxY) {
-                    if (obs.type === 'pit') { isFallingIntoPitRef.current = true; pitTargetRef.current = obs; pitFallTimerRef.current = 0; pitVelocityRef.current = 0; p.velocityY = 0; p.isJumping = false; p.isHoldingJump = false; return; }
+                    if (obs.type === 'pit') { isFallingIntoPitRef.current = true; pitTargetRef.current = obs; pitFallTimerRef.current = 0; pitVelocityRef.current = 0; p.velocityY = 0; p.isJumping = false; p.isHoldingJump = false; RenderEngine.spawnParticles(obs.x + obs.width / 2, gy, 20, { colors: ['#FF007F', '#FFD700', '#888888'], speed: 4, life: 30, size: 3, gravity: 0.2 }); RenderEngine.shake(10, 15); return; }
                     else if (obs.type === 'barrel') { handleBarrelHit(i); break; }
                     else { handleHit(i, obs.type); break; }
                 }
@@ -507,18 +560,17 @@ function Game() {
             const hitboxX = p.x + 20; const hitboxY = p.y + 20; const hitboxWidth = p.width - 40; const hitboxHeight = p.height - 20;
             if (hitboxX < food.x + food.width && hitboxX + hitboxWidth > food.x && hitboxY < food.y + food.height && hitboxY + hitboxHeight > food.y) {
                 const isEatTrigger = char.eatEmoji && food.baseEmoji === char.eatEmoji && !isTrippingRef.current;
-                if (food.type === 'golden') { distanceRef.current += 50; }
-                else if (food.type === 'rare') { healthRef.current = Math.min(6, healthRef.current + 2); setHealth(healthRef.current); }
-                else if (food.type === 'poison') { speedPenaltyRef.current = speedPenaltyRef.current * 0.9; }
-                else { p.foodEaten++; if (p.foodEaten >= p.foodTarget) { p.width += 2; p.height += 1.3; p.y = gy - p.height; p.foodEaten = 0; p.foodTarget = p.foodTarget + 1; healthRef.current = Math.min(6, healthRef.current + 1); setHealth(healthRef.current); } }
+                if (food.type === 'golden') { distanceRef.current += 50; RenderEngine.spawnParticles(food.x + 20, food.y + 20, 15, { colors: ['#FFD700', '#FFFFFF'], speed: 5, life: 30, size: 4 }); }
+                else if (food.type === 'rare') { healthRef.current = Math.min(6, healthRef.current + 2); setHealth(healthRef.current); RenderEngine.spawnParticles(food.x + 20, food.y + 20, 15, { colors: ['#00FFFF', '#FFFFFF'], speed: 5, life: 30, size: 4 }); }
+                else if (food.type === 'poison') { speedPenaltyRef.current = speedPenaltyRef.current * 0.9; RenderEngine.spawnParticles(food.x + 20, food.y + 20, 15, { colors: ['#8B00FF', '#FF007F'], speed: 5, life: 30, size: 4 }); }
+                else { p.foodEaten++; if (p.foodEaten >= p.foodTarget) { p.width += 2; p.height += 1.3; p.y = gy - p.height; p.foodEaten = 0; p.foodTarget = p.foodTarget + 1; healthRef.current = Math.min(6, healthRef.current + 1); setHealth(healthRef.current); RenderEngine.spawnParticles(p.x + p.width / 2, p.y + p.height / 2, 12, { colors: ['#FFD700', '#FFFFFF'], speed: 3, life: 30, size: 3, gravity: 0.1 }); } }
                 if (isEatTrigger) { isEatingRef.current = true; eatTimerRef.current = 0; eatFrameIdxRef.current = 0; p.y = gy - p.height; p.velocityY = 0; p.isJumping = false; p.isHoldingJump = false; p.tilt = 0; p.bob = 0; }
                 return false;
             }
             return true;
         });
     };
-
-    const describeScene = () => {
+        const describeScene = () => {
         const char = CHARACTERS[character] || CHARACTERS.crocodile;
         const gy = groundYRef.current;
         const bgConfig = BACKGROUNDS[backgroundRef.current] || BACKGROUNDS.default;
@@ -537,27 +589,33 @@ function Game() {
             pitOverlay: (isFallingIntoPitRef.current || isPitDeathDelayRef.current) && pitTargetRef.current ? { x: pitTargetRef.current.x, y: pitTargetRef.current.y, w: pitTargetRef.current.width, h: pitTargetRef.current.height, img: pickImg(pitImg, pitNightImg) } : null,
             isPitDeath: isFallingIntoPitRef.current || isPitDeathDelayRef.current,
             pitTarget: pitTargetRef.current,
-            deathFade: isPitDeathDelayRef.current ? Math.min(1, pitDeathDelayTimerRef.current / 180) : null,
+            deathFade: isPitDeathDelayRef.current ? Math.min(1, (pitAudioRef.current && isFinite(pitAudioRef.current.duration) && pitAudioRef.current.duration > 0.1 && settingsRef.current.soundEnabled) ? pitAudioRef.current.currentTime / pitAudioRef.current.duration : pitDeathDelayTimerRef.current / 180) : null,
             images: { puddleImg, puddleNightImg, rockImg, rockNightImg, pitImg, pitNightImg, barrelImg, barrelNightImg, cactusImg, cactusNightImg, explosionImg },
             pickImg,
         };
     };
 
-    const lastTimeRef = useRef(0); const accumulatorRef = useRef(0);
+    const lastTimeRef = useRef(0);
+    const accumulatorRef = useRef(0);
 
     useEffect(() => {
         if (gameState === 'playing') {
-            lastTimeRef.current = performance.now(); accumulatorRef.current = 0;
+            lastTimeRef.current = performance.now();
+            accumulatorRef.current = 0;
             const gameLoop = (time) => {
                 if (gameState !== 'playing') return;
-                let deltaTime = time - lastTimeRef.current; lastTimeRef.current = time;
+                let deltaTime = time - lastTimeRef.current;
+                lastTimeRef.current = time;
                 if (deltaTime > 250) deltaTime = 250;
                 accumulatorRef.current += deltaTime;
-                const FRAME_TIME = 1000 / 60; let loops = 0;
+                const FRAME_TIME = 1000 / 60;
+                let loops = 0;
                 while (accumulatorRef.current >= FRAME_TIME && loops < 5) { updateLogic(); RenderEngine.update(); accumulatorRef.current -= FRAME_TIME; loops++; }
                 if (gameState !== 'playing') return;
-                const canvas = canvasRef.current; const ctx = canvas.getContext('2d');
-                const scene = describeScene(); RenderEngine.draw(ctx, canvas, scene);
+                const canvas = canvasRef.current;
+                const ctx = canvas.getContext('2d');
+                const scene = describeScene();
+                RenderEngine.draw(ctx, canvas, scene);
                 requestRef.current = requestAnimationFrame(gameLoop);
             };
             requestRef.current = requestAnimationFrame(gameLoop);
@@ -569,31 +627,165 @@ function Game() {
     const formatScore = (num) => num.toString().padStart(5, '0');
     const getHearts = () => { let h = []; for (let i = 0; i < 3; i++) { if (health >= (i + 1) * 2) h.push('❤️'); else if (health === i * 2 + 1) h.push('💔'); else h.push('🖤'); } return h.join(' '); };
 
+    const renderCharacterPanel = () => React.createElement('div', { className: 'char-panel' },
+        React.createElement('div', { className: 'char-panel-title' }, 'Hero'),
+        Object.values(CHARACTERS).map(char => React.createElement('button', { key: char.id, className: `char-btn ${character === char.id ? 'active' : ''}`, onClick: () => setCharacter(char.id), title: char.name },
+            React.createElement('span', { className: 'char-emoji' }, char.emoji || '❓'),
+            React.createElement('span', { className: 'char-name' }, char.name)
+        ))
+    );
+
+    const renderBackgroundPanel = () => React.createElement('div', { className: 'settings', style: { marginTop: '-5px' } },
+        Object.values(BACKGROUNDS).map(bg => React.createElement('button', { key: bg.id, className: `btn ${background === bg.id ? 'active' : ''}`, onClick: () => setBackground(bg.id) }, `${bg.emoji} ${bg.name}`))
+    );
+
     return React.createElement('div', { id: 'game-container' },
+
         (gameState === 'playing' || gameState === 'paused') ? React.createElement(React.Fragment, null,
-            React.createElement('div', { className: 'hud-left' }, React.createElement('span', null, `DIST: ${score}m`), React.createElement('span', { style: { fontSize: '24px' } }, getHearts())),
-            React.createElement('div', { className: 'hud-right' }, React.createElement('span', null, `HI ${formatScore(highScore)}`)),
-            comboDisplay.mult > 1 ? React.createElement('div', { className: `combo-indicator combo-x${comboDisplay.mult}` }, `COMBO x${comboDisplay.mult}`) : null
+            React.createElement('div', { className: 'hud-left' },
+                React.createElement('span', null, `FOOD: ${playerRef.current.foodEaten} / ${playerRef.current.foodTarget}`),
+                React.createElement('span', { style: { fontSize: 'clamp(14px, 2.5vmin, 24px)', letterSpacing: '2px' } }, getHearts())
+            ),
+            React.createElement('div', { className: 'hud-right' },
+                React.createElement('span', { style: {color: '#FFD700'} }, `PWR x${powerDisplay}`),
+                React.createElement('span', { style: {color: '#FF00FF'} }, `${speedDisplay === 'REVERSE' ? '◄◄ REV' : `SPD x${speedDisplay}`}`),
+                React.createElement('span', null, `HI ${formatScore(highScore)}  ${formatScore(score)}m`)
+            ),
+            comboDisplay.mult > 1 ? React.createElement('div', { key: comboDisplay.count, className: `combo-indicator combo-x${comboDisplay.mult}` }, `COMBO x${comboDisplay.mult}  ${comboDisplay.count}`) : null
         ) : null,
 
         React.createElement('canvas', { ref: canvasRef, width: 1200, height: 600 }),
 
+        gameState === 'playing' ? React.createElement(React.Fragment, null,
+            React.createElement('button', { id: 'btn-fullscreen', className: 'game-btn', onClick: toggleFullscreen, 'aria-label': 'Fullscreen' }, '⛶'),
+            React.createElement('button', { id: 'btn-pause', className: 'game-btn', onClick: () => setGameState('paused'), 'aria-label': 'Pause' }, '❚❚')
+        ) : null,
+
         gameState === 'menu' ? React.createElement('div', { className: 'menu-overlay' },
-            React.createElement('div', { className: 'title' }, 'LACOSTE RUNNER'),
-            React.createElement('button', { className: 'btn btn-start', onClick: startGame }, 'START ESCAPE')
+            // CELESTIAL DECOR
+            React.createElement('div', { className: `celestial-sun ${timeOfDay === 'day' ? 'visible' : ''}` },
+                React.createElement('div', { className: 'sun-rays' }),
+                React.createElement('div', { className: 'sun-core' })
+            ),
+            React.createElement('div', { className: `celestial-moon ${timeOfDay === 'night' ? 'visible' : ''}` },
+                React.createElement('div', { className: 'moon-crescent' }),
+                React.createElement('span', { className: 'star s1' }),
+                React.createElement('span', { className: 'star s2' }),
+                React.createElement('span', { className: 'star s3' }),
+                React.createElement('span', { className: 'star s4' }),
+                React.createElement('span', { className: 'star s5' })
+            ),
+
+            React.createElement('div', { className: 'title' }, 'LACOSTE', React.createElement('br'), 'RUNNER'),
+            React.createElement('div', { className: 'subtitle' }, 'VICE CITY EDITION'),
+
+            renderCharacterPanel(),
+            renderBackgroundPanel(),
+
+            React.createElement('div', { className: 'settings', style: { marginTop: '-10px' } },
+                React.createElement('button', { className: `btn ${timeOfDay === 'day' ? 'active' : ''}`, onClick: () => setTimeOfDay('day') }, '☀️ Day'),
+                React.createElement('button', { className: `btn ${timeOfDay === 'night' ? 'active' : ''}`, onClick: () => setTimeOfDay('night') }, '🌙 Night')
+            ),
+
+            React.createElement('div', { style: { display: 'flex', gap: '10px', marginBottom: '15px' } },
+                React.createElement('button', { className: 'btn', onClick: toggleFullscreen }, '⛶ На весь экран')
+            ),
+
+            React.createElement('button', { className: 'btn btn-start', onClick: startGame }, 'Start Escape'),
+
+            React.createElement('button', { className: 'settings-open-btn', onClick: () => setShowSettings(true), style: { marginTop: '15px' } }, '⚙ SETTINGS'),
+
+            React.createElement('div', { style: { marginTop: '10px' } },
+                React.createElement('p', { style: {color: '#888', fontSize: '12px'} }, 'Tap / Space — jump, HOLD — high jump!'),
+                React.createElement('p', { style: {color: '#FFD700', fontSize: '12px'} }, 'Eat food to grow stronger! ⭐ gold +score, 💎 rare +heal, ☠ poison -speed'),
+                React.createElement('p', { style: {color: '#FF007F', fontSize: '12px'} }, 'Avoid pits — instant death! Chain jumps for COMBO!')
+            )
         ) : null,
 
         gameState === 'paused' ? React.createElement('div', { className: 'menu-overlay' },
-            React.createElement('div', { className: 'title', style: { color: '#00FFFF' } }, 'PAUSED'),
-            React.createElement('button', { className: 'btn btn-start', onClick: () => setGameState('playing') }, 'RESUME')
+            React.createElement('div', { className: 'title', style: { color: '#00FFFF', textShadow: '2px 2px 0px #FF007F' } }, 'PAUSED'),
+            React.createElement('button', { className: 'btn btn-start', onClick: () => setGameState('playing'), style: { marginBottom: '10px' } }, 'Resume'),
+            React.createElement('div', { className: 'settings' },
+                React.createElement('button', { className: 'btn', onClick: toggleFullscreen }, '⛶ Fullscreen'),
+                React.createElement('button', { className: 'btn', onClick: () => resetGame() }, 'Restart'),
+                React.createElement('button', { className: 'btn', onClick: () => setGameState('menu') }, 'Menu')
+            ),
+            React.createElement('button', { className: 'settings-open-btn', onClick: () => setShowSettings(true), style: { marginTop: '15px' } }, '⚙ SETTINGS')
         ) : null,
 
         gameState === 'gameover' ? React.createElement('div', { className: 'menu-overlay' },
-            React.createElement('div', { className: 'title', style: { color: 'red' } }, 'BUSTED'),
-            React.createElement('div', { className: 'subtitle' }, 'DIST: ', score, 'm | HI: ', highScore, 'm'),
-            React.createElement('button', { className: 'btn btn-start', onClick: startGame }, 'TRY AGAIN'),
-            React.createElement('button', { className: 'btn', onClick: () => setGameState('menu'), style: { marginTop: '10px' } }, 'MENU')
-        ) : null
+            React.createElement('div', { className: 'title', style: {color: 'red', textShadow: '2px 2px 0px #000'} }, 'BUSTED'),
+            React.createElement('div', { className: 'subtitle', style: {color: 'white', marginBottom: '10px'} }, 'The employees caught you!'),
+            React.createElement('div', { className: 'subtitle' }, 'DIST: ', Math.floor(score), 'm | HI: ', highScore, 'm'),
+            renderCharacterPanel(),
+            React.createElement('div', { className: 'settings' },
+                React.createElement('button', { className: 'btn', onClick: toggleFullscreen }, '⛶ Fullscreen'),
+                React.createElement('button', { className: 'btn', onClick: () => setGameState('menu') }, 'Menu'),
+                React.createElement('button', { className: 'btn btn-start', onClick: startGame }, 'Try Again')
+            ),
+            React.createElement('button', { className: 'settings-open-btn', onClick: () => setShowSettings(true), style: { marginTop: '15px' } }, '⚙ SETTINGS')
+        ) : null,
+
+        showSettings && React.createElement('div', { className: 'settings-overlay' },
+            React.createElement('div', { className: 'settings-panel' },
+                React.createElement('div', { className: 'settings-header' },
+                    React.createElement('div', { className: 'settings-title' }, 'SETTINGS'),
+                    React.createElement('button', { className: 'settings-close', onClick: () => setShowSettings(false), 'aria-label': 'Close' }, '✕')
+                ),
+
+                React.createElement('div', { className: 'settings-section' },
+                    React.createElement('div', { className: 'settings-section-title' }, '🖥 Graphics'),
+                    React.createElement('div', { className: 'setting-row' },
+                        React.createElement('span', { className: 'setting-label' }, 'Quality'),
+                        React.createElement('div', { className: 'segmented' },
+                            ['low', 'medium', 'high'].map(q => React.createElement('button', { key: q, className: settings.graphics === q ? 'active' : '', onClick: () => setSettings(s => ({ ...s, graphics: q })) }, q.toUpperCase()))
+                        )
+                    )
+                ),
+
+                React.createElement('div', { className: 'settings-section' },
+                    React.createElement('div', { className: 'settings-section-title' }, '😀 Emoji Style'),
+                    React.createElement('div', { className: 'setting-row' },
+                        React.createElement('span', { className: 'setting-label' }, 'Set'),
+                        React.createElement('div', { className: 'segmented' },
+                            ['apple', 'twemoji', 'noto'].map(s => React.createElement('button', { key: s, className: settings.emojiStyle === s ? 'active' : '', onClick: () => setSettings(prev => ({ ...prev, emojiStyle: s })) }, s === 'apple' ? '🍎 APPLE' : s === 'twemoji' ? '🐦 TWEMOJI' : '🤖 NOTO'))
+                        )
+                    ),
+                    React.createElement('div', { className: 'setting-row' },
+                        React.createElement('span', { className: 'setting-label' }, 'Combo System'),
+                        React.createElement('button', { className: `setting-toggle ${settings.comboEnabled ? 'on' : ''}`, onClick: () => setSettings(prev => ({ ...prev, comboEnabled: !prev.comboEnabled })), 'aria-label': 'Toggle combo' })
+                    )
+                ),
+
+                React.createElement('div', { className: 'settings-section' },
+                    React.createElement('div', { className: 'settings-section-title' }, '🔊 Audio'),
+                    React.createElement('div', { className: 'setting-row' },
+                        React.createElement('span', { className: 'setting-label' }, 'Sound'),
+                        React.createElement('button', { className: `setting-toggle ${settings.soundEnabled ? 'on' : ''}`, onClick: () => setSettings(s => ({ ...s, soundEnabled: !s.soundEnabled })), 'aria-label': 'Toggle sound' })
+                    ),
+                    React.createElement('div', { className: 'setting-row' },
+                        React.createElement('span', { className: 'setting-label' }, 'Master'),
+                        React.createElement('input', { type: 'range', min: 0, max: 100, value: Math.round(settings.masterVolume * 100), onChange: (e) => setSettings(s => ({ ...s, masterVolume: Number(e.target.value) / 100 })), className: 'setting-slider', style: { '--fill': `${settings.masterVolume * 100}%` } }),
+                        React.createElement('span', { className: 'setting-value' }, `${Math.round(settings.masterVolume * 100)}%`)
+                    ),
+                    React.createElement('div', { className: 'setting-row' },
+                        React.createElement('span', { className: 'setting-label' }, 'SFX'),
+                        React.createElement('input', { type: 'range', min: 0, max: 100, value: Math.round(settings.sfxVolume * 100), onChange: (e) => setSettings(s => ({ ...s, sfxVolume: Number(e.target.value) / 100 })), className: 'setting-slider', style: { '--fill': `${settings.sfxVolume * 100}%` } }),
+                        React.createElement('span', { className: 'setting-value' }, `${Math.round(settings.sfxVolume * 100)}%`)
+                    ),
+                    React.createElement('div', { className: 'setting-row' },
+                        React.createElement('span', { className: 'setting-label' }, 'Ambient'),
+                        React.createElement('input', { type: 'range', min: 0, max: 100, value: Math.round(settings.ambientVolume * 100), onChange: (e) => setSettings(s => ({ ...s, ambientVolume: Number(e.target.value) / 100 })), className: 'setting-slider', style: { '--fill': `${settings.ambientVolume * 100}%` } }),
+                        React.createElement('span', { className: 'setting-value' }, `${Math.round(settings.ambientVolume * 100)}%`)
+                    )
+                ),
+
+                React.createElement('div', { className: 'settings-footer' },
+                    React.createElement('span', { className: 'settings-hint' }, 'Changes are saved automatically'),
+                    React.createElement('button', { className: 'settings-reset', onClick: () => setSettings({ ...DEFAULT_SETTINGS }) }, 'RESET')
+                )
+            )
+        )
     );
 }
 
