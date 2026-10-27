@@ -1,200 +1,122 @@
 /* ==================================================================
-   PACK 1 — PLAYER (Физика, анимация и рендер персонажа)
+   PACK 1 — PLAYER (Физика, прыжки, анимация персонажа)
    ================================================================== */
 (function () {
     'use strict';
 
-    // === СОСТОЯНИЕ ИГРОКА ===
     const PlayerState = {
-        x: 100,
-        y: 0,
-        vx: 0,
-        vy: 0,
-        width: 165,
-        height: 110,
-        isJumping: false,
-        isHoldingJump: false,
-        jumpMult: 1.0,
-        tilt: 0,
-        bob: 0,
-        charId: 'crocodile',
-        
-        // Анимация
-        currentFrame: 0,
-        lastFrameTime: 0,
-        frameDelay: 80, // мс на кадр
-        
-        // Флаги
-        isEating: false,
-        isTripping: false,
-        tripTimer: 0,
+        x: 100, y: 0, vy: 0, w: 165, h: 110,
+        isJumping: false, isHolding: false,
+        charId: 'crocodile', frame: 0, tilt: 0,
+        isEating: false, eatTimer: 0, eatFrameIdx: 0,
     };
 
-    // Экспортируем в глобальную область (для коллизий и других модулей)
     window.PlayerState = PlayerState;
 
-    // === ИНИЦИАЛИЗАЦИЯ ПРИ СТАРТЕ ===
     window.GameEvents.on('game_start', (data) => {
         const cfg = window.GameConfig;
         const char = cfg.CHARACTERS[data.character] || cfg.CHARACTERS['crocodile'];
+        const bg = cfg.BACKGROUNDS[data.background] || cfg.BACKGROUNDS['default'];
         
         PlayerState.charId = char.id;
-        PlayerState.width = char.baseWidth;
-        PlayerState.height = char.baseHeight;
+        PlayerState.w = char.w;
+        PlayerState.h = char.h;
         PlayerState.x = 100;
-        PlayerState.y = (cfg.GROUND_Y + (cfg.BACKGROUNDS[data.background]?.groundOffset || 0)) - PlayerState.height;
         
-        PlayerState.vx = 0;
+        const groundY = cfg.PHYSICS.GROUND_Y + (bg.offset || 0);
+        PlayerState.y = groundY - PlayerState.h;
+        
         PlayerState.vy = 0;
         PlayerState.isJumping = false;
-        PlayerState.isHoldingJump = false;
+        PlayerState.isHolding = false;
+        PlayerState.tilt = 0;
+        PlayerState.frame = 0;
         PlayerState.isEating = false;
-        PlayerState.isTripping = false;
-        PlayerState.tripTimer = 0;
-        PlayerState.currentFrame = 0;
-        PlayerState.lastFrameTime = Date.now();
+        PlayerState.eatTimer = 0;
     });
 
-    // === ОБРАБОТКА ВВОДА (ПРЫЖОК) ===
     window.GameEvents.on('input_keydown', (e) => {
-        if (e.code === 'Space' || e.code === 'ArrowUp') {
-            e.preventDefault && e.preventDefault();
-            doJump();
+        if ((e.code === 'Space' || e.code === 'ArrowUp') && !PlayerState.isJumping && !PlayerState.isEating) {
+            if (e.preventDefault) e.preventDefault();
+            PlayerState.vy = window.GameConfig.PHYSICS.JUMP_FORCE;
+            PlayerState.isJumping = true;
+            PlayerState.isHolding = true;
+            window.GameEvents.emit('jump');
         }
     });
 
     window.GameEvents.on('input_keyup', (e) => {
-        if (e.code === 'Space' || e.code === 'ArrowUp') {
-            PlayerState.isHoldingJump = false;
-        }
+        if (e.code === 'Space' || e.code === 'ArrowUp') PlayerState.isHolding = false;
     });
 
-    // (Для тач-устройств)
-    window.GameEvents.on('input_touch_start', (e) => {
-        // Если тапнули по кнопкам меню, игнорируем
-        if (e.touches && e.touches[0] && e.touches[0].target.closest('.btn')) return;
-        doJump();
-    });
-
-    window.GameEvents.on('input_touch_end', (e) => {
-        PlayerState.isHoldingJump = false;
-    });
-
-    function doJump() {
-        if (PlayerState.isJumping || PlayerState.isTripping || PlayerState.isEating) return;
-        
-        const baseMult = 1.0; // Можно усложнить (зависеть от дистанции)
-        PlayerState.jumpMult = baseMult;
-        PlayerState.vy = window.GameConfig.JUMP_FORCE * PlayerState.jumpMult;
-        PlayerState.isJumping = true;
-        PlayerState.isHoldingJump = true;
-        
-        // Отправляем событие (звук прыжка, частицы и т.д. подхватят другие модули)
-        window.GameEvents.emit('jump');
-    }
-
-    // === ЛОГИКА (ТИК 60 FPS) ===
     window.GameEvents.on('tick', () => {
         const cfg = window.GameConfig;
-        const gy = cfg.GROUND_Y + (cfg.BACKGROUNDS[window.GameState?.background || 'default']?.groundOffset || 0);
+        const groundY = cfg.PHYSICS.GROUND_Y + (cfg.BACKGROUNDS[window.GameState?.background || 'default']?.offset || 0);
+        const floorY = groundY - PlayerState.h;
 
-        // Если спотыкается/умирает — не двигаемся вперёд
-        if (PlayerState.isTripping) {
-            PlayerState.tripTimer++;
-            if (PlayerState.tripTimer > 120) {
-                PlayerState.isTripping = false;
-                PlayerState.tripTimer = 0;
+        if (PlayerState.isEating) {
+            PlayerState.eatTimer++;
+            PlayerState.y = floorY;
+            PlayerState.vy = 0;
+            PlayerState.isJumping = false;
+            if (PlayerState.eatTimer >= (cfg.CHARACTERS[PlayerState.charId].eatDuration || 240)) {
+                PlayerState.isEating = false;
+                PlayerState.eatTimer = 0;
             }
             return;
         }
 
-        // 1. Физика гравитации
         if (PlayerState.isJumping) {
-            PlayerState.vy += cfg.GRAVITY;
-            if (PlayerState.isHoldingJump) {
-                PlayerState.vy -= cfg.HOLD_THRUST;
-            }
+            PlayerState.vy += cfg.PHYSICS.GRAVITY;
+            if (PlayerState.isHolding) PlayerState.vy -= cfg.PHYSICS.HOLD_THRUST;
             PlayerState.y += PlayerState.vy;
-
-            // Наклон в прыжке
             PlayerState.tilt = PlayerState.vy * 0.025;
             PlayerState.tilt = Math.max(-0.35, Math.min(0.35, PlayerState.tilt));
 
-            // Верхняя граница экрана
-            if (PlayerState.y <= 0) {
-                PlayerState.y = 0;
-                if (PlayerState.vy < 0) PlayerState.vy = 0;
-            }
-
-            // Приземление
-            if (PlayerState.y >= gy - PlayerState.height) {
-                PlayerState.y = gy - PlayerState.height;
+            if (PlayerState.y >= floorY) {
+                PlayerState.y = floorY;
                 PlayerState.vy = 0;
                 PlayerState.isJumping = false;
                 PlayerState.tilt = 0;
-                window.GameEvents.emit('land');
             }
         } else {
-            // Покачивание при беге
-            PlayerState.bob = Math.sin(Date.now() / 80) * 2.5;
-            PlayerState.tilt = 0;
-        }
-
-        // 2. Анимация бега
-        if (!PlayerState.isJumping) {
-            const now = Date.now();
-            if (now - PlayerState.lastFrameTime > PlayerState.frameDelay) {
-                const frames = window.GameAssets.walkFrames[PlayerState.charId] || [];
-                if (frames.length > 0) {
-                    PlayerState.currentFrame = (PlayerState.currentFrame + 1) % frames.length;
-                }
-                PlayerState.lastFrameTime = now;
-            }
+            PlayerState.y = floorY + Math.sin(Date.now() / 80) * 2.5;
+            PlayerState.frame = (PlayerState.frame + 0.1) % 12;
         }
     });
 
-    // === РЕНДЕР (ВЫЗЫВАЕТСЯ КАЖДЫЙ КАДР) ===
+    // БЕЗОПАСНЫЙ РЕНДЕР
     window.GameEvents.on('render_frame', (e) => {
         const ctx = e.ctx;
         if (!ctx) return;
 
-        // Получаем нужный кадр
         let img = null;
-        if (PlayerState.isEating) {
-            const eatFrames = window.GameAssets.eatFrames[PlayerState.charId] || [];
-            if (eatFrames.length > 0) img = eatFrames[0]; // Заглушка, полная логика поедания в pack2
-        } else {
-            const walkFrames = window.GameAssets.walkFrames[PlayerState.charId] || [];
-            if (walkFrames.length > 0) img = walkFrames[PlayerState.currentFrame % walkFrames.length];
+        
+        // БЕЗОПАСНАЯ ПРОВЕРКА
+        if (window.GameAssets && window.GameAssets.walk && window.GameAssets.walk[PlayerState.charId]) {
+            const frames = window.GameAssets.walk[PlayerState.charId];
+            if (frames && frames.length > 0) {
+                img = frames[Math.floor(PlayerState.frame) % frames.length];
+            }
         }
 
-        // Рисуем
         if (img && img.complete) {
             ctx.save();
-            
-            let yOffset = PlayerState.isJumping ? 0 : PlayerState.bob;
-            if (PlayerState.isTripping) {
-                // Логика падения (упрощённо)
-                const fallProgress = Math.min(1, PlayerState.tripTimer / 15);
-                const flatAmount = fallProgress;
-                PlayerState.tilt = (Math.PI / 2) * flatAmount;
-                yOffset = -((PlayerState.width - PlayerState.height) / 2) * flatAmount;
-            }
-
-            const centerX = PlayerState.x + PlayerState.width / 2;
-            const centerY = PlayerState.y + PlayerState.height / 2 + yOffset;
-            
-            ctx.translate(centerX, centerY);
+            ctx.translate(PlayerState.x + PlayerState.w / 2, PlayerState.y + PlayerState.h / 2);
             ctx.rotate(PlayerState.tilt);
-            
-            ctx.drawImage(img, -PlayerState.width / 2, -PlayerState.height / 2, PlayerState.width, PlayerState.height);
+            ctx.drawImage(img, -PlayerState.w / 2, -PlayerState.h / 2, PlayerState.w, PlayerState.h);
             ctx.restore();
         } else {
-            // Заглушка, если картинки не загрузились
+            // Заглушка, если картинки нет
             ctx.fillStyle = 'red';
-            ctx.fillRect(PlayerState.x, PlayerState.y, PlayerState.width, PlayerState.height);
+            ctx.fillRect(PlayerState.x, PlayerState.y, PlayerState.w, PlayerState.h);
         }
     });
+
+    window.startEating = function() {
+        PlayerState.isEating = true;
+        PlayerState.eatTimer = 0;
+    };
 
     console.log('%c🦖 [Pack 1] Player loaded', 'color:#00FF41;font-weight:bold');
 })();
