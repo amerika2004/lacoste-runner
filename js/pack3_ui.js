@@ -7,13 +7,13 @@
     const { useState, useEffect } = React;
 
     function MainUI({ gameState, setGameState }) {
-        // Локальные стейты для UI
+        // --- 1. ЛОКАЛЬНЫЕ СТЕЙТЫ ---
         const [score, setScore] = useState(0);
         const [health, setHealth] = useState(6);
         const [highScore, setHighScore] = useState(() => parseInt(localStorage.getItem('lacosteHighScore')) || 0);
-        const [showSettings, setShowSettings] = useState(false);
         
-        // Настройки
+        // Настройки (графика, звук)
+        const [showSettings, setShowSettings] = useState(false);
         const [settings, setSettings] = useState(() => {
             try {
                 const s = JSON.parse(localStorage.getItem('lacosteSettings') || '{}');
@@ -21,19 +21,18 @@
             } catch { return { graphics: 'high', emojiStyle: 'apple', soundEnabled: true, masterVolume: 1 }; }
         });
 
-        // Выбор персонажа/фона (глобальный стейт через window)
+        // Выбор персонажа и фона
         const [character, setCharacter] = useState(() => localStorage.getItem('lacosteCharacter') || 'crocodile');
         const [background, setBackground] = useState(() => localStorage.getItem('lacosteBackground') || 'default');
         const [timeOfDay, setTimeOfDay] = useState(() => localStorage.getItem('lacosteTimeOfDay') || 'day');
 
-        // Слушаем игровые события
+        // --- 2. ПОДПИСКА НА СОБЫТИЯ ---
         useEffect(() => {
-            const onWorldTick = (data) => {
+            const onTick = (data) => {
                 setScore(Math.floor(data.distance));
                 setHealth(data.health);
             };
             const onGameOver = (data) => {
-                // Обновление рекорда
                 if (data.distance > highScore) {
                     const newHigh = Math.floor(data.distance);
                     setHighScore(newHigh);
@@ -41,27 +40,34 @@
                 }
             };
             
-            window.GameEvents.on('world_tick', onWorldTick);
+            window.GameEvents.on('world_tick', onTick);
             window.GameEvents.on('gameover', onGameOver);
-            
-            return () => {
-                // (Cleanup не реализован в EventBus, но в реальном React мы бы отписались)
-            };
         }, [highScore]);
 
-        // Сохранение настроек
+        // --- 3. СОХРАНЕНИЕ НАСТРОЕК ---
         useEffect(() => {
             localStorage.setItem('lacosteSettings', JSON.stringify(settings));
             document.body.className = `emoji-${settings.emojiStyle}`;
-            if (window.RenderEngine) window.RenderEngine.setQuality(settings.graphics);
+            
+            // Передаём настройки в движок и аудио-модуль
+            if (window.RenderEngine && window.RenderEngine.setQuality) {
+                window.RenderEngine.setQuality(settings.graphics);
+            }
+            window.GameEvents.emit('settings_changed', settings);
         }, [settings]);
 
+        // --- 4. ФУНКЦИИ ---
         const startGame = () => {
             localStorage.setItem('lacosteCharacter', character);
             localStorage.setItem('lacosteBackground', background);
             localStorage.setItem('lacosteTimeOfDay', timeOfDay);
             
-            window.GameState = { background, timeOfDay };
+            window.GameState = { background, timeOfDay }; // Глобально для мира
+            setGameState('playing');
+            window.GameEvents.emit('game_start', { character, background, timeOfDay, settings });
+        };
+
+        const restartGame = () => {
             setGameState('playing');
             window.GameEvents.emit('game_start', { character, background, timeOfDay, settings });
         };
@@ -78,25 +84,26 @@
             return h.join(' ');
         };
 
+        // --- 5. РЕНДЕР ---
         return React.createElement(React.Fragment, null,
             
-            // === 1. HUD (ПОКАЗЫВАЕТСЯ В ИГРЕ) ===
+            // 1. HUD (Счёт и здоровье) в игре
             (gameState === 'playing' || gameState === 'paused') ? React.createElement(React.Fragment, null,
                 React.createElement('div', { className: 'hud-left' },
                     React.createElement('span', null, `DIST: ${score}m`),
                     React.createElement('span', { style: { fontSize: 'clamp(14px, 2.5vmin, 24px)', letterSpacing: '2px' } }, getHearts())
                 ),
                 React.createElement('div', { className: 'hud-right' },
-                    React.createElement('span', null, `HI ${formatScore(highScore)}`)
+                    React.createElement('span', null, `HI ${formatScore(highScore)}m`)
                 )
             ) : null,
 
-            // === 2. КНОПКИ В ИГРЕ ===
-            gameState === 'playing' ? React.createElement(React.Fragment, null,
-                React.createElement('button', { id: 'btn-pause', className: 'game-btn', onClick: () => setGameState('paused') }, '❚❚')
-            ) : null,
+            // 2. Кнопка паузы
+            gameState === 'playing' ? React.createElement('button', { 
+                id: 'btn-pause', className: 'game-btn', onClick: () => setGameState('paused') 
+            }, '❚❚') : null,
 
-            // === 3. ГЛАВНОЕ МЕНЮ ===
+            // 3. Главное меню
             gameState === 'menu' ? React.createElement('div', { className: 'menu-overlay' },
                 React.createElement('div', { className: 'title' }, 'LACOSTE', React.createElement('br'), 'RUNNER'),
                 React.createElement('div', { className: 'subtitle' }, 'VICE CITY EDITION'),
@@ -138,28 +145,25 @@
                 React.createElement('button', { className: 'settings-open-btn', onClick: () => setShowSettings(true), style: { marginTop: '15px' } }, '⚙ SETTINGS')
             ) : null,
 
-            // === 4. ПАУЗА ===
+            // 4. Пауза
             gameState === 'paused' ? React.createElement('div', { className: 'menu-overlay' },
                 React.createElement('div', { className: 'title', style: { color: '#00FFFF' } }, 'PAUSED'),
                 React.createElement('button', { className: 'btn btn-start', onClick: () => setGameState('playing'), style: { marginBottom: '10px' } }, 'Resume'),
                 React.createElement('div', { className: 'settings' },
-                    React.createElement('button', { className: 'btn', onClick: () => {
-                        setGameState('menu');
-                        window.GameEvents.emit('game_start', { character, background, timeOfDay, settings }); // Сброс мира
-                    }}, 'Restart'),
+                    React.createElement('button', { className: 'btn', onClick: restartGame }, 'Restart'),
                     React.createElement('button', { className: 'btn', onClick: () => setGameState('menu') }, 'Menu')
                 )
             ) : null,
 
-            // === 5. ЭКРАН СМЕРТИ ===
+            // 5. Экран смерти
             gameState === 'gameover' ? React.createElement('div', { className: 'menu-overlay' },
                 React.createElement('div', { className: 'title', style: { color: 'red' } }, 'BUSTED'),
                 React.createElement('div', { className: 'subtitle' }, 'DIST: ', score, 'm | HI: ', highScore, 'm'),
-                React.createElement('button', { className: 'btn btn-start', onClick: startGame }, 'Try Again'),
+                React.createElement('button', { className: 'btn btn-start', onClick: restartGame }, 'Try Again'),
                 React.createElement('button', { className: 'btn', onClick: () => setGameState('menu'), style: { marginTop: '10px' } }, 'Menu')
             ) : null,
 
-            // === 6. НАСТРОЙКИ (МОДАЛЬНОЕ ОКНО) ===
+            // 6. Настройки
             showSettings ? React.createElement('div', { className: 'settings-overlay' },
                 React.createElement('div', { className: 'settings-panel' },
                     React.createElement('div', { className: 'settings-header' },
@@ -201,7 +205,6 @@
         );
     }
 
-    // Регистрируем UI
     if (window.PackUIs) window.PackUIs.push(MainUI);
     else window.PackUIs = [MainUI];
 
