@@ -11,7 +11,16 @@ const GROUND_Y = 530;
 const BASE_SPEED = 4.0; 
 
 // >>> Единая скорость для всех режимов (было Easy = 0.8)
-const SPEED_MULTIPLIER = 2.0;
+const SPEED_MULTIPLIER = 0.8;
+
+// === SETTINGS DEFAULTS ===
+const DEFAULT_SETTINGS = {
+    sfxVolume: 0.7,      // 0..1
+    ambientVolume: 0.25, // 0..1
+    masterVolume: 1.0,   // 0..1
+    soundEnabled: true,
+    graphics: 'high',    // 'low' | 'medium' | 'high'
+};
 
 // === РЕЕСТР ФОНОВ ===
 const BACKGROUNDS = {
@@ -82,6 +91,22 @@ function Game() {
     const [powerDisplay, setPowerDisplay] = useState(1.0);
     const [health, setHealth] = useState(6);
     const [highScore, setHighScore] = useState(() => parseInt(localStorage.getItem('lacosteHighScore')) || 0);
+
+    // === SETTINGS ===
+    const [settings, setSettings] = useState(() => {
+        try {
+            const saved = JSON.parse(localStorage.getItem('lacosteSettings') || '{}');
+            return { ...DEFAULT_SETTINGS, ...saved };
+        } catch { return { ...DEFAULT_SETTINGS }; }
+    });
+    const [showSettings, setShowSettings] = useState(false);
+
+    useEffect(() => {
+        localStorage.setItem('lacosteSettings', JSON.stringify(settings));
+    }, [settings]);
+
+    const settingsRef = useRef(settings);
+    useEffect(() => { settingsRef.current = settings; }, [settings]);
 
     const canvasRef = useRef(null);
     const requestRef = useRef();
@@ -158,20 +183,18 @@ function Game() {
         barrelAudio.preload = 'auto';
         barrelAudioRef.current = barrelAudio;
 
-        const splashAudio = new Audio('source/sounds/splash.mp3');
+        const splashAudio = new Audio('source/sounds/splash.wav');
         splashAudio.preload = 'auto';
         splashAudio.playbackRate = 1.2;
         splashAudioRef.current = splashAudio;
 
         const nightAmbient = new Audio('source/sounds/night_forest.mp3');
         nightAmbient.loop = true;
-        nightAmbient.volume = 0.25;
         nightAmbient.preload = 'auto';
         nightAmbientRef.current = nightAmbient;
 
         const dayAmbient = new Audio('source/sounds/forest_day.wav');
         dayAmbient.loop = true;
-        dayAmbient.volume = 0.25;
         dayAmbient.preload = 'auto';
         dayAmbientRef.current = dayAmbient;
 
@@ -184,16 +207,41 @@ function Game() {
         };
     }, []);
 
+    // Apply volumes to all audio elements
+    useEffect(() => {
+        const s = settings;
+        [pitAudioRef, barrelAudioRef, splashAudioRef].forEach(ref => {
+            if (ref.current) ref.current.volume = s.soundEnabled ? s.sfxVolume * s.masterVolume : 0;
+        });
+        [nightAmbientRef, dayAmbientRef].forEach(ref => {
+            if (ref.current) ref.current.volume = s.soundEnabled ? s.ambientVolume * s.masterVolume : 0;
+        });
+        if (nightAmbientRef.current) {
+            if (!s.soundEnabled) nightAmbientRef.current.pause();
+            else if (timeOfDayRef.current === 'night') nightAmbientRef.current.play().catch(() => {});
+        }
+        if (dayAmbientRef.current) {
+            if (!s.soundEnabled) dayAmbientRef.current.pause();
+            else if (timeOfDayRef.current === 'day') dayAmbientRef.current.play().catch(() => {});
+        }
+    }, [settings]);
+
     useEffect(() => {
         const nightAudio = nightAmbientRef.current;
         const dayAudio = dayAmbientRef.current;
         if (!nightAudio || !dayAudio) return;
+        if (!settingsRef.current.soundEnabled) {
+            nightAudio.pause();
+            dayAudio.pause();
+            return;
+        }
         if (timeOfDay === 'night') { nightAudio.play().catch(() => {}); dayAudio.pause(); }
         else { dayAudio.play().catch(() => {}); nightAudio.pause(); }
-    }, [timeOfDay]);
+    }, [timeOfDay, settings.soundEnabled]);
 
     useEffect(() => {
         const tryPlay = () => {
+            if (!settingsRef.current.soundEnabled) return;
             if (timeOfDayRef.current === 'night') {
                 const n = nightAmbientRef.current; if (n && n.paused) n.play().catch(() => {});
             } else {
@@ -303,6 +351,7 @@ function Game() {
     const handleKeyDown = useCallback((e) => {
         if (e.code === 'Escape') {
             e.preventDefault();
+            if (showSettings) { setShowSettings(false); return; }
             if (isFallingIntoPitRef.current || isPitDeathDelayRef.current) return;
             if (gameState === 'playing') setGameState('paused');
             else if (gameState === 'paused') setGameState('playing');
@@ -326,7 +375,7 @@ function Game() {
                 p.isHoldingJump = true;
             }
         }
-    }, [gameState, character]);
+    }, [gameState, character, showSettings]);
 
     const handleKeyUp = useCallback((e) => {
         if (e.code === 'Space' || e.code === 'ArrowUp') playerRef.current.isHoldingJump = false;
@@ -346,7 +395,7 @@ function Game() {
         if (!canvas) return;
 
         const handleTouchStart = (e) => {
-            if (e.target.closest('.game-btn') || e.target.closest('.btn') || e.target.closest('.char-btn')) return;
+            if (e.target.closest('.game-btn') || e.target.closest('.btn') || e.target.closest('.char-btn') || e.target.closest('.settings-panel') || e.target.closest('.settings-open-btn')) return;
             e.preventDefault();
             if (gameState !== 'playing') return;
             if (playerRef.current.isJumping || isTrippingRef.current || isFallingIntoPitRef.current || isPitDeathDelayRef.current || isBarrelFlyingRef.current || isEatingRef.current) return;
@@ -360,7 +409,7 @@ function Game() {
         };
 
         const handleTouchEnd = (e) => {
-            if (e.target.closest('.game-btn') || e.target.closest('.btn') || e.target.closest('.char-btn')) return;
+            if (e.target.closest('.game-btn') || e.target.closest('.btn') || e.target.closest('.char-btn') || e.target.closest('.settings-panel') || e.target.closest('.settings-open-btn')) return;
             if (gameState !== 'playing') return;
             e.preventDefault();
             playerRef.current.isHoldingJump = false;
@@ -425,7 +474,7 @@ function Game() {
         obstaclesRef.current.splice(index, 1);
         healthRef.current -= 1; setHealth(healthRef.current);
 
-        if (type === 'puddle' && splashAudioRef.current) {
+        if (type === 'puddle' && splashAudioRef.current && settingsRef.current.soundEnabled) {
             splashAudioRef.current.currentTime = 0;
             splashAudioRef.current.playbackRate = 1.2;
             splashAudioRef.current.play().catch(e => console.warn("Audio blocked", e));
@@ -446,7 +495,7 @@ function Game() {
         
         explosionsRef.current.push({ x: obs.x + obs.width / 2, y: obs.y + obs.height / 2, size: obs.height * 6, timer: 0, maxTimer: 30 });
         
-        if (barrelAudioRef.current) {
+        if (barrelAudioRef.current && settingsRef.current.soundEnabled) {
             barrelAudioRef.current.currentTime = 0;
             barrelAudioRef.current.play().catch(e => console.warn("Audio blocked", e));
         }
@@ -469,6 +518,9 @@ function Game() {
 
         // >>> Единая скорость для всех режимов
         const diffMult = SPEED_MULTIPLIER;
+
+        // Graphics quality (for particle spawn density)
+        const gfxQuality = settingsRef.current.graphics;
 
         // Обновляем частицы (даже после еды)
         eatParticlesRef.current.forEach(pt => {
@@ -526,8 +578,9 @@ function Game() {
             p.tilt = 0;
             p.bob = Math.sin(Date.now() / 150) * 3;
 
-            // Частицы бамбука
-            if (eatTimerRef.current % 6 === 0) {
+            // Частицы бамбука (density depends on graphics)
+            const particleEvery = gfxQuality === 'low' ? 15 : gfxQuality === 'medium' ? 9 : 6;
+            if (eatTimerRef.current % particleEvery === 0) {
                 eatParticlesRef.current.push({
                     x: p.x + p.width / 2 + (Math.random() - 0.5) * p.width * 0.3,
                     y: p.y + p.height * 0.3,
@@ -565,7 +618,7 @@ function Game() {
 
                 pitAudioEndedRef.current = false;
                 const a = pitAudioRef.current;
-                if (a) {
+                if (a && settingsRef.current.soundEnabled) {
                     a.currentTime = 0; a.onended = () => { pitAudioEndedRef.current = true; }; a.onerror = () => { pitAudioEndedRef.current = true; };
                     a.play().catch(() => { pitAudioEndedRef.current = true; });
                 } else { pitAudioEndedRef.current = true; }
@@ -575,7 +628,7 @@ function Game() {
         
         if (isPitDeathDelayRef.current) {
             pitDeathDelayTimerRef.current++;
-            const audioDone = pitAudioEndedRef.current || !pitAudioRef.current;
+            const audioDone = pitAudioEndedRef.current || !pitAudioRef.current || !settingsRef.current.soundEnabled;
             const fallbackDone = pitDeathDelayTimerRef.current > 600;
             const minDelayPassed = pitDeathDelayTimerRef.current > 20;
             if ((audioDone && minDelayPassed) || fallbackDone) {
@@ -913,7 +966,7 @@ function Game() {
         if (isPitDeathDelayRef.current) {
             let fadeProgress;
             const a = pitAudioRef.current;
-            if (a && isFinite(a.duration) && a.duration > 0.1) fadeProgress = Math.min(1, a.currentTime / a.duration);
+            if (a && isFinite(a.duration) && a.duration > 0.1 && settingsRef.current.soundEnabled) fadeProgress = Math.min(1, a.currentTime / a.duration);
             else fadeProgress = Math.min(1, pitDeathDelayTimerRef.current / 180);
             ctx.fillStyle = `rgba(0, 0, 0, ${fadeProgress})`; ctx.fillRect(0, 0, canvas.width, canvas.height);
         }
@@ -995,6 +1048,13 @@ function Game() {
             ),
 
             React.createElement('button', { className: 'btn btn-start', onClick: startGame }, 'Start Escape'),
+
+            React.createElement('button', {
+                className: 'settings-open-btn',
+                onClick: () => setShowSettings(true),
+                style: { marginTop: '15px' }
+            }, '⚙ SETTINGS'),
+
             React.createElement('div', { style: { marginTop: '10px' } },
                 React.createElement('p', { style: {color: '#888', fontSize: '12px'} }, 'Tap / Space — jump, HOLD — high jump!'),
                 React.createElement('p', { style: {color: '#FFD700', fontSize: '12px'} }, 'Eat food to grow stronger!'),
@@ -1009,7 +1069,12 @@ function Game() {
                 React.createElement('button', { className: 'btn', onClick: toggleFullscreen }, '⛶ Fullscreen'),
                 React.createElement('button', { className: 'btn', onClick: () => resetGame() }, 'Restart'),
                 React.createElement('button', { className: 'btn', onClick: () => setGameState('menu') }, 'Menu')
-            )
+            ),
+            React.createElement('button', {
+                className: 'settings-open-btn',
+                onClick: () => setShowSettings(true),
+                style: { marginTop: '15px' }
+            }, '⚙ SETTINGS')
         ) : null,
         
         gameState === 'gameover' ? React.createElement('div', { className: 'menu-overlay' },
@@ -1023,8 +1088,103 @@ function Game() {
                 React.createElement('button', { className: 'btn', onClick: toggleFullscreen }, '⛶ Fullscreen'),
                 React.createElement('button', { className: 'btn', onClick: () => setGameState('menu') }, 'Menu'),
                 React.createElement('button', { className: 'btn btn-start', onClick: startGame }, 'Try Again')
+            ),
+
+            React.createElement('button', {
+                className: 'settings-open-btn',
+                onClick: () => setShowSettings(true),
+                style: { marginTop: '15px' }
+            }, '⚙ SETTINGS')
+        ) : null,
+
+        showSettings && React.createElement('div', { className: 'settings-overlay' },
+            React.createElement('div', { className: 'settings-panel' },
+                React.createElement('div', { className: 'settings-header' },
+                    React.createElement('div', { className: 'settings-title' }, 'SETTINGS'),
+                    React.createElement('button', {
+                        className: 'settings-close',
+                        onClick: () => setShowSettings(false),
+                        'aria-label': 'Close'
+                    }, '✕')
+                ),
+
+                React.createElement('div', { className: 'settings-section' },
+                    React.createElement('div', { className: 'settings-section-title' }, '🖥 Graphics'),
+                    React.createElement('div', { className: 'setting-row' },
+                        React.createElement('span', { className: 'setting-label' }, 'Quality'),
+                        React.createElement('div', { className: 'segmented' },
+                            ['low', 'medium', 'high'].map(q =>
+                                React.createElement('button', {
+                                    key: q,
+                                    className: settings.graphics === q ? 'active' : '',
+                                    onClick: () => setSettings(s => ({ ...s, graphics: q }))
+                                }, q.toUpperCase())
+                            )
+                        )
+                    )
+                ),
+
+                React.createElement('div', { className: 'settings-section' },
+                    React.createElement('div', { className: 'settings-section-title' }, '🔊 Audio'),
+
+                    React.createElement('div', { className: 'setting-row' },
+                        React.createElement('span', { className: 'setting-label' }, 'Sound'),
+                        React.createElement('button', {
+                            className: `setting-toggle ${settings.soundEnabled ? 'on' : ''}`,
+                            onClick: () => setSettings(s => ({ ...s, soundEnabled: !s.soundEnabled })),
+                            'aria-label': 'Toggle sound'
+                        })
+                    ),
+
+                    React.createElement('div', { className: 'setting-row' },
+                        React.createElement('span', { className: 'setting-label' }, 'Master'),
+                        React.createElement('input', {
+                            type: 'range',
+                            min: 0, max: 100,
+                            value: Math.round(settings.masterVolume * 100),
+                            onChange: (e) => setSettings(s => ({ ...s, masterVolume: Number(e.target.value) / 100 })),
+                            className: 'setting-slider',
+                            style: { '--fill': `${settings.masterVolume * 100}%` }
+                        }),
+                        React.createElement('span', { className: 'setting-value' }, `${Math.round(settings.masterVolume * 100)}%`)
+                    ),
+
+                    React.createElement('div', { className: 'setting-row' },
+                        React.createElement('span', { className: 'setting-label' }, 'SFX'),
+                        React.createElement('input', {
+                            type: 'range',
+                            min: 0, max: 100,
+                            value: Math.round(settings.sfxVolume * 100),
+                            onChange: (e) => setSettings(s => ({ ...s, sfxVolume: Number(e.target.value) / 100 })),
+                            className: 'setting-slider',
+                            style: { '--fill': `${settings.sfxVolume * 100}%` }
+                        }),
+                        React.createElement('span', { className: 'setting-value' }, `${Math.round(settings.sfxVolume * 100)}%`)
+                    ),
+
+                    React.createElement('div', { className: 'setting-row' },
+                        React.createElement('span', { className: 'setting-label' }, 'Ambient'),
+                        React.createElement('input', {
+                            type: 'range',
+                            min: 0, max: 100,
+                            value: Math.round(settings.ambientVolume * 100),
+                            onChange: (e) => setSettings(s => ({ ...s, ambientVolume: Number(e.target.value) / 100 })),
+                            className: 'setting-slider',
+                            style: { '--fill': `${settings.ambientVolume * 100}%` }
+                        }),
+                        React.createElement('span', { className: 'setting-value' }, `${Math.round(settings.ambientVolume * 100)}%`)
+                    )
+                ),
+
+                React.createElement('div', { className: 'settings-footer' },
+                    React.createElement('span', { className: 'settings-hint' }, 'Changes are saved automatically'),
+                    React.createElement('button', {
+                        className: 'settings-reset',
+                        onClick: () => setSettings({ ...DEFAULT_SETTINGS })
+                    }, 'RESET')
+                )
             )
-        ) : null
+        )
     );
 }
 
