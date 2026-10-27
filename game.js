@@ -199,7 +199,6 @@ function App() {
 
         // Главное меню
         gameState === 'menu' ? React.createElement('div', { className: 'menu-overlay' },
-            // Декоративные солнце и луна
             React.createElement('div', { className: `celestial-sun ${timeOfDay === 'day' ? 'visible' : ''}` }, 
                 React.createElement('div', { className: 'sun-rays' }), 
                 React.createElement('div', { className: 'sun-core' })
@@ -213,7 +212,7 @@ function App() {
             React.createElement('div', { className: 'title' }, 'LACOSTE', React.createElement('br'), 'RUNNER'),
             React.createElement('div', { className: 'subtitle' }, 'VICE CITY EDITION'),
             
-            // Панель персонажей (динамически из плагинов)
+            // Панель персонажей
             React.createElement('div', { className: 'char-panel' }, 
                 React.createElement('div', { className: 'char-panel-title' }, 'Hero'), 
                 Object.values(window.GameCharacters).map(c => React.createElement('button', { 
@@ -290,26 +289,38 @@ function App() {
     );
 }
 
-// ======================= 4. ЗАПУСК ДВИЖКА =======================
-// Ждем, пока loader.js загрузит все плагины (флаг __MODULES_READY__)
+// ======================= 4. ЗАПУСК ДВИЖКА (МГНОВЕННЫЙ) =======================
+window.GameBoot = {
+    triggered: false,
+    callbacks: [],
+    onReady(cb) {
+        if (this.triggered) { try { cb(); } catch (e) { console.error(e); } return; }
+        this.callbacks.push(cb);
+    },
+    trigger() {
+        if (this.triggered) return;
+        this.triggered = true;
+        window.__MODULES_READY__ = true;
+        this.callbacks.forEach(cb => { try { cb(); } catch (e) { console.error(e); } });
+        this.callbacks = [];
+    }
+};
+
 function boot() { 
     if (!window.__BOOTED__) { 
         window.__BOOTED__ = true; 
+        console.log('%c🎮 Booting React App...', 'color:#FF007F;font-weight:bold');
         ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App)); 
     } 
 }
 
-const check = setInterval(() => { 
-    if (window.__MODULES_READY__) { 
-        clearInterval(check); 
-        boot(); 
-    } 
-}, 100);
+// Мгновенный запуск как только loader.js закончит загрузку плагинов
+window.GameBoot.onReady(boot);
 
-// Если загрузчик упал (например, нет интернета для fetch), запускаем через 3 секунды без плагинов
+// Фоллбэк: если loader.js не подключен или упал (ошибка сети)
 setTimeout(() => { 
     if (!window.__BOOTED__) { 
-        clearInterval(check); 
-        boot(); 
+        console.warn('⚠️ Fallback boot (loader failed or timed out)');
+        window.GameBoot.trigger();
     } 
 }, 3000);
