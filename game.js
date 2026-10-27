@@ -5,7 +5,6 @@ const FLIP_CROC = false;
 const GRAVITY = 0.75;        
 const JUMP_FORCE = -10.5;    
 const HOLD_THRUST = 0.45;    
-
 const GROUND_Y = 530; 
 const BASE_SPEED = 4.0; 
 const SPEED_MULTIPLIER = 0.8;
@@ -17,14 +16,6 @@ const DEFAULT_SETTINGS = {
     comboEnabled: true,
 };
 
-// ======================= EVENT BUS =======================
-window.GameEvents = {
-    listeners: {},
-    on: function(event, cb) { if (!this.listeners[event]) this.listeners[event] = []; this.listeners[event].push(cb); },
-    emit: function(event, data) { if (this.listeners[event]) this.listeners[event].forEach(cb => { try { cb(data); } catch (e) { console.error(e); } }); }
-};
-
-// ======================= CONFIG & DATA =======================
 const BACKGROUNDS = {
     default: { id: 'default', name: 'Forest', emoji: '🌳', dayImg: 'source/landscape.jpg', nightImg: 'source/landscape_n.jpg', groundOffset: 0, obstacleTypes: ['barrel', 'rock', 'cactus', 'puddle', 'pit'], foodEmojis: null },
     cartoon: { id: 'cartoon', name: 'Cartoon', emoji: '🌲', dayImg: 'source/cartoon_forest.png', nightImg: 'source/cartoon_forest_n.png', groundOffset: 30, obstacleTypes: ['rock', 'puddle', 'pit'], foodEmojis: ['🎋'] },
@@ -221,8 +212,6 @@ const RenderEngine = (function () {
     };
 })();
 
-// ======================= GAME COMPONENT (ЧАСТЬ 2 В СЛЕДУЮЩЕМ СООБЩЕНИИ) =======================
-// ======================= GAME COMPONENT =======================
 function Game() {
     const [gameState, setGameState] = useState('menu');
     const [timeOfDay, setTimeOfDay] = useState(() => localStorage.getItem('lacosteTimeOfDay') || 'day');
@@ -249,30 +238,13 @@ function Game() {
     const backgroundRef = useRef(background);
     const groundYRef = useRef(GROUND_Y + (BACKGROUNDS[background]?.groundOffset || 0));
 
-    useEffect(() => {
-        timeOfDayRef.current = timeOfDay;
-        localStorage.setItem('lacosteTimeOfDay', timeOfDay);
-    }, [timeOfDay]);
+    useEffect(() => { timeOfDayRef.current = timeOfDay; localStorage.setItem('lacosteTimeOfDay', timeOfDay); }, [timeOfDay]);
+    useEffect(() => { backgroundRef.current = background; localStorage.setItem('lacosteBackground', background); const bg = BACKGROUNDS[background] || BACKGROUNDS.default; groundYRef.current = GROUND_Y + (bg.groundOffset || 0); }, [background]);
+    useEffect(() => { localStorage.setItem('lacosteSettings', JSON.stringify(settings)); RenderEngine.setQuality(settings.graphics); document.body.className = `emoji-${settings.emojiStyle}`; settingsRef.current = settings; }, [settings]);
 
-    useEffect(() => {
-        backgroundRef.current = background;
-        localStorage.setItem('lacosteBackground', background);
-        const bg = BACKGROUNDS[background] || BACKGROUNDS.default;
-        groundYRef.current = GROUND_Y + (bg.groundOffset || 0);
-    }, [background]);
-
-    useEffect(() => {
-        localStorage.setItem('lacosteSettings', JSON.stringify(settings));
-        RenderEngine.setQuality(settings.graphics);
-        document.body.className = `emoji-${settings.emojiStyle}`;
-        settingsRef.current = settings;
-    }, [settings]);
-
-    // === ИГРОВЫЕ РЕФЫ ===
     const initChar = CHARACTERS[character] || CHARACTERS.crocodile;
     const initGroundY = GROUND_Y + (BACKGROUNDS[background]?.groundOffset || 0);
     const playerRef = useRef({ x: 100, y: initGroundY - initChar.baseHeight, width: initChar.baseWidth, height: initChar.baseHeight, velocityY: 0, isJumping: false, isHoldingJump: false, jumpMult: 1.0, tilt: 0, bob: 0, foodEaten: 0, foodTarget: 1 });
-    
     const obstaclesRef = useRef([]); const foodsRef = useRef([]); const explosionsRef = useRef([]);
     const distanceRef = useRef(0); const spawnTimerRef = useRef(0); const foodTimerRef = useRef(0); const bgOffsetRef = useRef(0); const spawnCooldownRef = useRef(0);
     const healthRef = useRef(6); const isTrippingRef = useRef(false); const tripTimerRef = useRef(0); const speedPenaltyRef = useRef(1.0);
@@ -284,7 +256,6 @@ function Game() {
     const walkFramesRef = useRef([]); const currentFrameRef = useRef(0); const lastFrameTimeRef = useRef(0);
     const eatFramesRef = useRef([]); const eatFrameIdxRef = useRef(0); const isEatingRef = useRef(false); const eatTimerRef = useRef(0); const eatSpeedFactorRef = useRef(1.0);
 
-    // === ИЗОБРАЖЕНИЯ ===
     const landscapeImg = useRef(new Image()); const landscapeNightImg = useRef(new Image());
     const puddleImg = useRef(new Image()); const puddleNightImg = useRef(new Image());
     const rockImg = useRef(new Image()); const rockNightImg = useRef(new Image());
@@ -306,14 +277,10 @@ function Game() {
     }, []);
 
     useEffect(() => {
-        Object.values(BACKGROUNDS).forEach(bg => {
-            const day = new Image(); day.src = bg.dayImg; const night = new Image(); night.src = bg.nightImg;
-            backgroundImagesRef.current[bg.id] = { day, night };
-        });
+        Object.values(BACKGROUNDS).forEach(bg => { const day = new Image(); day.src = bg.dayImg; const night = new Image(); night.src = bg.nightImg; backgroundImagesRef.current[bg.id] = { day, night }; });
     }, []);
 
-    // === ЗВУКИ ===
-    const pitAudioRef = useRef(null); const barrelAudioRef = useRef(null); const splashAudioRef = useRef(null); const jumpAudioRef = useRef(null);
+    const pitAudioRef = useRef(null); const pitAudioEndedRef = useRef(false); const barrelAudioRef = useRef(null); const splashAudioRef = useRef(null); const jumpAudioRef = useRef(null);
     const nightAmbientRef = useRef(null); const dayAmbientRef = useRef(null);
 
     useEffect(() => {
@@ -325,17 +292,11 @@ function Game() {
         dayAmbientRef.current = new Audio('source/sounds/forest_day.wav'); dayAmbientRef.current.loop = true;
     }, []);
 
-    // === ЛОГИКА ===
     const calculateJumpMultiplier = (playerHeight, gameSpeed, penalty = 1.0) => { const char = CHARACTERS[character] || CHARACTERS.crocodile; const sizeFactor = Math.sqrt(playerHeight / char.baseHeight); const speedFactor = 1 + (gameSpeed - 1) * 0.10; return Math.max(1.0, sizeFactor * speedFactor * penalty); };
-    
+    const toggleFullscreen = () => { if (!document.fullscreenElement) { document.documentElement.requestFullscreen().catch((err) => console.warn("Fullscreen error:", err)); if (screen.orientation && screen.orientation.lock) { screen.orientation.lock('landscape').catch((err) => console.warn("Orientation lock error:", err)); } } else { if (document.exitFullscreen) document.exitFullscreen(); } };
+
     const resetCombo = () => { comboRef.current = 0; comboMultRef.current = 1; setComboDisplay({ mult: 1, count: 0 }); };
-    const addCombo = () => {
-        if (!settingsRef.current.comboEnabled) return;
-        comboRef.current++;
-        let mult = 1;
-        if (comboRef.current >= 8) mult = 5; else if (comboRef.current >= 5) mult = 3; else if (comboRef.current >= 3) mult = 2;
-        comboMultRef.current = mult; setComboDisplay({ mult, count: comboRef.current });
-    };
+    const addCombo = () => { if (!settingsRef.current.comboEnabled) return; comboRef.current++; let mult = 1; if (comboRef.current >= 8) mult = 5; else if (comboRef.current >= 5) mult = 3; else if (comboRef.current >= 3) mult = 2; comboMultRef.current = mult; setComboDisplay({ mult, count: comboRef.current }); };
 
     const doJump = (p) => {
         if (p.isJumping || isTrippingRef.current || isFallingIntoPitRef.current || isPitDeathDelayRef.current || isBarrelFlyingRef.current || isEatingRef.current) return;
@@ -346,6 +307,40 @@ function Game() {
         if (jumpAudioRef.current && settingsRef.current.soundEnabled) { jumpAudioRef.current.currentTime = 0; jumpAudioRef.current.play().catch(() => {}); }
         RenderEngine.spawnParticles(p.x + p.width / 2, p.y + p.height, 6, { colors: ['#FFFFFF', '#AAAAAA'], speed: 2, life: 20, size: 2, gravity: 0.1 });
     };
+
+    const handleKeyDown = useCallback((e) => {
+        if (e.code === 'Escape') { e.preventDefault(); if (showSettings) { setShowSettings(false); return; } if (isFallingIntoPitRef.current || isPitDeathDelayRef.current) return; if (gameState === 'playing') setGameState('paused'); else if (gameState === 'paused') setGameState('playing'); return; }
+        if (e.code === 'KeyN') { e.preventDefault(); setTimeOfDay(prev => prev === 'day' ? 'night' : 'day'); return; }
+        if (e.code === 'Space' || e.code === 'ArrowUp') { e.preventDefault(); if (gameState === 'menu') setGameState('playing'); else if (gameState === 'gameover') resetGame(); else if (gameState === 'playing') doJump(playerRef.current); }
+    }, [gameState, character, showSettings]);
+
+    const handleKeyUp = useCallback((e) => { if (e.code === 'Space' || e.code === 'ArrowUp') playerRef.current.isHoldingJump = false; }, []);
+    useEffect(() => { window.addEventListener('keydown', handleKeyDown); window.addEventListener('keyup', handleKeyUp); return () => { window.removeEventListener('keydown', handleKeyDown); window.removeEventListener('keyup', handleKeyUp); }; }, [handleKeyDown, handleKeyUp]);
+
+    useEffect(() => {
+        const canvas = canvasRef.current; if (!canvas) return;
+        const handleTouchStart = (e) => { if (e.target.closest('.game-btn') || e.target.closest('.btn') || e.target.closest('.char-btn') || e.target.closest('.settings-panel') || e.target.closest('.settings-open-btn')) return; e.preventDefault(); if (gameState !== 'playing') return; doJump(playerRef.current); };
+        const handleTouchEnd = (e) => { if (e.target.closest('.game-btn') || e.target.closest('.btn') || e.target.closest('.char-btn') || e.target.closest('.settings-panel') || e.target.closest('.settings-open-btn')) return; if (gameState !== 'playing') return; e.preventDefault(); playerRef.current.isHoldingJump = false; };
+        canvas.addEventListener('touchstart', handleTouchStart, { passive: false }); canvas.addEventListener('touchend', handleTouchEnd, { passive: false }); canvas.addEventListener('touchcancel', handleTouchEnd, { passive: false });
+        return () => { canvas.removeEventListener('touchstart', handleTouchStart); canvas.removeEventListener('touchend', handleTouchEnd); canvas.removeEventListener('touchcancel', handleTouchEnd); };
+    }, [gameState, character]);
+
+    const resetGame = () => {
+        const char = CHARACTERS[character] || CHARACTERS.crocodile; const gy = groundYRef.current;
+        playerRef.current = { x: 100, y: gy - char.baseHeight, width: char.baseWidth, height: char.baseHeight, velocityY: 0, isJumping: false, isHoldingJump: false, jumpMult: 1.0, tilt: 0, bob: 0, foodEaten: 0, foodTarget: 1 };
+        obstaclesRef.current = []; foodsRef.current = []; explosionsRef.current = [];
+        distanceRef.current = 0; spawnTimerRef.current = 0; foodTimerRef.current = 0; bgOffsetRef.current = 0; currentFrameRef.current = 0; spawnCooldownRef.current = 0;
+        healthRef.current = 6; setHealth(6); isTrippingRef.current = false; tripTimerRef.current = 0; speedPenaltyRef.current = 1.0;
+        isBarrelTripRef.current = false; pendingBarrelDamageRef.current = false; isBarrelFlyingRef.current = false; barrelFlyVelocityYRef.current = 0;
+        isFallingIntoPitRef.current = false; pitTargetRef.current = null; pitFallTimerRef.current = 0; pitVelocityRef.current = 0;
+        isPitDeathDelayRef.current = false; pitDeathDelayTimerRef.current = 0;
+        isEatingRef.current = false; eatTimerRef.current = 0; eatFrameIdxRef.current = 0; eatSpeedFactorRef.current = 1.0;
+        resetCombo();
+        pitAudioEndedRef.current = false; if (pitAudioRef.current) { pitAudioRef.current.pause(); pitAudioRef.current.currentTime = 0; }
+        RenderEngine.reset(); setScore(0); setSpeedDisplay(1.0); setPowerDisplay(1.0); setGameState('playing');
+    };
+
+    const handleGameOver = () => { RenderEngine.reset(); if (pitAudioRef.current) pitAudioRef.current.pause(); setGameState('gameover'); if (Math.floor(distanceRef.current) > highScore) { const newHigh = Math.floor(distanceRef.current); setHighScore(newHigh); localStorage.setItem('lacosteHighScore', newHigh); } };
 
     const handleHit = (index, type) => {
         if (isTrippingRef.current) return;
@@ -573,20 +568,30 @@ function Game() {
     const formatScore = (num) => num.toString().padStart(5, '0');
     const getHearts = () => { let h = []; for (let i = 0; i < 3; i++) { if (health >= (i + 1) * 2) h.push('❤️'); else if (health === i * 2 + 1) h.push('💔'); else h.push('🖤'); } return h.join(' '); };
 
-    // ... (остальной JSX из предыдущего рабочего монолита) ...
-    // Скопируй сюда весь блок return React.createElement(...) из предыдущего сообщения (где был HUD, меню и настройки).
-
     return React.createElement('div', { id: 'game-container' },
-        // Здесь твой старый JSX
+        (gameState === 'playing' || gameState === 'paused') ? React.createElement(React.Fragment, null,
+            React.createElement('div', { className: 'hud-left' }, React.createElement('span', null, `DIST: ${score}m`), React.createElement('span', { style: { fontSize: '24px' } }, getHearts())),
+            React.createElement('div', { className: 'hud-right' }, React.createElement('span', null, `HI ${formatScore(highScore)}`)),
+            comboDisplay.mult > 1 ? React.createElement('div', { className: `combo-indicator combo-x${comboDisplay.mult}` }, `COMBO x${comboDisplay.mult}`) : null
+        ) : null,
+
         React.createElement('canvas', { ref: canvasRef, width: 1200, height: 600 }),
-        // ... (кнопки, меню, HUD) ...
+
         gameState === 'menu' ? React.createElement('div', { className: 'menu-overlay' },
-            React.createElement('h1', { className: 'title' }, 'LACOSTE RUNNER'),
+            React.createElement('div', { className: 'title' }, 'LACOSTE RUNNER'),
             React.createElement('button', { className: 'btn btn-start', onClick: startGame }, 'START ESCAPE')
         ) : null,
+
+        gameState === 'paused' ? React.createElement('div', { className: 'menu-overlay' },
+            React.createElement('div', { className: 'title', style: { color: '#00FFFF' } }, 'PAUSED'),
+            React.createElement('button', { className: 'btn btn-start', onClick: () => setGameState('playing') }, 'RESUME')
+        ) : null,
+
         gameState === 'gameover' ? React.createElement('div', { className: 'menu-overlay' },
-            React.createElement('h1', { style: { color: 'red' } }, 'BUSTED'),
-            React.createElement('button', { className: 'btn btn-start', onClick: () => setGameState('menu') }, 'MENU')
+            React.createElement('div', { className: 'title', style: { color: 'red' } }, 'BUSTED'),
+            React.createElement('div', { className: 'subtitle' }, 'DIST: ', score, 'm | HI: ', highScore, 'm'),
+            React.createElement('button', { className: 'btn btn-start', onClick: startGame }, 'TRY AGAIN'),
+            React.createElement('button', { className: 'btn', onClick: () => setGameState('menu'), style: { marginTop: '10px' } }, 'MENU')
         ) : null
     );
 }
