@@ -9,37 +9,374 @@ const HOLD_THRUST = 0.45;
 
 const GROUND_Y = 530; 
 const BASE_SPEED = 4.0; 
-
-// >>> Единая скорость для всех режимов (было Easy = 0.8)
 const SPEED_MULTIPLIER = 0.8;
 
-// === SETTINGS DEFAULTS ===
 const DEFAULT_SETTINGS = {
-    sfxVolume: 0.7,      // 0..1
-    ambientVolume: 0.25, // 0..1
-    masterVolume: 1.0,   // 0..1
-    soundEnabled: true,
-    graphics: 'high',    // 'low' | 'medium' | 'high'
+    sfxVolume: 0.7, ambientVolume: 0.25, masterVolume: 1.0,
+    soundEnabled: true, graphics: 'high',
 };
+
+// ==================================================================
+// 2D RENDER ENGINE
+// Полностью изолированный визуальный слой. Не зависит от React.
+// ==================================================================
+const RenderEngine = (function () {
+    const QUALITY = {
+        low:    { parallax: false, bloom: false, particles: false, shake: false, trail: false, vignette: false, flash: false, maxParticles: 0 },
+        medium: { parallax: true,  bloom: false, particles: true,  shake: true,  trail: false, vignette: false, flash: true,  maxParticles: 200 },
+        high:   { parallax: true,  bloom: true,  particles: true,  shake: true,  trail: true,  vignette: true,  flash: true,  maxParticles: 500 },
+    };
+
+    const state = {
+        quality: 'high',
+        config: QUALITY.high,
+        particles: [],
+        shakeTime: 0,
+        shakeIntensity: 0,
+        flashAlpha: 0,
+        flashColor: '255,0,0',
+        time: 0,
+        trail: [],
+        cache: { vignetteCanvas: null, particleSprite: null },
+    };
+
+    function makeVignette(width, height) {
+        const c = document.createElement('canvas');
+        c.width = width; c.height = height;
+        const ctx = c.getContext('2d');
+        const g = ctx.createRadialGradient(width/2, height/2, Math.min(width,height)*0.3, width/2, height/2, Math.max(width,height)*0.7);
+        g.addColorStop(0, 'rgba(0,0,0,0)');
+        g.addColorStop(1, 'rgba(0,0,0,0.65)');
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, width, height);
+        return c;
+    }
+
+    function makeParticleSprite() {
+        const c = document.createElement('canvas');
+        c.width = c.height = 16;
+        const ctx = c.getContext('2d');
+        const g = ctx.createRadialGradient(8, 8, 0, 8, 8, 8);
+        g.addColorStop(0, 'rgba(255,255,255,1)');
+        g.addColorStop(0.5, 'rgba(255,200,100,0.6)');
+        g.addColorStop(1, 'rgba(255,100,0,0)');
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, 16, 16);
+        return c;
+    }
+
+    return {
+        setQuality(q) {
+            state.quality = q;
+            state.config = QUALITY[q] || QUALITY.high;
+            if (!state.config.particles) state.particles = [];
+        },
+
+        reset() {
+            state.particles = [];
+            state.shakeTime = 0;
+            state.shakeIntensity = 0;
+            state.flashAlpha = 0;
+            state.trail = [];
+        },
+
+        spawnParticles(x, y, count, opts = {}) {
+            if (!state.config.particles) return;
+            const colors = opts.colors || ['#FF007F', '#00FFFF', '#FFD700', '#FFFFFF'];
+            const speed = opts.speed || 6;
+            for (let i = 0; i < count && state.particles.length < state.config.maxParticles; i++) {
+                const a = Math.random() * Math.PI * 2;
+                const v = Math.random() * speed + 1;
+                state.particles.push({
+                    x, y,
+                    vx: Math.cos(a) * v,
+                    vy: Math.sin(a) * v - 1,
+                    life: opts.life || 40,
+                    maxLife: opts.life || 40,
+                    size: (opts.size || 4) * (0.6 + Math.random() * 0.8),
+                    color: colors[Math.floor(Math.random() * colors.length)],
+                    gravity: opts.gravity != null ? opts.gravity : 0.15,
+                    rot: Math.random() * Math.PI * 2,
+                    rotSpeed: (Math.random() - 0.5) * 0.3,
+                    shape: opts.shape || 'circle',
+                });
+            }
+        },
+
+        shake(intensity = 8, duration = 20) {
+            if (!state.config.shake) return;
+            state.shakeIntensity = Math.max(state.shakeIntensity, intensity);
+            state.shakeTime = Math.max(state.shakeTime, duration);
+        },
+
+        flash(color = '255,0,0', alpha = 0.5) {
+            if (!state.config.flash) return;
+            state.flashAlpha = alpha;
+            state.flashColor = color;
+        },
+
+        pushTrail(x, y, w, h, img) {
+            if (!state.config.trail || !img) return;
+            state.trail.push({ x, y, w, h, img, life: 12, maxLife: 12 });
+            if (state.trail.length > 8) state.trail.shift();
+        },
+
+        update() {
+            state.time++;
+            for (let i = state.particles.length - 1; i >= 0; i--) {
+                const p = state.particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.vy += p.gravity;
+                p.vx *= 0.98;
+                p.life--;
+                p.rot += p.rotSpeed;
+                if (p.life <= 0) state.particles.splice(i, 1);
+            }
+            if (state.shakeTime > 0) {
+                state.shakeTime--;
+                if (state.shakeTime === 0) state.shakeIntensity = 0;
+            }
+            if (state.flashAlpha > 0) {
+                state.flashAlpha = Math.max(0, state.flashAlpha - 0.05);
+            }
+            for (let i = state.trail.length - 1; i >= 0; i--) {
+                state.trail[i].life--;
+                if (state.trail[i].life <= 0) state.trail.splice(i, 1);
+            }
+        },
+
+        draw(ctx, canvas, scene) {
+            const { config } = state;
+            const W = canvas.width, H = canvas.height;
+
+            let shakeX = 0, shakeY = 0;
+            if (config.shake && state.shakeTime > 0) {
+                const k = state.shakeTime / 20;
+                shakeX = (Math.random() - 0.5) * state.shakeIntensity * k;
+                shakeY = (Math.random() - 0.5) * state.shakeIntensity * k;
+            }
+
+            ctx.save();
+            ctx.translate(shakeX, shakeY);
+
+            // 1. ПАРАЛЛАКС-ФОН
+            const { bg } = scene;
+            if (bg.img && bg.img.complete && bg.img.naturalWidth > 0) {
+                const scale = H / bg.img.naturalHeight;
+                const exactWidth = Math.ceil(bg.img.naturalWidth * scale);
+
+                if (config.parallax) {
+                    ctx.globalAlpha = 0.5;
+                    let farOffset = Math.floor((bg.offset * 0.4) % exactWidth);
+                    if (farOffset > 0) farOffset -= exactWidth;
+                    for (let i = farOffset; i < W; i += exactWidth) {
+                        ctx.drawImage(bg.img, i, -10, exactWidth, H + 20);
+                    }
+                    ctx.globalAlpha = 1;
+                }
+
+                let offset = Math.floor(bg.offset % exactWidth);
+                if (offset > 0) offset -= exactWidth;
+                for (let i = offset; i < W; i += exactWidth) {
+                    ctx.drawImage(bg.img, i, 0, exactWidth, H);
+                }
+            } else {
+                ctx.fillStyle = bg.fallbackColor;
+                ctx.fillRect(0, 0, W, H);
+            }
+
+            // 2. ПИТ-ОВЕРЛЕЙ
+            if (scene.pitOverlay && scene.pitOverlay.img && scene.pitOverlay.img.complete) {
+                ctx.drawImage(scene.pitOverlay.img, scene.pitOverlay.x, scene.pitOverlay.y, scene.pitOverlay.w, scene.pitOverlay.h);
+            }
+
+            // 3. TRAIL
+            if (config.trail) {
+                state.trail.forEach(t => {
+                    const a = (t.life / t.maxLife) * 0.4;
+                    ctx.save();
+                    ctx.globalAlpha = a;
+                    ctx.drawImage(t.img, t.x, t.y, t.w, t.h);
+                    ctx.restore();
+                });
+            }
+
+            // 4. ПЕРСОНАЖ
+            const p = scene.player;
+            if (p.img && p.img.complete && p.img.naturalWidth > 0) {
+                ctx.save();
+                let fallAngle = 0, yOffset = 0, flyTilt = 0;
+                let chewScale = 1.0;
+                if (p.isEating) chewScale = 1.0 + Math.sin(Date.now() / 80) * 0.05;
+
+                if (p.isBarrelFlying) flyTilt = p.tilt;
+                if (p.isTripping) {
+                    const fallProgress = Math.min(1, p.tripTimer / 15);
+                    const standProgress = Math.max(0, (p.tripTimer - 40) / 80);
+                    const flatAmount = fallProgress * (1 - standProgress);
+                    let dir = p.isBarrelTrip ? (FLIP_CROC ? 1 : -1) : (FLIP_CROC ? -1 : 1);
+                    fallAngle = dir * (Math.PI / 2) * flatAmount;
+                    yOffset = -((p.w - p.h) / 2) * flatAmount;
+                    if (Math.floor(p.tripTimer / 10) % 2 === 1) ctx.globalAlpha = 0.5;
+                }
+
+                const centerX = p.x + p.w / 2;
+                const centerY = p.y + p.h / 2 + (p.isJumping ? 0 : (p.isTripping ? yOffset : p.bob));
+                ctx.translate(centerX, centerY);
+                ctx.rotate(p.tilt + fallAngle + flyTilt);
+                if (FLIP_CROC) ctx.scale(-1, 1);
+                const dW = p.w * chewScale, dH = p.h * chewScale;
+                ctx.drawImage(p.img, -dW / 2, -dH / 2, dW, dH);
+                ctx.restore();
+            } else {
+                ctx.fillStyle = 'red';
+                ctx.fillRect(p.x, p.y, p.w, p.h);
+            }
+
+            // 5. ЕДА
+            ctx.save();
+            ctx.globalAlpha = 1.0;
+            ctx.textBaseline = 'bottom';
+            scene.foods.forEach(f => {
+                ctx.font = `40px Arial`;
+                ctx.fillText(f.emoji, f.x, f.y + f.h);
+            });
+            ctx.restore();
+
+            // 6. ПРЕПЯТСТВИЯ
+            const { images, pickImg } = scene;
+            scene.obstacles.forEach(obs => {
+                if (scene.isPitDeath && scene.pitTarget === obs) return;
+                let img = null, fallback = '#888';
+                if (obs.type === 'puddle') { img = pickImg(images.puddleImg, images.puddleNightImg); fallback = 'rgba(0,150,255,0.5)'; }
+                else if (obs.type === 'pit') { img = pickImg(images.pitImg, images.pitNightImg); fallback = 'black'; }
+                else if (obs.type === 'rock') { img = pickImg(images.rockImg, images.rockNightImg); fallback = '#888'; }
+                else if (obs.type === 'barrel') { img = pickImg(images.barrelImg, images.barrelNightImg); fallback = '#c97b2a'; }
+                else if (obs.type === 'cactus') { img = pickImg(images.cactusImg, images.cactusNightImg); fallback = '#2e8b3a'; }
+
+                if (img && img.complete && img.naturalWidth > 0) {
+                    ctx.drawImage(img, obs.x, obs.y, obs.w, obs.h);
+                } else {
+                    ctx.fillStyle = fallback;
+                    ctx.fillRect(obs.x, obs.y, obs.w, obs.h);
+                }
+            });
+
+            // 7. ВЗРЫВЫ
+            scene.explosions.forEach(expl => {
+                const progress = expl.timer / expl.maxTimer;
+                const scale = 1 + progress * 0.5;
+                const alpha = 1 - progress;
+                const size = expl.size * scale;
+                const x = expl.x - size / 2, y = expl.y - size / 2;
+                if (images.explosionImg.current && images.explosionImg.current.complete) {
+                    ctx.save();
+                    ctx.globalAlpha = alpha;
+                    ctx.drawImage(images.explosionImg.current, x, y, size, size);
+                    ctx.restore();
+                } else {
+                    ctx.save();
+                    ctx.globalAlpha = alpha;
+                    ctx.fillStyle = 'orange';
+                    ctx.beginPath(); ctx.arc(expl.x, expl.y, size / 2, 0, Math.PI * 2); ctx.fill();
+                    ctx.fillStyle = 'yellow';
+                    ctx.beginPath(); ctx.arc(expl.x, expl.y, size / 4, 0, Math.PI * 2); ctx.fill();
+                    ctx.restore();
+                }
+            });
+
+            // 8. ЧАСТИЦЫ
+            if (config.particles) {
+                if (!state.cache.particleSprite) state.cache.particleSprite = makeParticleSprite();
+                const sprite = state.cache.particleSprite;
+                state.particles.forEach(pt => {
+                    const a = pt.life / pt.maxLife;
+                    ctx.save();
+                    ctx.globalAlpha = a;
+                    if (pt.shape === 'circle') {
+                        ctx.fillStyle = pt.color;
+                        ctx.beginPath();
+                        ctx.arc(pt.x, pt.y, pt.size * a, 0, Math.PI * 2);
+                        ctx.fill();
+                    } else if (pt.shape === 'leaf') {
+                        ctx.translate(pt.x, pt.y);
+                        ctx.rotate(pt.rot);
+                        ctx.fillStyle = pt.color;
+                        ctx.beginPath();
+                        ctx.ellipse(0, 0, pt.size, pt.size * 0.5, 0, 0, Math.PI * 2);
+                        ctx.fill();
+                    } else if (pt.shape === 'spark') {
+                        ctx.drawImage(sprite, pt.x - pt.size, pt.y - pt.size, pt.size * 2, pt.size * 2);
+                    }
+                    ctx.restore();
+                });
+            }
+
+            // 9. BLOOM
+            if (config.bloom) {
+                ctx.save();
+                ctx.globalCompositeOperation = 'lighter';
+                scene.obstacles.forEach(obs => {
+                    if (obs.type === 'barrel') {
+                        const cx = obs.x + obs.w / 2, cy = obs.y + obs.h / 2;
+                        const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, obs.w * 1.5);
+                        grad.addColorStop(0, 'rgba(255,150,50,0.3)');
+                        grad.addColorStop(1, 'rgba(255,150,50,0)');
+                        ctx.fillStyle = grad;
+                        ctx.fillRect(cx - obs.w * 1.5, cy - obs.w * 1.5, obs.w * 3, obs.w * 3);
+                    }
+                });
+                scene.foods.forEach(f => {
+                    if (f.emoji === '🎋') {
+                        const cx = f.x + f.w / 2, cy = f.y + f.h / 2;
+                        const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, 30);
+                        grad.addColorStop(0, 'rgba(120,255,120,0.35)');
+                        grad.addColorStop(1, 'rgba(120,255,120,0)');
+                        ctx.fillStyle = grad;
+                        ctx.fillRect(cx - 30, cy - 30, 60, 60);
+                    }
+                });
+                ctx.restore();
+            }
+
+            // 10. VIGNETTE
+            if (config.vignette) {
+                if (!state.cache.vignetteCanvas || state.cache.vignetteCanvas.width !== W) {
+                    state.cache.vignetteCanvas = makeVignette(W, H);
+                }
+                ctx.drawImage(state.cache.vignetteCanvas, 0, 0);
+            }
+
+            // 11. HIT FLASH
+            if (state.flashAlpha > 0) {
+                ctx.fillStyle = `rgba(${state.flashColor},${state.flashAlpha})`;
+                ctx.fillRect(0, 0, W, H);
+            }
+
+            // 12. DEATH FADE
+            if (scene.deathFade != null) {
+                ctx.fillStyle = `rgba(0,0,0,${scene.deathFade})`;
+                ctx.fillRect(0, 0, W, H);
+            }
+
+            ctx.restore();
+        },
+    };
+})();
 
 // === РЕЕСТР ФОНОВ ===
 const BACKGROUNDS = {
     default: {
-        id: 'default',
-        name: 'Forest',
-        emoji: '🌳',
-        dayImg: 'source/landscape.jpg',
-        nightImg: 'source/landscape_n.jpg',
+        id: 'default', name: 'Forest', emoji: '🌳',
+        dayImg: 'source/landscape.jpg', nightImg: 'source/landscape_n.jpg',
         groundOffset: 0,
         obstacleTypes: ['barrel', 'rock', 'cactus', 'puddle', 'pit'],
         foodEmojis: null,
     },
     cartoon: {
-        id: 'cartoon',
-        name: 'Cartoon',
-        emoji: '🌲',
-        dayImg: 'source/cartoon_forest.png',
-        nightImg: 'source/cartoon_forest_n.png',
+        id: 'cartoon', name: 'Cartoon', emoji: '🌲',
+        dayImg: 'source/cartoon_forest.png', nightImg: 'source/cartoon_forest_n.png',
         groundOffset: 30,
         obstacleTypes: ['rock', 'puddle', 'pit'],
         foodEmojis: ['🎋'],
@@ -49,28 +386,18 @@ const BACKGROUNDS = {
 // === РЕЕСТР ПЕРСОНАЖЕЙ ===
 const CHARACTERS = {
     crocodile: {
-        id: 'crocodile',
-        name: 'Crocodile',
-        emoji: '🐊',
-        folder: 'source/characters/crocodile',
-        frameCount: 12,
-        baseWidth: 165.4,
-        baseHeight: 110.3,
+        id: 'crocodile', name: 'Crocodile', emoji: '🐊',
+        folder: 'source/characters/crocodile', frameCount: 12,
+        baseWidth: 165.4, baseHeight: 110.3,
         foodEmojis: ['🍗', '🍔', '🍕', '🥩'],
     },
     panda: {
-        id: 'panda',
-        name: 'Panda',
-        emoji: '🐼',
-        folder: 'source/characters/panda',
-        frameCount: 20,
-        baseWidth: 160,
-        baseHeight: 120,
+        id: 'panda', name: 'Panda', emoji: '🐼',
+        folder: 'source/characters/panda', frameCount: 20,
+        baseWidth: 160, baseHeight: 120,
         foodEmojis: ['🎋'],
-        eatEmoji: '🎋',
-        eatFolder: 'source/characters/panda/eating',
-        eatFrameCount: 8,
-        eatDuration: 4.0,
+        eatEmoji: '🎋', eatFolder: 'source/characters/panda/eating',
+        eatFrameCount: 8, eatDuration: 4.0,
     },
 };
 
@@ -92,7 +419,6 @@ function Game() {
     const [health, setHealth] = useState(6);
     const [highScore, setHighScore] = useState(() => parseInt(localStorage.getItem('lacosteHighScore')) || 0);
 
-    // === SETTINGS ===
     const [settings, setSettings] = useState(() => {
         try {
             const saved = JSON.parse(localStorage.getItem('lacosteSettings') || '{}');
@@ -103,6 +429,7 @@ function Game() {
 
     useEffect(() => {
         localStorage.setItem('lacosteSettings', JSON.stringify(settings));
+        RenderEngine.setQuality(settings.graphics);
     }, [settings]);
 
     const settingsRef = useRef(settings);
@@ -113,7 +440,6 @@ function Game() {
     
     const timeOfDayRef = useRef(timeOfDay);
     const backgroundRef = useRef(background);
-
     const groundYRef = useRef(GROUND_Y + (BACKGROUNDS[background]?.groundOffset || 0));
 
     useEffect(() => {
@@ -128,7 +454,7 @@ function Game() {
         groundYRef.current = GROUND_Y + (bg.groundOffset || 0);
     }, [background]);
 
-    // === ЗАГРУЗКА КАДРОВ ПЕРСОНАЖА ===
+    // === КАДРЫ ПЕРСОНАЖА ===
     const walkFramesRef = useRef([]); 
     const currentFrameRef = useRef(0); 
     const lastFrameTimeRef = useRef(0); 
@@ -138,7 +464,6 @@ function Game() {
     const isEatingRef = useRef(false);
     const eatTimerRef = useRef(0);
     const eatSpeedFactorRef = useRef(1.0);
-    const eatParticlesRef = useRef([]);
 
     useEffect(() => {
         localStorage.setItem('lacosteCharacter', character);
@@ -149,7 +474,6 @@ function Game() {
         isEatingRef.current = false;
         eatTimerRef.current = 0;
         eatSpeedFactorRef.current = 1.0;
-        eatParticlesRef.current = [];
 
         const char = CHARACTERS[character] || CHARACTERS.crocodile;
         for (let i = 1; i <= char.frameCount; i++) {
@@ -207,7 +531,6 @@ function Game() {
         };
     }, []);
 
-    // Apply volumes to all audio elements
     useEffect(() => {
         const s = settings;
         [pitAudioRef, barrelAudioRef, splashAudioRef].forEach(ref => {
@@ -218,11 +541,11 @@ function Game() {
         });
         if (nightAmbientRef.current) {
             if (!s.soundEnabled) nightAmbientRef.current.pause();
-            else if (timeOfDayRef.current === 'night') nightAmbientRef.current.play().catch(() => {});
+            else if (timeOfDayRef.current === 'night' && gameState === 'playing') nightAmbientRef.current.play().catch(() => {});
         }
         if (dayAmbientRef.current) {
             if (!s.soundEnabled) dayAmbientRef.current.pause();
-            else if (timeOfDayRef.current === 'day') dayAmbientRef.current.play().catch(() => {});
+            else if (timeOfDayRef.current === 'day' && gameState === 'playing') dayAmbientRef.current.play().catch(() => {});
         }
     }, [settings]);
 
@@ -231,17 +554,38 @@ function Game() {
         const dayAudio = dayAmbientRef.current;
         if (!nightAudio || !dayAudio) return;
         if (!settingsRef.current.soundEnabled) {
-            nightAudio.pause();
-            dayAudio.pause();
+            nightAudio.pause(); dayAudio.pause();
             return;
         }
-        if (timeOfDay === 'night') { nightAudio.play().catch(() => {}); dayAudio.pause(); }
-        else { dayAudio.play().catch(() => {}); nightAudio.pause(); }
-    }, [timeOfDay, settings.soundEnabled]);
+        if (timeOfDay === 'night') { 
+            if (gameState === 'playing') nightAudio.play().catch(() => {}); 
+            dayAudio.pause(); 
+        }
+        else { 
+            if (gameState === 'playing') dayAudio.play().catch(() => {}); 
+            nightAudio.pause(); 
+        }
+    }, [timeOfDay, settings.soundEnabled, gameState]);
+
+    useEffect(() => {
+        const isPaused = gameState === 'paused' || showSettings || gameState === 'menu' || gameState === 'gameover';
+        if (isPaused) {
+            if (pitAudioRef.current) pitAudioRef.current.pause();
+            if (barrelAudioRef.current) barrelAudioRef.current.pause();
+            if (splashAudioRef.current) splashAudioRef.current.pause();
+            if (nightAmbientRef.current) nightAmbientRef.current.pause();
+            if (dayAmbientRef.current) dayAmbientRef.current.pause();
+        } else {
+            if (settingsRef.current.soundEnabled && gameState === 'playing') {
+                if (timeOfDayRef.current === 'night' && nightAmbientRef.current) nightAmbientRef.current.play().catch(() => {});
+                else if (timeOfDayRef.current === 'day' && dayAmbientRef.current) dayAmbientRef.current.play().catch(() => {});
+            }
+        }
+    }, [gameState, showSettings]);
 
     useEffect(() => {
         const tryPlay = () => {
-            if (!settingsRef.current.soundEnabled) return;
+            if (!settingsRef.current.soundEnabled || gameState !== 'playing' || showSettings) return;
             if (timeOfDayRef.current === 'night') {
                 const n = nightAmbientRef.current; if (n && n.paused) n.play().catch(() => {});
             } else {
@@ -294,7 +638,7 @@ function Game() {
     const isPitDeathDelayRef = useRef(false);
     const pitDeathDelayTimerRef = useRef(0);
 
-    // === СТАТИЧНЫЕ ИЗОБРАЖЕНИЯ ПРЕПЯТСТВИЙ ===
+    // === СТАТИЧНЫЕ ИЗОБРАЖЕНИЯ ===
     const puddleImg = useRef(new Image());
     const puddleNightImg = useRef(new Image());
     const rockImg = useRef(new Image()); 
@@ -373,6 +717,9 @@ function Game() {
                 p.velocityY = JUMP_FORCE * p.jumpMult;
                 p.isJumping = true;
                 p.isHoldingJump = true;
+                RenderEngine.spawnParticles(p.x + p.width / 2, p.y + p.height, 6, {
+                    colors: ['#FFFFFF', '#AAAAAA'], speed: 2, life: 20, size: 2, gravity: 0.1
+                });
             }
         }
     }, [gameState, character, showSettings]);
@@ -406,6 +753,9 @@ function Game() {
             p.velocityY = JUMP_FORCE * p.jumpMult;
             p.isJumping = true;
             p.isHoldingJump = true;
+            RenderEngine.spawnParticles(p.x + p.width / 2, p.y + p.height, 6, {
+                colors: ['#FFFFFF', '#AAAAAA'], speed: 2, life: 20, size: 2, gravity: 0.1
+            });
         };
 
         const handleTouchEnd = (e) => {
@@ -452,15 +802,16 @@ function Game() {
         eatTimerRef.current = 0;
         eatFrameIdxRef.current = 0;
         eatSpeedFactorRef.current = 1.0;
-        eatParticlesRef.current = [];
 
         pitAudioEndedRef.current = false;
         if (pitAudioRef.current) { pitAudioRef.current.pause(); pitAudioRef.current.currentTime = 0; }
 
+        RenderEngine.reset();
         setScore(0); setSpeedDisplay(1.0); setPowerDisplay(1.0); setGameState('playing');
     };
 
     const handleGameOver = () => {
+        RenderEngine.reset();
         if (pitAudioRef.current) pitAudioRef.current.pause();
         setGameState('gameover');
         if (Math.floor(distanceRef.current) > highScore) {
@@ -479,6 +830,12 @@ function Game() {
             splashAudioRef.current.playbackRate = 1.2;
             splashAudioRef.current.play().catch(e => console.warn("Audio blocked", e));
         }
+
+        RenderEngine.flash('255,0,0', 0.4);
+        RenderEngine.shake(6, 12);
+        RenderEngine.spawnParticles(playerRef.current.x + playerRef.current.width / 2, playerRef.current.y + playerRef.current.height / 2, 15, {
+            colors: ['#FF007F', '#FFFFFF'], speed: 4, life: 25, size: 3, gravity: 0.15
+        });
 
         if (healthRef.current <= 0) { handleGameOver(); return; }
         
@@ -500,6 +857,13 @@ function Game() {
             barrelAudioRef.current.play().catch(e => console.warn("Audio blocked", e));
         }
 
+        RenderEngine.spawnParticles(obs.x + obs.width / 2, obs.y + obs.height / 2, 30, {
+            colors: ['#FF007F', '#FFD700', '#FFAA00', '#FFFFFF'],
+            speed: 8, life: 40, size: 5, gravity: 0.2, shape: 'circle'
+        });
+        RenderEngine.shake(12, 20);
+        RenderEngine.flash('255,150,0', 0.3);
+
         obstaclesRef.current.splice(index, 1);
         obstaclesRef.current = obstaclesRef.current.filter(o => (o.x + o.width) > p.x && o.x < canvas.width);
         foodsRef.current = foodsRef.current.filter(f => f.x < canvas.width);
@@ -516,26 +880,12 @@ function Game() {
         const gy = groundYRef.current;
         const bgConfig = BACKGROUNDS[backgroundRef.current] || BACKGROUNDS.default;
 
-        // >>> Единая скорость для всех режимов
         const diffMult = SPEED_MULTIPLIER;
-
-        // Graphics quality (for particle spawn density)
         const gfxQuality = settingsRef.current.graphics;
 
-        // Обновляем частицы (даже после еды)
-        eatParticlesRef.current.forEach(pt => {
-            pt.x += pt.vx;
-            pt.y += pt.vy;
-            pt.vy += 0.15;
-            pt.life--;
-        });
-        eatParticlesRef.current = eatParticlesRef.current.filter(pt => pt.life > 0);
-
-        // === СОСТОЯНИЕ ПОЕДАНИЯ ===
         if (isEatingRef.current) {
             eatTimerRef.current++;
 
-            // ОДИН ЦИКЛ АНИМАЦИИ ЗА ВСЮ ТРАПЕЗУ (без зацикливания)
             if (eatFramesRef.current.length > 0) {
                 const totalFrames = (char.eatDuration || 4) * 60;
                 const framesPerStep = totalFrames / eatFramesRef.current.length;
@@ -545,7 +895,6 @@ function Game() {
                 );
             }
 
-            // Плавное замедление мира за первые 12 кадров
             if (eatTimerRef.current < 12) {
                 eatSpeedFactorRef.current = 1 - eatTimerRef.current / 12;
             } else {
@@ -553,7 +902,6 @@ function Game() {
             }
             const eatSpeedFactor = eatSpeedFactorRef.current;
 
-            // Движение мира с учётом eatSpeedFactor
             const baseSpeedMultEat = 1.0 + Math.floor(distanceRef.current / 100) * 0.04;
             const effectiveSpeedMultEat = Math.max(1.0, baseSpeedMultEat * speedPenaltyRef.current);
             const currentSpeedEat = BASE_SPEED * effectiveSpeedMultEat * diffMult * eatSpeedFactor;
@@ -571,30 +919,22 @@ function Game() {
             explosionsRef.current.forEach(e => e.timer++);
             explosionsRef.current = explosionsRef.current.filter(e => e.timer < e.maxTimer);
 
-            // Панда стоит на месте с bounce
             p.isJumping = false;
             p.velocityY = 0;
             p.y = gy - p.height;
             p.tilt = 0;
             p.bob = Math.sin(Date.now() / 150) * 3;
 
-            // Частицы бамбука (density depends on graphics)
             const particleEvery = gfxQuality === 'low' ? 15 : gfxQuality === 'medium' ? 9 : 6;
             if (eatTimerRef.current % particleEvery === 0) {
-                eatParticlesRef.current.push({
-                    x: p.x + p.width / 2 + (Math.random() - 0.5) * p.width * 0.3,
-                    y: p.y + p.height * 0.3,
-                    vx: (Math.random() - 0.5) * 3,
-                    vy: -1.5 - Math.random() * 2,
-                    life: 45,
-                    maxLife: 45,
-                    size: 3 + Math.random() * 4,
-                    rot: Math.random() * Math.PI * 2,
-                    rotSpeed: (Math.random() - 0.5) * 0.3,
-                });
+                RenderEngine.spawnParticles(
+                    p.x + p.width / 2 + (Math.random() - 0.5) * p.width * 0.3,
+                    p.y + p.height * 0.3,
+                    1,
+                    { colors: ['#4CAF50', '#8BC34A'], speed: 2, life: 45, size: 3, gravity: 0.15, shape: 'leaf' }
+                );
             }
 
-            // Окончание еды
             const eatDurationFrames = (char.eatDuration || 4) * 60;
             if (eatTimerRef.current >= eatDurationFrames) {
                 isEatingRef.current = false;
@@ -607,7 +947,6 @@ function Game() {
             }
             return;
         } else {
-            // Плавное ускорение после еды
             eatSpeedFactorRef.current = Math.min(1, eatSpeedFactorRef.current + 0.083);
         }
         
@@ -693,10 +1032,16 @@ function Game() {
             if (now - lastFrameTimeRef.current > frameDelay) {
                 currentFrameRef.current = (currentFrameRef.current + 1) % char.frameCount; 
                 lastFrameTimeRef.current = now;
+                // Trail
+                const frames = walkFramesRef.current;
+                const idx = frames.length > 0 ? currentFrameRef.current % frames.length : 0;
+                const trailImg = frames[idx];
+                if (trailImg && !isEatingRef.current) {
+                    RenderEngine.pushTrail(p.x, p.y, p.width, p.height, trailImg);
+                }
             }
         }
 
-        // === СПАВН ===
         if (!isTrippingRef.current) {
             if (spawnCooldownRef.current > 0) { spawnCooldownRef.current--; spawnTimerRef.current = 0; } 
             else {
@@ -767,6 +1112,10 @@ function Game() {
                         isFallingIntoPitRef.current = true; pitTargetRef.current = obs;
                         pitFallTimerRef.current = 0; pitVelocityRef.current = 0;
                         p.velocityY = 0; p.isJumping = false; p.isHoldingJump = false;
+                        RenderEngine.spawnParticles(obs.x + obs.width / 2, gy, 20, {
+                            colors: ['#FF007F', '#FFD700', '#888888'], speed: 4, life: 30, size: 3, gravity: 0.2
+                        });
+                        RenderEngine.shake(10, 15);
                         return;
                     } else if (obs.type === 'barrel') { handleBarrelHit(i); break; } 
                     else { handleHit(i, obs.type); break; }
@@ -784,6 +1133,9 @@ function Game() {
                     p.width += 2; p.height += 1.3; p.y = gy - p.height; 
                     p.foodEaten = 0; p.foodTarget = p.foodTarget + 1;
                     healthRef.current = Math.min(6, healthRef.current + 1); setHealth(healthRef.current);
+                    RenderEngine.spawnParticles(p.x + p.width / 2, p.y + p.height / 2, 12, {
+                        colors: ['#FFD700', '#FFFFFF'], speed: 3, life: 30, size: 3, gravity: 0.1
+                    });
                 }
 
                 if (isEatTrigger) {
@@ -801,6 +1153,64 @@ function Game() {
             }
             return true;
         });
+    };
+
+    // === СБОРКА СЦЕНЫ ДЛЯ ДВИЖКА ===
+    const describeScene = () => {
+        const char = CHARACTERS[character] || CHARACTERS.crocodile;
+        const gy = groundYRef.current;
+        const bgConfig = BACKGROUNDS[backgroundRef.current] || BACKGROUNDS.default;
+        const bgImages = backgroundImagesRef.current[bgConfig.id] || { day: new Image(), night: new Image() };
+
+        let charImg;
+        if (isEatingRef.current && eatFramesRef.current.length > 0) {
+            charImg = eatFramesRef.current[eatFrameIdxRef.current % eatFramesRef.current.length];
+        } else {
+            const frames = walkFramesRef.current;
+            const idx = frames.length > 0 ? currentFrameRef.current % frames.length : 0;
+            charImg = frames[idx];
+        }
+
+        const pickImg = (dayImg, nightImg) => timeOfDayRef.current === 'night' ? nightImg.current : dayImg.current;
+
+        return {
+            bg: {
+                img: timeOfDayRef.current === 'night' ? bgImages.night : bgImages.day,
+                offset: bgOffsetRef.current,
+                fallbackColor: timeOfDayRef.current === 'night' ? '#0a0512' : '#1a0b2e',
+            },
+            groundY: gy,
+            player: {
+                x: playerRef.current.x,
+                y: playerRef.current.y,
+                w: playerRef.current.width,
+                h: playerRef.current.height,
+                tilt: playerRef.current.tilt,
+                bob: playerRef.current.bob,
+                isJumping: playerRef.current.isJumping,
+                img: charImg,
+                isEating: isEatingRef.current,
+                isTripping: isTrippingRef.current,
+                tripTimer: tripTimerRef.current,
+                isBarrelTrip: isBarrelTripRef.current,
+                isBarrelFlying: isBarrelFlyingRef.current,
+            },
+            obstacles: obstaclesRef.current.map(o => ({ x: o.x, y: o.y, w: o.width, h: o.height, type: o.type })),
+            foods: foodsRef.current.map(f => ({ x: f.x, y: f.y, w: f.width, h: f.height, emoji: f.emoji })),
+            explosions: explosionsRef.current.map(e => ({ x: e.x, y: e.y, size: e.size, timer: e.timer, maxTimer: e.maxTimer })),
+            pitOverlay: (isFallingIntoPitRef.current || isPitDeathDelayRef.current) && pitTargetRef.current
+                ? { x: pitTargetRef.current.x, y: pitTargetRef.current.y, w: pitTargetRef.current.width, h: pitTargetRef.current.height, img: pickImg(pitImg, pitNightImg) }
+                : null,
+            isPitDeath: isFallingIntoPitRef.current || isPitDeathDelayRef.current,
+            pitTarget: pitTargetRef.current,
+            deathFade: isPitDeathDelayRef.current
+                ? Math.min(1, (pitAudioRef.current && isFinite(pitAudioRef.current.duration) && pitAudioRef.current.duration > 0.1 && settingsRef.current.soundEnabled)
+                    ? pitAudioRef.current.currentTime / pitAudioRef.current.duration
+                    : pitDeathDelayTimerRef.current / 180)
+                : null,
+            images: { puddleImg, puddleNightImg, rockImg, rockNightImg, pitImg, pitNightImg, barrelImg, barrelNightImg, cactusImg, cactusNightImg, explosionImg },
+            pickImg,
+        };
     };
 
     const lastTimeRef = useRef(0);
@@ -822,155 +1232,21 @@ function Game() {
                 let loops = 0;
                 while (accumulatorRef.current >= FRAME_TIME && loops < 5) {
                     updateLogic();
+                    RenderEngine.update();
                     accumulatorRef.current -= FRAME_TIME;
                     loops++;
                 }
                 if (gameState !== 'playing') return;
                 const canvas = canvasRef.current;
                 const ctx = canvas.getContext('2d');
-                draw(ctx, canvas);
+                const scene = describeScene();
+                RenderEngine.draw(ctx, canvas, scene);
                 requestRef.current = requestAnimationFrame(gameLoop);
             };
             requestRef.current = requestAnimationFrame(gameLoop);
         }
         return () => cancelAnimationFrame(requestRef.current);
     }, [gameState, character, background]);
-
-    const pickImg = (dayImg, nightImg) => timeOfDayRef.current === 'night' ? nightImg.current : dayImg.current;
-    const drawObstacleImage = (ctx, obs, dayImg, nightImg, fallbackColor) => {
-        const img = pickImg(dayImg, nightImg);
-        if (img.complete && img.naturalWidth > 0) ctx.drawImage(img, obs.x, obs.y, obs.width, obs.height);
-        else { ctx.fillStyle = fallbackColor; ctx.fillRect(obs.x, obs.y, obs.width, obs.height); }
-    };
-
-    const draw = (ctx, canvas) => {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.globalAlpha = 1.0;
-        const p = playerRef.current;
-        const gy = groundYRef.current;
-        const bgConfig = BACKGROUNDS[backgroundRef.current] || BACKGROUNDS.default;
-        const bgImages = backgroundImagesRef.current[bgConfig.id] || { day: new Image(), night: new Image() };
-        const bgImg = timeOfDayRef.current === 'night' ? bgImages.night : bgImages.day;
-
-        if (bgImg.complete && bgImg.naturalWidth > 0) {
-            const scale = canvas.height / bgImg.naturalHeight; const exactWidth = Math.ceil(bgImg.naturalWidth * scale);
-            let offsetX = Math.floor(bgOffsetRef.current % exactWidth);
-            if (offsetX > 0) offsetX -= exactWidth;
-            for (let i = offsetX; i < canvas.width; i += exactWidth) ctx.drawImage(bgImg, i, 0, exactWidth, canvas.height);
-        } else {
-            ctx.fillStyle = timeOfDayRef.current === 'night' ? '#0a0512' : '#1a0b2e'; ctx.fillRect(0, 0, canvas.width, canvas.height);
-        }
-
-        if ((isFallingIntoPitRef.current || isPitDeathDelayRef.current) && pitTargetRef.current) {
-            const obs = pitTargetRef.current; const pitDrawImg = pickImg(pitImg, pitNightImg);
-            if (pitDrawImg.complete && pitDrawImg.naturalWidth > 0) ctx.drawImage(pitDrawImg, obs.x, obs.y, obs.width, obs.height);
-            else { ctx.fillStyle = 'black'; ctx.beginPath(); ctx.ellipse(obs.x + obs.width / 2, obs.y + obs.height / 2, obs.width / 2, obs.height / 2, 0, 0, Math.PI * 2); ctx.fill(); }
-        }
-
-        let charImg;
-        if (isEatingRef.current && eatFramesRef.current.length > 0) {
-            charImg = eatFramesRef.current[eatFrameIdxRef.current % eatFramesRef.current.length];
-        } else {
-            const frames = walkFramesRef.current;
-            const frameIdx = frames.length > 0 ? (currentFrameRef.current % frames.length) : 0;
-            charImg = frames[frameIdx];
-        }
-
-        if (isFallingIntoPitRef.current || isPitDeathDelayRef.current) {
-            if (charImg && charImg.complete && charImg.naturalWidth > 0) {
-                ctx.save(); ctx.beginPath(); ctx.rect(0, 0, canvas.width, gy); ctx.clip();
-                ctx.save(); const centerX = p.x + p.width / 2; const centerY = p.y + p.height / 2;
-                ctx.translate(centerX, centerY); ctx.rotate(p.tilt); if (FLIP_CROC) ctx.scale(-1, 1);
-                ctx.drawImage(charImg, -p.width / 2, -p.height / 2, p.width, p.height); ctx.restore(); ctx.restore();
-            }
-        } else {
-            if (charImg && charImg.complete && charImg.naturalWidth > 0) {
-                ctx.save();
-                let fallAngle = 0, yOffset = 0, flyTilt = 0;
-
-                let chewScale = 1.0;
-                if (isEatingRef.current) {
-                    chewScale = 1.0 + Math.sin(Date.now() / 80) * 0.05;
-                }
-
-                if (isBarrelFlyingRef.current) flyTilt = p.tilt;
-                if (isTrippingRef.current) {
-                    const fallProgress = Math.min(1, tripTimerRef.current / 15); const standProgress = Math.max(0, (tripTimerRef.current - 40) / 80);
-                    const flatAmount = fallProgress * (1 - standProgress);
-                    let dir = isBarrelTripRef.current ? (FLIP_CROC ? 1 : -1) : (FLIP_CROC ? -1 : 1);
-                    fallAngle = dir * (Math.PI / 2) * flatAmount; yOffset = -((p.width - p.height) / 2) * flatAmount;
-                    if (Math.floor(tripTimerRef.current / 10) % 2 === 1) ctx.globalAlpha = 0.5;
-                }
-
-                const centerX = p.x + p.width / 2; 
-                const centerY = p.y + p.height / 2 + (p.isJumping ? 0 : (isTrippingRef.current ? yOffset : p.bob));
-                
-                ctx.translate(centerX, centerY); 
-                ctx.rotate(p.tilt + fallAngle + flyTilt);
-                if (FLIP_CROC) ctx.scale(-1, 1); 
-                
-                const dW = p.width * chewScale;
-                const dH = p.height * chewScale;
-                ctx.drawImage(charImg, -dW / 2, -dH / 2, dW, dH); 
-                ctx.restore();
-            } else { ctx.fillStyle = 'red'; ctx.fillRect(p.x, p.y, p.width, p.height); }
-        }
-
-        eatParticlesRef.current.forEach(pt => {
-            const alpha = pt.life / pt.maxLife;
-            ctx.save();
-            ctx.globalAlpha = alpha;
-            ctx.fillStyle = '#4CAF50';
-            ctx.translate(pt.x, pt.y);
-            if (pt.rot !== undefined) ctx.rotate(pt.rot);
-            ctx.beginPath();
-            ctx.ellipse(0, 0, pt.size, pt.size * 0.5, 0, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.fillStyle = '#8BC34A';
-            ctx.beginPath();
-            ctx.arc(0, 0, pt.size * 0.4, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.restore();
-            if (pt.rotSpeed) pt.rot = (pt.rot || 0) + pt.rotSpeed;
-        });
-
-        explosionsRef.current.forEach(expl => {
-            const progress = expl.timer / expl.maxTimer; const scale = 1 + progress * 0.5; const alpha = 1 - progress; const size = expl.size * scale;
-            const x = expl.x - size / 2; const y = expl.y - size / 2;
-            if (explosionImg.current.complete && explosionImg.current.naturalWidth > 0) {
-                ctx.save(); ctx.globalAlpha = alpha; ctx.drawImage(explosionImg.current, x, y, size, size); ctx.restore();
-            } else {
-                ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = 'orange'; ctx.beginPath(); ctx.arc(expl.x, expl.y, size / 2, 0, Math.PI * 2); ctx.fill();
-                ctx.fillStyle = 'yellow'; ctx.beginPath(); ctx.arc(expl.x, expl.y, size / 4, 0, Math.PI * 2); ctx.fill(); ctx.restore();
-            }
-        });
-
-        ctx.save();
-        ctx.globalAlpha = 1.0;
-        ctx.textBaseline = 'bottom';
-        foodsRef.current.forEach(food => { 
-            ctx.font = `40px Arial`; 
-            ctx.fillText(food.emoji, food.x, food.y + food.height); 
-        });
-        ctx.restore();
-
-        obstaclesRef.current.forEach(obs => {
-            if ((isFallingIntoPitRef.current || isPitDeathDelayRef.current) && obs === pitTargetRef.current) return;
-            if (obs.type === 'puddle') drawObstacleImage(ctx, obs, puddleImg, puddleNightImg, 'rgba(0, 150, 255, 0.5)');
-            else if (obs.type === 'pit') drawObstacleImage(ctx, obs, pitImg, pitNightImg, 'black');
-            else if (obs.type === 'rock') drawObstacleImage(ctx, obs, rockImg, rockNightImg, '#888');
-            else if (obs.type === 'barrel') drawObstacleImage(ctx, obs, barrelImg, barrelNightImg, '#c97b2a');
-            else if (obs.type === 'cactus') drawObstacleImage(ctx, obs, cactusImg, cactusNightImg, '#2e8b3a');
-        });
-        
-        if (isPitDeathDelayRef.current) {
-            let fadeProgress;
-            const a = pitAudioRef.current;
-            if (a && isFinite(a.duration) && a.duration > 0.1 && settingsRef.current.soundEnabled) fadeProgress = Math.min(1, a.currentTime / a.duration);
-            else fadeProgress = Math.min(1, pitDeathDelayTimerRef.current / 180);
-            ctx.fillStyle = `rgba(0, 0, 0, ${fadeProgress})`; ctx.fillRect(0, 0, canvas.width, canvas.height);
-        }
-    };
 
     const startGame = () => resetGame();
     const formatScore = (num) => num.toString().padStart(5, '0');
@@ -1035,7 +1311,6 @@ function Game() {
             React.createElement('div', { className: 'subtitle' }, 'VICE CITY EDITION'),
 
             renderCharacterPanel(),
-
             renderBackgroundPanel(),
 
             React.createElement('div', { className: 'settings', style: { marginTop: '-10px' } },
@@ -1126,7 +1401,6 @@ function Game() {
 
                 React.createElement('div', { className: 'settings-section' },
                     React.createElement('div', { className: 'settings-section-title' }, '🔊 Audio'),
-
                     React.createElement('div', { className: 'setting-row' },
                         React.createElement('span', { className: 'setting-label' }, 'Sound'),
                         React.createElement('button', {
@@ -1135,12 +1409,10 @@ function Game() {
                             'aria-label': 'Toggle sound'
                         })
                     ),
-
                     React.createElement('div', { className: 'setting-row' },
                         React.createElement('span', { className: 'setting-label' }, 'Master'),
                         React.createElement('input', {
-                            type: 'range',
-                            min: 0, max: 100,
+                            type: 'range', min: 0, max: 100,
                             value: Math.round(settings.masterVolume * 100),
                             onChange: (e) => setSettings(s => ({ ...s, masterVolume: Number(e.target.value) / 100 })),
                             className: 'setting-slider',
@@ -1148,12 +1420,10 @@ function Game() {
                         }),
                         React.createElement('span', { className: 'setting-value' }, `${Math.round(settings.masterVolume * 100)}%`)
                     ),
-
                     React.createElement('div', { className: 'setting-row' },
                         React.createElement('span', { className: 'setting-label' }, 'SFX'),
                         React.createElement('input', {
-                            type: 'range',
-                            min: 0, max: 100,
+                            type: 'range', min: 0, max: 100,
                             value: Math.round(settings.sfxVolume * 100),
                             onChange: (e) => setSettings(s => ({ ...s, sfxVolume: Number(e.target.value) / 100 })),
                             className: 'setting-slider',
@@ -1161,12 +1431,10 @@ function Game() {
                         }),
                         React.createElement('span', { className: 'setting-value' }, `${Math.round(settings.sfxVolume * 100)}%`)
                     ),
-
                     React.createElement('div', { className: 'setting-row' },
                         React.createElement('span', { className: 'setting-label' }, 'Ambient'),
                         React.createElement('input', {
-                            type: 'range',
-                            min: 0, max: 100,
+                            type: 'range', min: 0, max: 100,
                             value: Math.round(settings.ambientVolume * 100),
                             onChange: (e) => setSettings(s => ({ ...s, ambientVolume: Number(e.target.value) / 100 })),
                             className: 'setting-slider',
