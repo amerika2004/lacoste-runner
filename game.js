@@ -1,4 +1,4 @@
-// ======================= 0. СИСТЕМА ПЛАГИНОВ (ИНФРАСТРУКТУРА) =======================
+// ======================= 0. СИСТЕМА ПЛАГИНОВ =======================
 window.GameEvents = {
     listeners: {},
     on(event, cb) {
@@ -12,9 +12,8 @@ window.GameEvents = {
     }
 };
 
-window.PackUIs = [];          // Сюда плагины пушат React-компоненты
-window.GameCharacters = {};   // Сюда плагины регистрируют персонажей
-window.GameRefs = {};         // Экспорт игровых рефов для плагинов
+window.PackUIs = [];
+window.GameCharacters = {};
 
 window.GameBoot = {
     triggered: false,
@@ -27,7 +26,6 @@ window.GameBoot = {
         if (this.triggered) return;
         this.triggered = true;
         window.__MODULES_READY__ = true;
-        // Сливаем персонажей из плагинов в монолит (доступны в меню и рендере)
         if (window.GameCharacters) {
             Object.keys(window.GameCharacters).forEach(k => {
                 if (!CHARACTERS[k]) CHARACTERS[k] = window.GameCharacters[k];
@@ -38,7 +36,7 @@ window.GameBoot = {
     }
 };
 
-// ======================= ОСНОВНОЙ КОД МОНОЛИТА =======================
+// ======================= 1. МОНОЛИТ =======================
 const { useState, useEffect, useRef, useCallback } = React;
 
 const FLIP_CROC = false; 
@@ -254,7 +252,6 @@ const RenderEngine = (function () {
     };
 })();
 
-// Экспорт рендера в window для плагинов
 window.RenderEngine = RenderEngine;
 
 function Game() {
@@ -282,17 +279,6 @@ function Game() {
     const timeOfDayRef = useRef(timeOfDay);
     const backgroundRef = useRef(background);
     const groundYRef = useRef(GROUND_Y + (BACKGROUNDS[background]?.groundOffset || 0));
-
-    // >>> Экспорт рефов для плагинов
-    useEffect(() => {
-        window.GameRefs = {
-            player: playerRef, obstacles: obstaclesRef, foods: foodsRef,
-            distance: distanceRef, health: healthRef, combo: comboRef,
-            comboMult: comboMultRef, settings: settingsRef,
-            setHealth: setHealth, setScore: setScore,
-            getGameState: () => gameState
-        };
-    }, [gameState]);
 
     useEffect(() => { timeOfDayRef.current = timeOfDay; localStorage.setItem('lacosteTimeOfDay', timeOfDay); }, [timeOfDay]);
     useEffect(() => { backgroundRef.current = background; localStorage.setItem('lacosteBackground', background); const bg = BACKGROUNDS[background] || BACKGROUNDS.default; groundYRef.current = GROUND_Y + (bg.groundOffset || 0); }, [background]);
@@ -378,15 +364,13 @@ function Game() {
         addCombo();
         if (jumpAudioRef.current && settingsRef.current.soundEnabled) { jumpAudioRef.current.currentTime = 0; jumpAudioRef.current.play().catch(() => {}); }
         RenderEngine.spawnParticles(p.x + p.width / 2, p.y + p.height, 6, { colors: ['#FFFFFF', '#AAAAAA'], speed: 2, life: 20, size: 2, gravity: 0.1 });
-        // >>> Событие для плагинов
         window.GameEvents.emit('jump', { x: p.x, y: p.y });
     };
 
     const handleKeyDown = useCallback((e) => {
         if (e.code === 'Escape') { e.preventDefault(); if (showSettings) { setShowSettings(false); return; } if (isFallingIntoPitRef.current || isPitDeathDelayRef.current) return; if (gameState === 'playing') setGameState('paused'); else if (gameState === 'paused') setGameState('playing'); return; }
-        if (e.code === 'KeyN') { e.preventDefault(); setTimeOfDay(prev => prev === 'day' ? 'night' : 'day'); window.GameEvents.emit('time_changed', { timeOfDay: timeOfDay === 'day' ? 'night' : 'day' }); return; }
+        if (e.code === 'KeyN') { e.preventDefault(); setTimeOfDay(prev => prev === 'day' ? 'night' : 'day'); return; }
         if (e.code === 'Space' || e.code === 'ArrowUp') { e.preventDefault(); if (gameState === 'menu') setGameState('playing'); else if (gameState === 'gameover') resetGame(); else if (gameState === 'playing') doJump(playerRef.current); }
-        // >>> Событие ввода для плагинов
         window.GameEvents.emit('input_keydown', e);
     }, [gameState, character, showSettings]);
 
@@ -414,7 +398,6 @@ function Game() {
         resetCombo();
         pitAudioEndedRef.current = false; if (pitAudioRef.current) { pitAudioRef.current.pause(); pitAudioRef.current.currentTime = 0; }
         RenderEngine.reset(); setScore(0); setSpeedDisplay(1.0); setPowerDisplay(1.0); setGameState('playing');
-        // >>> Событие старта
         window.GameEvents.emit('game_start', { character, background, timeOfDay, settings: settingsRef.current });
     };
 
@@ -426,7 +409,6 @@ function Game() {
             const newHigh = Math.floor(distanceRef.current); 
             setHighScore(newHigh); localStorage.setItem('lacosteHighScore', newHigh); 
         }
-        // >>> Событие game over
         window.GameEvents.emit('gameover', { distance: Math.floor(distanceRef.current), health: healthRef.current, character, background, timeOfDay });
     };
 
@@ -441,7 +423,6 @@ function Game() {
         isTrippingRef.current = true; tripTimerRef.current = 0; isBarrelTripRef.current = false;
         const p = playerRef.current; p.y = groundYRef.current - p.height; p.velocityY = 0; p.isJumping = false; p.tilt = 0;
         speedPenaltyRef.current = speedPenaltyRef.current * 0.65;
-        // >>> Событие удара
         window.GameEvents.emit('hit', { health: healthRef.current, type });
     };
 
@@ -456,7 +437,6 @@ function Game() {
         obstaclesRef.current.splice(index, 1); obstaclesRef.current = obstaclesRef.current.filter(o => (o.x + o.width) > p.x && o.x < canvas.width); foodsRef.current = foodsRef.current.filter(f => f.x < canvas.width);
         spawnCooldownRef.current = 90; spawnTimerRef.current = 0; isBarrelFlyingRef.current = true; isBarrelTripRef.current = true; barrelFlyVelocityYRef.current = -20;
         p.velocityY = 0; p.isJumping = false; p.isHoldingJump = false; p.tilt = 0;
-        // >>> Событие бочки
         window.GameEvents.emit('barrel_hit', { x: obs.x, y: obs.y });
     };
 
@@ -516,11 +496,9 @@ function Game() {
         const effectiveSpeedMult = Math.max(1.0, baseSpeedMult * speedPenaltyRef.current);
         let currentSpeed = 0;
         if (!isTrippingRef.current) {
-            const _spd = window.GameRefs?.modifiers?.speed || 1.0;
-            const _scr = window.GameRefs?.modifiers?.scoreMult || 1;
-            currentSpeed = BASE_SPEED * effectiveSpeedMult * diffMult * eatSpeedFactorRef.current * _spd;
+            currentSpeed = BASE_SPEED * effectiveSpeedMult * diffMult * eatSpeedFactorRef.current;
             setSpeedDisplay((effectiveSpeedMult * diffMult * eatSpeedFactorRef.current).toFixed(2));
-            distanceRef.current += (currentSpeed * 0.03 * comboMultRef.current * _scr);
+            distanceRef.current += (currentSpeed * 0.03 * comboMultRef.current); setScore(Math.floor(distanceRef.current)); bgOffsetRef.current -= currentSpeed;
         } else setSpeedDisplay("0.00");
 
         const currentPower = calculateJumpMultiplier(p.height, baseSpeedMult, speedPenaltyRef.current); setPowerDisplay(currentPower.toFixed(2));
@@ -608,14 +586,12 @@ function Game() {
                 else if (food.type === 'poison') { speedPenaltyRef.current = speedPenaltyRef.current * 0.9; RenderEngine.spawnParticles(food.x + 20, food.y + 20, 15, { colors: ['#8B00FF', '#FF007F'], speed: 5, life: 30, size: 4 }); }
                 else { p.foodEaten++; if (p.foodEaten >= p.foodTarget) { p.width += 2; p.height += 1.3; p.y = gy - p.height; p.foodEaten = 0; p.foodTarget = p.foodTarget + 1; healthRef.current = Math.min(6, healthRef.current + 1); setHealth(healthRef.current); RenderEngine.spawnParticles(p.x + p.width / 2, p.y + p.height / 2, 12, { colors: ['#FFD700', '#FFFFFF'], speed: 3, life: 30, size: 3, gravity: 0.1 }); } }
                 if (isEatTrigger) { isEatingRef.current = true; eatTimerRef.current = 0; eatFrameIdxRef.current = 0; p.y = gy - p.height; p.velocityY = 0; p.isJumping = false; p.isHoldingJump = false; p.tilt = 0; p.bob = 0; }
-                // >>> Событие еды
                 window.GameEvents.emit('eat', { type: food.type, emoji: food.emoji });
                 return false;
             }
             return true;
         });
 
-        // >>> Событие world_tick (раз в 5 кадров, чтобы не спамить)
         if (Math.floor(distanceRef.current) % 5 === 0) {
             window.GameEvents.emit('world_tick', { distance: distanceRef.current, health: healthRef.current });
         }
@@ -664,7 +640,6 @@ function Game() {
                 while (accumulatorRef.current >= FRAME_TIME && loops < 5) { 
                     updateLogic(); 
                     RenderEngine.update(); 
-                    // >>> Событие tick для плагинов (60 раз в секунду)
                     window.GameEvents.emit('tick');
                     accumulatorRef.current -= FRAME_TIME; 
                     loops++; 
@@ -674,7 +649,6 @@ function Game() {
                 const ctx = canvas.getContext('2d');
                 const scene = describeScene();
                 RenderEngine.draw(ctx, canvas, scene);
-                // >>> Событие render_frame для плагинов (каждый кадр)
                 window.GameEvents.emit('render_frame', { ctx });
                 requestRef.current = requestAnimationFrame(gameLoop);
             };
@@ -847,11 +821,11 @@ function Game() {
         ) : null,
 
         // >>> СЛОЙ ДЛЯ UI-ПЛАГИНОВ
-        (window.PackUIs || []).map((UI, i) => React.createElement(UI, { key: i, gameState, setGameState, GameConfig: { DEFAULT_SETTINGS, BACKGROUNDS, CHARACTERS, FOOD_TYPES } }))
+        (window.PackUIs || []).map((UI, i) => React.createElement(UI, { key: i, gameState, setGameState }))
     );
 }
 
-// ======================= 1. ЗАПУСК С ОЖИДАНИЕМ ПЛАГИНОВ =======================
+// ======================= 2. ЗАПУСК С ОЖИДАНИЕМ ПЛАГИНОВ =======================
 function boot() { 
     if (!window.__BOOTED__) { 
         window.__BOOTED__ = true; 
@@ -862,7 +836,6 @@ function boot() {
 
 window.GameBoot.onReady(boot);
 
-// Фоллбэк: если loader.js не подключен/упал — запускаем монолит через 5 сек
 setTimeout(() => { 
     if (!window.__BOOTED__) { 
         console.warn('⚠️ Loader fallback: booting monolith without plugins');
