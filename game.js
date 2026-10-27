@@ -852,7 +852,7 @@ function Game() {
         ),
 
         // >>> УНИВЕРСАЛЬНЫЙ СЛОЙ ДЛЯ ВСЕХ UI ПАКЕТОВ
-        React.createElement(AllPacksUI, { gameState })
+        React.createElement(AllPacksUI, { gameState }, window.PackUIs && window.PackUIs.map((UI, i) => React.createElement(UI, { key: i, gameState })))
     );
 }
 
