@@ -229,18 +229,18 @@ function pickFoodType() {
 }
 
 // ======================= UNIVERSAL UI WRAPPER =======================
-function AllPacksUI({ gameState }) {
-    const [uis, setUis] = React.useState([...window.PackUIs]);
-    React.useEffect(() => {
-        const id = setInterval(() => {
-            if (uis.length !== window.PackUIs.length) setUis([...window.PackUIs]);
-        }, 500);
-        return () => clearInterval(id);
-    }, [uis.length]);
-    return React.createElement(React.Fragment, null,
-        uis.map((UI, i) => React.createElement(UI, { key: i, gameState }))
-    );
-}
+// function AllPacksUI({ gameState }) {
+//     const [uis, setUis] = React.useState([...window.PackUIs]);
+//     React.useEffect(() => {
+//         const id = setInterval(() => {
+//             if (uis.length !== window.PackUIs.length) setUis([...window.PackUIs]);
+//         }, 500);
+//         return () => clearInterval(id);
+//     }, [uis.length]);
+//     return React.createElement(React.Fragment, null,
+//         uis.map((UI, i) => React.createElement(UI, { key: i, gameState }))
+//     );
+// }
 
 function Game() {
     const [gameState, setGameState] = useState('menu');
