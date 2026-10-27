@@ -419,11 +419,7 @@ function Game() {
                 return false;
             }
             return true;
-        });
-    };
-
-        // === СБОРКА СЦЕНЫ ДЛЯ ДВИЖКА ===
-    const describeScene = () => {
+        const describeScene = () => {
         const char = CHARACTERS[character] || CHARACTERS.crocodile;
         const gy = groundYRef.current;
         const bgConfig = BACKGROUNDS[backgroundRef.current] || BACKGROUNDS.default;
@@ -760,10 +756,3 @@ function Game() {
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(React.createElement(Game));
-
-    // describeScene + draw (полный код из предыдущего сообщения, без изменений)
-    // ... [вставить сюда блок describeScene и gameLoop, они не менялись] ...
-
-    // JSX (с добавлением combo indicator и новой секции Emoji в настройках)
-    // ... [полный JSX ниже] ...
-}
