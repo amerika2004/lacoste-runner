@@ -1,9 +1,11 @@
 const { useState, useEffect, useRef, useCallback } = React;
 
 const FLIP_CROC = false; 
+
 const GRAVITY = 0.75;        
 const JUMP_FORCE = -10.5;    
 const HOLD_THRUST = 0.45;    
+
 const GROUND_Y = 530; 
 const BASE_SPEED = 4.0; 
 const SPEED_MULTIPLIER = 0.8;
@@ -11,11 +13,11 @@ const SPEED_MULTIPLIER = 0.8;
 const DEFAULT_SETTINGS = {
     sfxVolume: 0.7, ambientVolume: 0.25, masterVolume: 1.0,
     soundEnabled: true, graphics: 'high',
-    emojiStyle: 'apple', // 'apple' | 'twemoji' | 'noto'
+    emojiStyle: 'apple',
     comboEnabled: true,
 };
 
-// === 2D RENDER ENGINE (без изменений, полный код в предыдущем сообщении) ===
+// ======================= RENDER ENGINE =======================
 const RenderEngine = (function () {
     const QUALITY = {
         low:    { parallax: false, bloom: false, particles: false, shake: false, trail: false, vignette: false, flash: false, maxParticles: 0 },
@@ -33,23 +35,181 @@ const RenderEngine = (function () {
         flash(color = '255,0,0', alpha = 0.5) { if (!state.config.flash) return; state.flashAlpha = alpha; state.flashColor = color; },
         pushTrail(x, y, w, h, img) { if (!state.config.trail || !img) return; state.trail.push({ x, y, w, h, img, life: 12, maxLife: 12 }); if (state.trail.length > 8) state.trail.shift(); },
         update() { state.time++; for (let i = state.particles.length - 1; i >= 0; i--) { const p = state.particles[i]; p.x += p.vx; p.y += p.vy; p.vy += p.gravity; p.vx *= 0.98; p.life--; p.rot += p.rotSpeed; if (p.life <= 0) state.particles.splice(i, 1); } if (state.shakeTime > 0) { state.shakeTime--; if (state.shakeTime === 0) state.shakeIntensity = 0; } if (state.flashAlpha > 0) state.flashAlpha = Math.max(0, state.flashAlpha - 0.05); for (let i = state.trail.length - 1; i >= 0; i--) { state.trail[i].life--; if (state.trail[i].life <= 0) state.trail.splice(i, 1); } },
-        draw(ctx, canvas, scene) { /* полный код из предыдущего сообщения, без изменений */ },
+        draw(ctx, canvas, scene) {
+            const { config } = state;
+            const W = canvas.width, H = canvas.height;
+            let shakeX = 0, shakeY = 0;
+            if (config.shake && state.shakeTime > 0) { const k = state.shakeTime / 20; shakeX = (Math.random() - 0.5) * state.shakeIntensity * k; shakeY = (Math.random() - 0.5) * state.shakeIntensity * k; }
+            ctx.save();
+            ctx.translate(shakeX, shakeY);
+
+            // 1. BACKGROUND (parallax)
+            const { bg } = scene;
+            if (bg.img && bg.img.complete && bg.img.naturalWidth > 0) {
+                const scale = H / bg.img.naturalHeight;
+                const exactWidth = Math.ceil(bg.img.naturalWidth * scale);
+                if (config.parallax) {
+                    ctx.globalAlpha = 0.5;
+                    let farOffset = Math.floor((bg.offset * 0.4) % exactWidth);
+                    if (farOffset > 0) farOffset -= exactWidth;
+                    for (let i = farOffset; i < W; i += exactWidth) ctx.drawImage(bg.img, i, -10, exactWidth, H + 20);
+                    ctx.globalAlpha = 1;
+                }
+                let offset = Math.floor(bg.offset % exactWidth);
+                if (offset > 0) offset -= exactWidth;
+                for (let i = offset; i < W; i += exactWidth) ctx.drawImage(bg.img, i, 0, exactWidth, H);
+            } else { ctx.fillStyle = bg.fallbackColor; ctx.fillRect(0, 0, W, H); }
+
+            // 2. PIT OVERLAY
+            if (scene.pitOverlay && scene.pitOverlay.img && scene.pitOverlay.img.complete) {
+                ctx.drawImage(scene.pitOverlay.img, scene.pitOverlay.x, scene.pitOverlay.y, scene.pitOverlay.w, scene.pitOverlay.h);
+            }
+
+            // 3. TRAIL
+            if (config.trail) {
+                state.trail.forEach(t => { const a = (t.life / t.maxLife) * 0.4; ctx.save(); ctx.globalAlpha = a; ctx.drawImage(t.img, t.x, t.y, t.w, t.h); ctx.restore(); });
+            }
+
+            // 4. PLAYER
+            const p = scene.player;
+            if (p.img && p.img.complete && p.img.naturalWidth > 0) {
+                ctx.save();
+                let fallAngle = 0, yOffset = 0, flyTilt = 0;
+                let chewScale = 1.0;
+                if (p.isEating) chewScale = 1.0 + Math.sin(Date.now() / 80) * 0.05;
+                if (p.isBarrelFlying) flyTilt = p.tilt;
+                if (p.isTripping) {
+                    const fallProgress = Math.min(1, p.tripTimer / 15);
+                    const standProgress = Math.max(0, (p.tripTimer - 40) / 80);
+                    const flatAmount = fallProgress * (1 - standProgress);
+                    let dir = p.isBarrelTrip ? (FLIP_CROC ? 1 : -1) : (FLIP_CROC ? -1 : 1);
+                    fallAngle = dir * (Math.PI / 2) * flatAmount;
+                    yOffset = -((p.w - p.h) / 2) * flatAmount;
+                    if (Math.floor(p.tripTimer / 10) % 2 === 1) ctx.globalAlpha = 0.5;
+                }
+                const centerX = p.x + p.w / 2;
+                const centerY = p.y + p.h / 2 + (p.isJumping ? 0 : (p.isTripping ? yOffset : p.bob));
+                ctx.translate(centerX, centerY);
+                ctx.rotate(p.tilt + fallAngle + flyTilt);
+                if (FLIP_CROC) ctx.scale(-1, 1);
+                const dW = p.w * chewScale, dH = p.h * chewScale;
+                ctx.drawImage(p.img, -dW / 2, -dH / 2, dW, dH);
+                ctx.restore();
+            } else { ctx.fillStyle = 'red'; ctx.fillRect(p.x, p.y, p.w, p.h); }
+
+            // 5. FOOD (with colored glow for special types)
+            ctx.save();
+            ctx.globalAlpha = 1.0;
+            ctx.textBaseline = 'bottom';
+            scene.foods.forEach(f => {
+                let color = '#FFFFFF';
+                if (f.type === 'golden') color = '#FFD700';
+                else if (f.type === 'rare') color = '#00FFFF';
+                else if (f.type === 'poison') color = '#8B00FF';
+                ctx.shadowColor = color;
+                ctx.shadowBlur = f.type !== 'normal' ? 12 : 0;
+                ctx.font = `40px Arial`;
+                ctx.fillText(f.emoji, f.x, f.y + f.h);
+            });
+            ctx.shadowBlur = 0;
+            ctx.restore();
+
+            // 6. OBSTACLES
+            const { images, pickImg } = scene;
+            scene.obstacles.forEach(obs => {
+                if (scene.isPitDeath && scene.pitTarget === obs) return;
+                let img = null, fallback = '#888';
+                if (obs.type === 'puddle') { img = pickImg(images.puddleImg, images.puddleNightImg); fallback = 'rgba(0,150,255,0.5)'; }
+                else if (obs.type === 'pit') { img = pickImg(images.pitImg, images.pitNightImg); fallback = 'black'; }
+                else if (obs.type === 'rock') { img = pickImg(images.rockImg, images.rockNightImg); fallback = '#888'; }
+                else if (obs.type === 'barrel') { img = pickImg(images.barrelImg, images.barrelNightImg); fallback = '#c97b2a'; }
+                else if (obs.type === 'cactus') { img = pickImg(images.cactusImg, images.cactusNightImg); fallback = '#2e8b3a'; }
+                if (img && img.complete && img.naturalWidth > 0) ctx.drawImage(img, obs.x, obs.y, obs.w, obs.h);
+                else { ctx.fillStyle = fallback; ctx.fillRect(obs.x, obs.y, obs.w, obs.h); }
+            });
+
+            // 7. EXPLOSIONS
+            scene.explosions.forEach(expl => {
+                const progress = expl.timer / expl.maxTimer;
+                const scale = 1 + progress * 0.5;
+                const alpha = 1 - progress;
+                const size = expl.size * scale;
+                const x = expl.x - size / 2, y = expl.y - size / 2;
+                if (images.explosionImg.current && images.explosionImg.current.complete) {
+                    ctx.save(); ctx.globalAlpha = alpha; ctx.drawImage(images.explosionImg.current, x, y, size, size); ctx.restore();
+                } else {
+                    ctx.save(); ctx.globalAlpha = alpha;
+                    ctx.fillStyle = 'orange'; ctx.beginPath(); ctx.arc(expl.x, expl.y, size / 2, 0, Math.PI * 2); ctx.fill();
+                    ctx.fillStyle = 'yellow'; ctx.beginPath(); ctx.arc(expl.x, expl.y, size / 4, 0, Math.PI * 2); ctx.fill();
+                    ctx.restore();
+                }
+            });
+
+            // 8. PARTICLES
+            if (config.particles) {
+                if (!state.cache.particleSprite) state.cache.particleSprite = makeParticleSprite();
+                const sprite = state.cache.particleSprite;
+                state.particles.forEach(pt => {
+                    const a = pt.life / pt.maxLife;
+                    ctx.save();
+                    ctx.globalAlpha = a;
+                    if (pt.shape === 'circle') { ctx.fillStyle = pt.color; ctx.beginPath(); ctx.arc(pt.x, pt.y, pt.size * a, 0, Math.PI * 2); ctx.fill(); }
+                    else if (pt.shape === 'leaf') { ctx.translate(pt.x, pt.y); ctx.rotate(pt.rot); ctx.fillStyle = pt.color; ctx.beginPath(); ctx.ellipse(0, 0, pt.size, pt.size * 0.5, 0, 0, Math.PI * 2); ctx.fill(); }
+                    else if (pt.shape === 'spark') { ctx.drawImage(sprite, pt.x - pt.size, pt.y - pt.size, pt.size * 2, pt.size * 2); }
+                    ctx.restore();
+                });
+            }
+
+            // 9. BLOOM
+            if (config.bloom) {
+                ctx.save();
+                ctx.globalCompositeOperation = 'lighter';
+                scene.obstacles.forEach(obs => {
+                    if (obs.type === 'barrel') {
+                        const cx = obs.x + obs.w / 2, cy = obs.y + obs.h / 2;
+                        const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, obs.w * 1.5);
+                        grad.addColorStop(0, 'rgba(255,150,50,0.3)');
+                        grad.addColorStop(1, 'rgba(255,150,50,0)');
+                        ctx.fillStyle = grad; ctx.fillRect(cx - obs.w * 1.5, cy - obs.w * 1.5, obs.w * 3, obs.w * 3);
+                    }
+                });
+                ctx.restore();
+            }
+
+            // 10. VIGNETTE
+            if (config.vignette) {
+                if (!state.cache.vignetteCanvas || state.cache.vignetteCanvas.width !== W) state.cache.vignetteCanvas = makeVignette(W, H);
+                ctx.drawImage(state.cache.vignetteCanvas, 0, 0);
+            }
+
+            // 11. FLASH
+            if (state.flashAlpha > 0) {
+                ctx.fillStyle = `rgba(${state.flashColor},${state.flashAlpha})`;
+                ctx.fillRect(0, 0, W, H);
+            }
+
+            // 12. DEATH FADE
+            if (scene.deathFade != null) {
+                ctx.fillStyle = `rgba(0,0,0,${scene.deathFade})`;
+                ctx.fillRect(0, 0, W, H);
+            }
+
+            ctx.restore();
+        },
     };
 })();
 
-// === РЕЕСТР ФОНОВ ===
+// ======================= BACKGROUNDS / CHARACTERS =======================
 const BACKGROUNDS = {
     default: { id: 'default', name: 'Forest', emoji: '🌳', dayImg: 'source/landscape.jpg', nightImg: 'source/landscape_n.jpg', groundOffset: 0, obstacleTypes: ['barrel', 'rock', 'cactus', 'puddle', 'pit'], foodEmojis: null },
     cartoon: { id: 'cartoon', name: 'Cartoon', emoji: '🌲', dayImg: 'source/cartoon_forest.png', nightImg: 'source/cartoon_forest_n.png', groundOffset: 30, obstacleTypes: ['rock', 'puddle', 'pit'], foodEmojis: ['🎋'] },
 };
 
-// === РЕЕСТР ПЕРСОНАЖЕЙ ===
 const CHARACTERS = {
     crocodile: { id: 'crocodile', name: 'Crocodile', emoji: '🐊', folder: 'source/characters/crocodile', frameCount: 12, baseWidth: 165.4, baseHeight: 110.3, foodEmojis: ['🍗', '🍔', '🍕', '🥩'] },
     panda: { id: 'panda', name: 'Panda', emoji: '🐼', folder: 'source/characters/panda', frameCount: 20, baseWidth: 160, baseHeight: 120, foodEmojis: ['🎋'], eatEmoji: '🎋', eatFolder: 'source/characters/panda/eating', eatFrameCount: 8, eatDuration: 4.0 },
 };
 
-// === ТИПЫ ЕДЫ ===
 const FOOD_TYPES = {
     normal:  { weight: 70, color: '#FFFFFF', emoji: null },
     golden:  { weight: 15, color: '#FFD700', emoji: '⭐', scoreBonus: 50 },
@@ -96,7 +256,7 @@ function Game() {
     useEffect(() => { timeOfDayRef.current = timeOfDay; localStorage.setItem('lacosteTimeOfDay', timeOfDay); }, [timeOfDay]);
     useEffect(() => { backgroundRef.current = background; localStorage.setItem('lacosteBackground', background); const bg = BACKGROUNDS[background] || BACKGROUNDS.default; groundYRef.current = GROUND_Y + (bg.groundOffset || 0); }, [background]);
 
-    // === КАДРЫ ===
+    // Frames
     const walkFramesRef = useRef([]); const currentFrameRef = useRef(0); const lastFrameTimeRef = useRef(0);
     const eatFramesRef = useRef([]); const eatFrameIdxRef = useRef(0); const isEatingRef = useRef(false); const eatTimerRef = useRef(0); const eatSpeedFactorRef = useRef(1.0);
 
@@ -109,10 +269,9 @@ function Game() {
         if (char.eatFolder && char.eatFrameCount) { for (let i = 1; i <= char.eatFrameCount; i++) { const img = new Image(); img.src = `${char.eatFolder}/${i}.png`; eatFramesRef.current.push(img); } }
     }, [character]);
 
-    // === АУДИО ===
+    // Audio
     const pitAudioRef = useRef(null); const pitAudioEndedRef = useRef(false);
-    const barrelAudioRef = useRef(null); const splashAudioRef = useRef(null);
-    const jumpAudioRef = useRef(null); // NEW
+    const barrelAudioRef = useRef(null); const splashAudioRef = useRef(null); const jumpAudioRef = useRef(null);
     const nightAmbientRef = useRef(null); const dayAmbientRef = useRef(null);
 
     useEffect(() => {
@@ -143,7 +302,7 @@ function Game() {
         return () => { window.removeEventListener('pointerdown', tryPlay); window.removeEventListener('keydown', tryPlay); };
     }, []);
 
-    // === ИГРОВЫЕ РЕФЫ ===
+    // Game refs
     const initChar = CHARACTERS[character] || CHARACTERS.crocodile;
     const initGroundY = GROUND_Y + (BACKGROUNDS[background]?.groundOffset || 0);
     const playerRef = useRef({ x: 100, y: initGroundY - initChar.baseHeight, width: initChar.baseWidth, height: initChar.baseHeight, velocityY: 0, isJumping: false, isHoldingJump: false, jumpMult: 1.0, tilt: 0, bob: 0, foodEaten: 0, foodTarget: 1 });
@@ -153,12 +312,9 @@ function Game() {
     const isBarrelTripRef = useRef(false); const pendingBarrelDamageRef = useRef(false); const isBarrelFlyingRef = useRef(false); const barrelFlyVelocityYRef = useRef(0);
     const isFallingIntoPitRef = useRef(false); const pitTargetRef = useRef(null); const pitFallTimerRef = useRef(0); const pitVelocityRef = useRef(0);
     const isPitDeathDelayRef = useRef(false); const pitDeathDelayTimerRef = useRef(0);
+    const comboRef = useRef(0); const comboMultRef = useRef(1);
 
-    // NEW: Combo
-    const comboRef = useRef(0); // чистые прыжки подряд
-    const comboMultRef = useRef(1);
-
-    // === ИЗОБРАЖЕНИЯ ===
+    // Images
     const puddleImg = useRef(new Image()); const puddleNightImg = useRef(new Image());
     const rockImg = useRef(new Image()); const rockNightImg = useRef(new Image());
     const pitImg = useRef(new Image()); const pitNightImg = useRef(new Image());
@@ -181,7 +337,7 @@ function Game() {
         if (comboRef.current >= 8) mult = 5;
         else if (comboRef.current >= 5) mult = 3;
         else if (comboRef.current >= 3) mult = 2;
-        if (mult !== comboMultRef.current) { comboMultRef.current = mult; }
+        comboMultRef.current = mult;
         setComboDisplay({ mult, count: comboRef.current });
     };
 
@@ -192,11 +348,8 @@ function Game() {
         p.velocityY = JUMP_FORCE * p.jumpMult;
         p.isJumping = true; p.isHoldingJump = true;
         addCombo();
-        // SFX
         if (jumpAudioRef.current && settingsRef.current.soundEnabled) { jumpAudioRef.current.currentTime = 0; jumpAudioRef.current.play().catch(() => {}); }
-        // Vibration
         if (navigator.vibrate) navigator.vibrate(15);
-        // Particles
         RenderEngine.spawnParticles(p.x + p.width / 2, p.y + p.height, 6, { colors: ['#FFFFFF', '#AAAAAA'], speed: 2, life: 20, size: 2, gravity: 0.1 });
     };
 
@@ -322,7 +475,6 @@ function Game() {
         if (!isTrippingRef.current) {
             currentSpeed = BASE_SPEED * effectiveSpeedMult * diffMult * eatSpeedFactorRef.current;
             setSpeedDisplay((effectiveSpeedMult * diffMult * eatSpeedFactorRef.current).toFixed(2));
-            // Combo multiplier on distance
             distanceRef.current += (currentSpeed * 0.03 * comboMultRef.current);
             setScore(Math.floor(distanceRef.current)); bgOffsetRef.current -= currentSpeed;
         } else setSpeedDisplay("0.00");
@@ -341,7 +493,6 @@ function Game() {
             if (now - lastFrameTimeRef.current > frameDelay) { currentFrameRef.current = (currentFrameRef.current + 1) % char.frameCount; lastFrameTimeRef.current = now; const frames = walkFramesRef.current; const idx = frames.length > 0 ? currentFrameRef.current % frames.length : 0; const trailImg = frames[idx]; if (trailImg && !isEatingRef.current) RenderEngine.pushTrail(p.x, p.y, p.width, p.height, trailImg); }
         }
 
-        // SPAWN
         if (!isTrippingRef.current) {
             if (spawnCooldownRef.current > 0) { spawnCooldownRef.current--; spawnTimerRef.current = 0; }
             else {
@@ -387,7 +538,6 @@ function Game() {
         obstaclesRef.current.forEach(obs => { obs.x -= currentSpeed; }); obstaclesRef.current = obstaclesRef.current.filter(obs => obs.x + obs.width > 0);
         foodsRef.current.forEach(food => { food.x -= currentSpeed; }); foodsRef.current = foodsRef.current.filter(food => food.x + food.width > 0);
 
-        // COLLISIONS
         if (!isTrippingRef.current) {
             for (let i = obstaclesRef.current.length - 1; i >= 0; i--) {
                 let obs = obstaclesRef.current[i];
@@ -410,7 +560,6 @@ function Game() {
             const hitboxX = p.x + 20; const hitboxY = p.y + 20; const hitboxWidth = p.width - 40; const hitboxHeight = p.height - 20;
             if (hitboxX < food.x + food.width && hitboxX + hitboxWidth > food.x && hitboxY < food.y + food.height && hitboxY + hitboxHeight > food.y) {
                 const isEatTrigger = char.eatEmoji && food.baseEmoji === char.eatEmoji && !isTrippingRef.current;
-                // Apply food type effect
                 if (food.type === 'golden') { distanceRef.current += 50; RenderEngine.spawnParticles(food.x + 20, food.y + 20, 15, { colors: ['#FFD700', '#FFFFFF'], speed: 5, life: 30, size: 4 }); }
                 else if (food.type === 'rare') { healthRef.current = Math.min(6, healthRef.current + 2); setHealth(healthRef.current); RenderEngine.spawnParticles(food.x + 20, food.y + 20, 15, { colors: ['#00FFFF', '#FFFFFF'], speed: 5, life: 30, size: 4 }); }
                 else if (food.type === 'poison') { speedPenaltyRef.current = speedPenaltyRef.current * 0.9; RenderEngine.spawnParticles(food.x + 20, food.y + 20, 15, { colors: ['#8B00FF', '#FF007F'], speed: 5, life: 30, size: 4 }); }
@@ -419,58 +568,28 @@ function Game() {
                 return false;
             }
             return true;
+        });
+    };
         const describeScene = () => {
         const char = CHARACTERS[character] || CHARACTERS.crocodile;
         const gy = groundYRef.current;
         const bgConfig = BACKGROUNDS[backgroundRef.current] || BACKGROUNDS.default;
         const bgImages = backgroundImagesRef.current[bgConfig.id] || { day: new Image(), night: new Image() };
-
         let charImg;
-        if (isEatingRef.current && eatFramesRef.current.length > 0) {
-            charImg = eatFramesRef.current[eatFrameIdxRef.current % eatFramesRef.current.length];
-        } else {
-            const frames = walkFramesRef.current;
-            const idx = frames.length > 0 ? currentFrameRef.current % frames.length : 0;
-            charImg = frames[idx];
-        }
-
+        if (isEatingRef.current && eatFramesRef.current.length > 0) charImg = eatFramesRef.current[eatFrameIdxRef.current % eatFramesRef.current.length];
+        else { const frames = walkFramesRef.current; const idx = frames.length > 0 ? currentFrameRef.current % frames.length : 0; charImg = frames[idx]; }
         const pickImg = (dayImg, nightImg) => timeOfDayRef.current === 'night' ? nightImg.current : dayImg.current;
-
         return {
-            bg: {
-                img: timeOfDayRef.current === 'night' ? bgImages.night : bgImages.day,
-                offset: bgOffsetRef.current,
-                fallbackColor: timeOfDayRef.current === 'night' ? '#0a0512' : '#1a0b2e',
-            },
+            bg: { img: timeOfDayRef.current === 'night' ? bgImages.night : bgImages.day, offset: bgOffsetRef.current, fallbackColor: timeOfDayRef.current === 'night' ? '#0a0512' : '#1a0b2e' },
             groundY: gy,
-            player: {
-                x: playerRef.current.x,
-                y: playerRef.current.y,
-                w: playerRef.current.width,
-                h: playerRef.current.height,
-                tilt: playerRef.current.tilt,
-                bob: playerRef.current.bob,
-                isJumping: playerRef.current.isJumping,
-                img: charImg,
-                isEating: isEatingRef.current,
-                isTripping: isTrippingRef.current,
-                tripTimer: tripTimerRef.current,
-                isBarrelTrip: isBarrelTripRef.current,
-                isBarrelFlying: isBarrelFlyingRef.current,
-            },
+            player: { x: playerRef.current.x, y: playerRef.current.y, w: playerRef.current.width, h: playerRef.current.height, tilt: playerRef.current.tilt, bob: playerRef.current.bob, isJumping: playerRef.current.isJumping, img: charImg, isEating: isEatingRef.current, isTripping: isTrippingRef.current, tripTimer: tripTimerRef.current, isBarrelTrip: isBarrelTripRef.current, isBarrelFlying: isBarrelFlyingRef.current },
             obstacles: obstaclesRef.current.map(o => ({ x: o.x, y: o.y, w: o.width, h: o.height, type: o.type })),
             foods: foodsRef.current.map(f => ({ x: f.x, y: f.y, w: f.width, h: f.height, emoji: f.emoji, type: f.type })),
             explosions: explosionsRef.current.map(e => ({ x: e.x, y: e.y, size: e.size, timer: e.timer, maxTimer: e.maxTimer })),
-            pitOverlay: (isFallingIntoPitRef.current || isPitDeathDelayRef.current) && pitTargetRef.current
-                ? { x: pitTargetRef.current.x, y: pitTargetRef.current.y, w: pitTargetRef.current.width, h: pitTargetRef.current.height, img: pickImg(pitImg, pitNightImg) }
-                : null,
+            pitOverlay: (isFallingIntoPitRef.current || isPitDeathDelayRef.current) && pitTargetRef.current ? { x: pitTargetRef.current.x, y: pitTargetRef.current.y, w: pitTargetRef.current.width, h: pitTargetRef.current.height, img: pickImg(pitImg, pitNightImg) } : null,
             isPitDeath: isFallingIntoPitRef.current || isPitDeathDelayRef.current,
             pitTarget: pitTargetRef.current,
-            deathFade: isPitDeathDelayRef.current
-                ? Math.min(1, (pitAudioRef.current && isFinite(pitAudioRef.current.duration) && pitAudioRef.current.duration > 0.1 && settingsRef.current.soundEnabled)
-                    ? pitAudioRef.current.currentTime / pitAudioRef.current.duration
-                    : pitDeathDelayTimerRef.current / 180)
-                : null,
+            deathFade: isPitDeathDelayRef.current ? Math.min(1, (pitAudioRef.current && isFinite(pitAudioRef.current.duration) && pitAudioRef.current.duration > 0.1 && settingsRef.current.soundEnabled) ? pitAudioRef.current.currentTime / pitAudioRef.current.duration : pitDeathDelayTimerRef.current / 180) : null,
             images: { puddleImg, puddleNightImg, rockImg, rockNightImg, pitImg, pitNightImg, barrelImg, barrelNightImg, cactusImg, cactusNightImg, explosionImg },
             pickImg,
         };
@@ -483,22 +602,15 @@ function Game() {
         if (gameState === 'playing') {
             lastTimeRef.current = performance.now();
             accumulatorRef.current = 0;
-
             const gameLoop = (time) => {
                 if (gameState !== 'playing') return;
                 let deltaTime = time - lastTimeRef.current;
                 lastTimeRef.current = time;
-                if (deltaTime > 250) deltaTime = 250; 
+                if (deltaTime > 250) deltaTime = 250;
                 accumulatorRef.current += deltaTime;
-
                 const FRAME_TIME = 1000 / 60;
                 let loops = 0;
-                while (accumulatorRef.current >= FRAME_TIME && loops < 5) {
-                    updateLogic();
-                    RenderEngine.update();
-                    accumulatorRef.current -= FRAME_TIME;
-                    loops++;
-                }
+                while (accumulatorRef.current >= FRAME_TIME && loops < 5) { updateLogic(); RenderEngine.update(); accumulatorRef.current -= FRAME_TIME; loops++; }
                 if (gameState !== 'playing') return;
                 const canvas = canvasRef.current;
                 const ctx = canvas.getContext('2d');
@@ -513,58 +625,33 @@ function Game() {
 
     const startGame = () => resetGame();
     const formatScore = (num) => num.toString().padStart(5, '0');
-    const getHearts = () => {
-        let h = [];
-        for (let i = 0; i < 3; i++) {
-            if (health >= (i + 1) * 2) h.push('❤️');
-            else if (health === i * 2 + 1) h.push('💔');
-            else h.push('🖤');
-        }
-        return h.join(' ');
-    };
+    const getHearts = () => { let h = []; for (let i = 0; i < 3; i++) { if (health >= (i + 1) * 2) h.push('❤️'); else if (health === i * 2 + 1) h.push('💔'); else h.push('🖤'); } return h.join(' '); };
 
     const renderCharacterPanel = () => React.createElement('div', { className: 'char-panel' },
         React.createElement('div', { className: 'char-panel-title' }, 'Hero'),
-        Object.values(CHARACTERS).map(char =>
-            React.createElement('button', {
-                key: char.id,
-                className: `char-btn ${character === char.id ? 'active' : ''}`,
-                onClick: () => setCharacter(char.id),
-                title: char.name
-            },
-                React.createElement('span', { className: 'char-emoji' }, char.emoji || '❓'),
-                React.createElement('span', { className: 'char-name' }, char.name)
-            )
-        )
+        Object.values(CHARACTERS).map(char => React.createElement('button', { key: char.id, className: `char-btn ${character === char.id ? 'active' : ''}`, onClick: () => setCharacter(char.id), title: char.name },
+            React.createElement('span', { className: 'char-emoji' }, char.emoji || '❓'),
+            React.createElement('span', { className: 'char-name' }, char.name)
+        ))
     );
 
     const renderBackgroundPanel = () => React.createElement('div', { className: 'settings', style: { marginTop: '-5px' } },
-        Object.values(BACKGROUNDS).map(bg =>
-            React.createElement('button', {
-                key: bg.id,
-                className: `btn ${background === bg.id ? 'active' : ''}`,
-                onClick: () => setBackground(bg.id)
-            }, `${bg.emoji} ${bg.name}`)
-        )
+        Object.values(BACKGROUNDS).map(bg => React.createElement('button', { key: bg.id, className: `btn ${background === bg.id ? 'active' : ''}`, onClick: () => setBackground(bg.id) }, `${bg.emoji} ${bg.name}`))
     );
 
     return React.createElement('div', { id: 'game-container' },
-        
+
         (gameState === 'playing' || gameState === 'paused') ? React.createElement(React.Fragment, null,
-            React.createElement('div', { className: 'hud-left' }, 
+            React.createElement('div', { className: 'hud-left' },
                 React.createElement('span', null, `FOOD: ${playerRef.current.foodEaten} / ${playerRef.current.foodTarget}`),
                 React.createElement('span', { style: { fontSize: 'clamp(14px, 2.5vmin, 24px)', letterSpacing: '2px' } }, getHearts())
             ),
-            React.createElement('div', { className: 'hud-right' }, 
+            React.createElement('div', { className: 'hud-right' },
                 React.createElement('span', { style: {color: '#FFD700'} }, `PWR x${powerDisplay}`),
                 React.createElement('span', { style: {color: '#FF00FF'} }, `${speedDisplay === 'REVERSE' ? '◄◄ REV' : `SPD x${speedDisplay}`}`),
                 React.createElement('span', null, `HI ${formatScore(highScore)}  ${formatScore(score)}m`)
             ),
-            // >>> COMBO INDICATOR
-            comboDisplay.mult > 1 ? React.createElement('div', {
-                key: comboDisplay.count,
-                className: `combo-indicator combo-x${comboDisplay.mult}`
-            }, `COMBO x${comboDisplay.mult}  ${comboDisplay.count}`) : null
+            comboDisplay.mult > 1 ? React.createElement('div', { key: comboDisplay.count, className: `combo-indicator combo-x${comboDisplay.mult}` }, `COMBO x${comboDisplay.mult}  ${comboDisplay.count}`) : null
         ) : null,
 
         React.createElement('canvas', { ref: canvasRef, width: 1200, height: 600 }),
@@ -573,8 +660,22 @@ function Game() {
             React.createElement('button', { id: 'btn-fullscreen', className: 'game-btn', onClick: toggleFullscreen, 'aria-label': 'Fullscreen' }, '⛶'),
             React.createElement('button', { id: 'btn-pause', className: 'game-btn', onClick: () => setGameState('paused'), 'aria-label': 'Pause' }, '❚❚')
         ) : null,
-        
+
         gameState === 'menu' ? React.createElement('div', { className: 'menu-overlay' },
+            // CELESTIAL DECOR
+            React.createElement('div', { className: `celestial-sun ${timeOfDay === 'day' ? 'visible' : ''}` },
+                React.createElement('div', { className: 'sun-rays' }),
+                React.createElement('div', { className: 'sun-core' })
+            ),
+            React.createElement('div', { className: `celestial-moon ${timeOfDay === 'night' ? 'visible' : ''}` },
+                React.createElement('div', { className: 'moon-crescent' }),
+                React.createElement('span', { className: 'star s1' }),
+                React.createElement('span', { className: 'star s2' }),
+                React.createElement('span', { className: 'star s3' }),
+                React.createElement('span', { className: 'star s4' }),
+                React.createElement('span', { className: 'star s5' })
+            ),
+
             React.createElement('div', { className: 'title' }, 'LACOSTE', React.createElement('br'), 'RUNNER'),
             React.createElement('div', { className: 'subtitle' }, 'VICE CITY EDITION'),
 
@@ -592,11 +693,7 @@ function Game() {
 
             React.createElement('button', { className: 'btn btn-start', onClick: startGame }, 'Start Escape'),
 
-            React.createElement('button', {
-                className: 'settings-open-btn',
-                onClick: () => setShowSettings(true),
-                style: { marginTop: '15px' }
-            }, '⚙ SETTINGS'),
+            React.createElement('button', { className: 'settings-open-btn', onClick: () => setShowSettings(true), style: { marginTop: '15px' } }, '⚙ SETTINGS'),
 
             React.createElement('div', { style: { marginTop: '10px' } },
                 React.createElement('p', { style: {color: '#888', fontSize: '12px'} }, 'Tap / Space — jump, HOLD — high jump!'),
@@ -613,141 +710,79 @@ function Game() {
                 React.createElement('button', { className: 'btn', onClick: () => resetGame() }, 'Restart'),
                 React.createElement('button', { className: 'btn', onClick: () => setGameState('menu') }, 'Menu')
             ),
-            React.createElement('button', {
-                className: 'settings-open-btn',
-                onClick: () => setShowSettings(true),
-                style: { marginTop: '15px' }
-            }, '⚙ SETTINGS')
+            React.createElement('button', { className: 'settings-open-btn', onClick: () => setShowSettings(true), style: { marginTop: '15px' } }, '⚙ SETTINGS')
         ) : null,
-        
+
         gameState === 'gameover' ? React.createElement('div', { className: 'menu-overlay' },
             React.createElement('div', { className: 'title', style: {color: 'red', textShadow: '2px 2px 0px #000'} }, 'BUSTED'),
             React.createElement('div', { className: 'subtitle', style: {color: 'white', marginBottom: '10px'} }, 'The employees caught you!'),
             React.createElement('div', { className: 'subtitle' }, 'DIST: ', Math.floor(score), 'm | HI: ', highScore, 'm'),
-
             renderCharacterPanel(),
-
             React.createElement('div', { className: 'settings' },
                 React.createElement('button', { className: 'btn', onClick: toggleFullscreen }, '⛶ Fullscreen'),
                 React.createElement('button', { className: 'btn', onClick: () => setGameState('menu') }, 'Menu'),
                 React.createElement('button', { className: 'btn btn-start', onClick: startGame }, 'Try Again')
             ),
-
-            React.createElement('button', {
-                className: 'settings-open-btn',
-                onClick: () => setShowSettings(true),
-                style: { marginTop: '15px' }
-            }, '⚙ SETTINGS')
+            React.createElement('button', { className: 'settings-open-btn', onClick: () => setShowSettings(true), style: { marginTop: '15px' } }, '⚙ SETTINGS')
         ) : null,
 
         showSettings && React.createElement('div', { className: 'settings-overlay' },
             React.createElement('div', { className: 'settings-panel' },
                 React.createElement('div', { className: 'settings-header' },
                     React.createElement('div', { className: 'settings-title' }, 'SETTINGS'),
-                    React.createElement('button', {
-                        className: 'settings-close',
-                        onClick: () => setShowSettings(false),
-                        'aria-label': 'Close'
-                    }, '✕')
+                    React.createElement('button', { className: 'settings-close', onClick: () => setShowSettings(false), 'aria-label': 'Close' }, '✕')
                 ),
 
-                // === GRAPHICS ===
                 React.createElement('div', { className: 'settings-section' },
                     React.createElement('div', { className: 'settings-section-title' }, '🖥 Graphics'),
                     React.createElement('div', { className: 'setting-row' },
                         React.createElement('span', { className: 'setting-label' }, 'Quality'),
                         React.createElement('div', { className: 'segmented' },
-                            ['low', 'medium', 'high'].map(q =>
-                                React.createElement('button', {
-                                    key: q,
-                                    className: settings.graphics === q ? 'active' : '',
-                                    onClick: () => setSettings(s => ({ ...s, graphics: q }))
-                                }, q.toUpperCase())
-                            )
+                            ['low', 'medium', 'high'].map(q => React.createElement('button', { key: q, className: settings.graphics === q ? 'active' : '', onClick: () => setSettings(s => ({ ...s, graphics: q })) }, q.toUpperCase()))
                         )
                     )
                 ),
 
-                // === NEW: EMOJI STYLE + COMBO TOGGLE ===
                 React.createElement('div', { className: 'settings-section' },
                     React.createElement('div', { className: 'settings-section-title' }, '😀 Emoji Style'),
                     React.createElement('div', { className: 'setting-row' },
                         React.createElement('span', { className: 'setting-label' }, 'Set'),
                         React.createElement('div', { className: 'segmented' },
-                            ['apple', 'twemoji', 'noto'].map(s =>
-                                React.createElement('button', {
-                                    key: s,
-                                    className: settings.emojiStyle === s ? 'active' : '',
-                                    onClick: () => setSettings(prev => ({ ...prev, emojiStyle: s }))
-                                },
-                                    s === 'apple' ? '🍎 APPLE' :
-                                    s === 'twemoji' ? '🐦 TWEMOJI' : '🤖 NOTO'
-                                )
-                            )
+                            ['apple', 'twemoji', 'noto'].map(s => React.createElement('button', { key: s, className: settings.emojiStyle === s ? 'active' : '', onClick: () => setSettings(prev => ({ ...prev, emojiStyle: s })) }, s === 'apple' ? '🍎 APPLE' : s === 'twemoji' ? '🐦 TWEMOJI' : '🤖 NOTO'))
                         )
                     ),
                     React.createElement('div', { className: 'setting-row' },
                         React.createElement('span', { className: 'setting-label' }, 'Combo System'),
-                        React.createElement('button', {
-                            className: `setting-toggle ${settings.comboEnabled ? 'on' : ''}`,
-                            onClick: () => setSettings(prev => ({ ...prev, comboEnabled: !prev.comboEnabled })),
-                            'aria-label': 'Toggle combo'
-                        })
+                        React.createElement('button', { className: `setting-toggle ${settings.comboEnabled ? 'on' : ''}`, onClick: () => setSettings(prev => ({ ...prev, comboEnabled: !prev.comboEnabled })), 'aria-label': 'Toggle combo' })
                     )
                 ),
 
-                // === AUDIO ===
                 React.createElement('div', { className: 'settings-section' },
                     React.createElement('div', { className: 'settings-section-title' }, '🔊 Audio'),
                     React.createElement('div', { className: 'setting-row' },
                         React.createElement('span', { className: 'setting-label' }, 'Sound'),
-                        React.createElement('button', {
-                            className: `setting-toggle ${settings.soundEnabled ? 'on' : ''}`,
-                            onClick: () => setSettings(s => ({ ...s, soundEnabled: !s.soundEnabled })),
-                            'aria-label': 'Toggle sound'
-                        })
+                        React.createElement('button', { className: `setting-toggle ${settings.soundEnabled ? 'on' : ''}`, onClick: () => setSettings(s => ({ ...s, soundEnabled: !s.soundEnabled })), 'aria-label': 'Toggle sound' })
                     ),
                     React.createElement('div', { className: 'setting-row' },
                         React.createElement('span', { className: 'setting-label' }, 'Master'),
-                        React.createElement('input', {
-                            type: 'range', min: 0, max: 100,
-                            value: Math.round(settings.masterVolume * 100),
-                            onChange: (e) => setSettings(s => ({ ...s, masterVolume: Number(e.target.value) / 100 })),
-                            className: 'setting-slider',
-                            style: { '--fill': `${settings.masterVolume * 100}%` }
-                        }),
+                        React.createElement('input', { type: 'range', min: 0, max: 100, value: Math.round(settings.masterVolume * 100), onChange: (e) => setSettings(s => ({ ...s, masterVolume: Number(e.target.value) / 100 })), className: 'setting-slider', style: { '--fill': `${settings.masterVolume * 100}%` } }),
                         React.createElement('span', { className: 'setting-value' }, `${Math.round(settings.masterVolume * 100)}%`)
                     ),
                     React.createElement('div', { className: 'setting-row' },
                         React.createElement('span', { className: 'setting-label' }, 'SFX'),
-                        React.createElement('input', {
-                            type: 'range', min: 0, max: 100,
-                            value: Math.round(settings.sfxVolume * 100),
-                            onChange: (e) => setSettings(s => ({ ...s, sfxVolume: Number(e.target.value) / 100 })),
-                            className: 'setting-slider',
-                            style: { '--fill': `${settings.sfxVolume * 100}%` }
-                        }),
+                        React.createElement('input', { type: 'range', min: 0, max: 100, value: Math.round(settings.sfxVolume * 100), onChange: (e) => setSettings(s => ({ ...s, sfxVolume: Number(e.target.value) / 100 })), className: 'setting-slider', style: { '--fill': `${settings.sfxVolume * 100}%` } }),
                         React.createElement('span', { className: 'setting-value' }, `${Math.round(settings.sfxVolume * 100)}%`)
                     ),
                     React.createElement('div', { className: 'setting-row' },
                         React.createElement('span', { className: 'setting-label' }, 'Ambient'),
-                        React.createElement('input', {
-                            type: 'range', min: 0, max: 100,
-                            value: Math.round(settings.ambientVolume * 100),
-                            onChange: (e) => setSettings(s => ({ ...s, ambientVolume: Number(e.target.value) / 100 })),
-                            className: 'setting-slider',
-                            style: { '--fill': `${settings.ambientVolume * 100}%` }
-                        }),
+                        React.createElement('input', { type: 'range', min: 0, max: 100, value: Math.round(settings.ambientVolume * 100), onChange: (e) => setSettings(s => ({ ...s, ambientVolume: Number(e.target.value) / 100 })), className: 'setting-slider', style: { '--fill': `${settings.ambientVolume * 100}%` } }),
                         React.createElement('span', { className: 'setting-value' }, `${Math.round(settings.ambientVolume * 100)}%`)
                     )
                 ),
 
                 React.createElement('div', { className: 'settings-footer' },
                     React.createElement('span', { className: 'settings-hint' }, 'Changes are saved automatically'),
-                    React.createElement('button', {
-                        className: 'settings-reset',
-                        onClick: () => setSettings({ ...DEFAULT_SETTINGS })
-                    }, 'RESET')
+                    React.createElement('button', { className: 'settings-reset', onClick: () => setSettings({ ...DEFAULT_SETTINGS }) }, 'RESET')
                 )
             )
         )
