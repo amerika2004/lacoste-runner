@@ -6,10 +6,8 @@ window.GameCharacters.crocodile = {
     foodEmojis: ['🍗', '🍔', '🍕', '🥩']
 };
 
-// >>> ПРЕДЗАГРУЗКА КАДРОВ (fire-and-forget, не блокирует)
 (function () {
     const c = window.GameCharacters.crocodile;
     for (let i = 1; i <= c.frameCount; i++) new Image().src = `${c.folder}/${i}.png`;
 })();
-
 console.log('🐊 Crocodile registered + preloading frames');
