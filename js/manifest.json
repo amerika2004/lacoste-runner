@@ -6,15 +6,6 @@
     "js/pack3_ui.js",
     "js/pack4_audio.js",
     "js/pack5_atmosphere.js",
-    "js/pack6_stats.js",
-    "js/pack1.js",
-    "js/pack2.js",
-    "js/pack3.js",
-    "js/pack4.js",
-    "js/pack5.js",
-    "js/pack6.js",
-    "js/pack7.js",
-    "js/pack8.js",
-    "js/pack9.js"
+    "js/pack6_stats.js"
   ]
 }
