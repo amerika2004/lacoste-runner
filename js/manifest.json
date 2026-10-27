@@ -1,0 +1,6 @@
+{
+  "modules": [
+    "js/pack2.js",
+    "js/pack3.js"
+  ]
+}
