@@ -32,7 +32,7 @@
         StatsState.comboMult = mult;
         if (StatsState.combo > StatsState.maxCombo) StatsState.maxCombo = StatsState.combo;
         
-        // Отправляем множитель в мир (чтобы очки росли быстрее)
+        // Отправляем событие для UI
         window.GameEvents.emit('combo_changed', { mult, count: StatsState.combo });
     }
 
@@ -55,11 +55,9 @@
         resetCombo();
     });
 
-    window.GameEvents.on('jump', () => {
-        addCombo();
-    });
+    window.GameEvents.on('jump', () => addCombo());
 
-    window.GameEvents.on('hit', (data) => {
+    window.GameEvents.on('hit', () => {
         resetCombo();
         StatsState.damageTaken++;
     });
@@ -76,7 +74,7 @@
     window.GameEvents.on('gameover', (data) => {
         StatsState.isGameOver = true;
         StatsState.finalStats = {
-            distance: data.distance,
+            distance: Math.floor(data.distance),
             maxCombo: StatsState.maxCombo,
             foodEaten: StatsState.foodEaten,
             damageTaken: StatsState.damageTaken,
@@ -86,9 +84,19 @@
         };
     });
 
-    // Модификация скорости набора очков (через множитель)
-    // game.js (pack2_world) должен читать этот множитель при расчете distance
-    
+    // === ХЕЛПЕР ДЛЯ КАРТОЧЕК СТАТИСТИКИ ===
+    function createStatCard(icon, label, value, highlight) {
+        return React.createElement('div', {
+            style: { display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '10px' }
+        },
+            React.createElement('span', { style: { fontSize: '24px' } }, icon),
+            React.createElement('div', { style: { display: 'flex', flexDirection: 'column' } },
+                React.createElement('span', { style: { fontSize: '10px', color: '#888', letterSpacing: '1px' } }, label.toUpperCase()),
+                React.createElement('span', { style: { fontSize: '18px', color: highlight ? '#FFD700' : '#00FFFF', fontFamily: "'Courier New', monospace", fontWeight: 'bold' } }, value)
+            )
+        );
+    }
+
     // === UI КОМПОНЕНТ ===
     function StatsUI({ gameState }) {
         const [combo, setCombo] = useState({ mult: 1, count: 0 });
@@ -98,7 +106,6 @@
         useEffect(() => {
             const onCombo = (data) => setCombo(data);
             window.GameEvents.on('combo_changed', onCombo);
-            
             return () => {};
         }, []);
 
@@ -112,7 +119,7 @@
         }, [gameState]);
 
         return React.createElement(React.Fragment, null,
-            // 1. Индикатор комбо в игре
+            // 1. Индикатор комбо
             (gameState === 'playing' && combo.mult > 1) ? React.createElement('div', {
                 className: `combo-indicator combo-x${combo.mult}`,
                 style: {
@@ -162,23 +169,6 @@
                     }, 'TRY AGAIN')
                 )
             ) : null
-        );
-    }
-
-    function createStatCard(icon, label, value, highlight) {
-        return React.createElement('div', {
-            style: {
-                display: 'flex', alignItems: 'center', gap: '10px',
-                background: 'rgba(255,255,255,0.04)',
-                border: '1px solid rgba(255,255,255,0.1)',
-                borderRadius: '8px', padding: '10px'
-            }
-        },
-            React.createElement('span', { style: { fontSize: '24px' } }, icon),
-            React.createElement('div', { style: { display: 'flex', flexDirection: 'column' } },
-                React.createElement('span', { style: { fontSize: '10px', color: '#888', letterSpacing: '1px' } }, label.toUpperCase()),
-                React.createElement('span', { style: { fontSize: '18px', color: highlight ? '#FFD700' : '#00FFFF', fontFamily: "'Courier New', monospace", fontWeight: 'bold' } }, value)
-            )
         );
     }
 
