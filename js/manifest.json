@@ -1,12 +1,12 @@
 {
   "modules": [
-    "plugins/characters/crocodile.js",
-    "plugins/characters/panda.js",
-    "plugins/player.js",
-    "plugins/world.js",
-    "plugins/combo.js",
-    "plugins/audio.js",
-    "plugins/weather.js",
-    "plugins/stats.js"
+    "js/plugins/characters/crocodile.js",
+    "js/plugins/characters/panda.js",
+    "js/plugins/player.js",
+    "js/plugins/world.js",
+    "js/plugins/combo.js",
+    "js/plugins/audio.js",
+    "js/plugins/weather.js",
+    "js/plugins/stats.js"
   ]
 }
