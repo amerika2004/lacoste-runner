@@ -7,597 +7,170 @@
     --panel-bg: rgba(10, 8, 20, 0.92);
     --panel-border: rgba(255, 0, 127, 0.6);
     --panel-glow: rgba(255, 0, 127, 0.35);
+    --combo-x2: #FFD700;
+    --combo-x3: #FF8C00;
+    --combo-x5: #FF007F;
 }
 
 body, html {
-    margin: 0;
-    padding: 0;
-    width: 100%;
-    height: 100vh;
-    height: 100dvh;
+    margin: 0; padding: 0;
+    width: 100%; height: 100vh; height: 100dvh;
     background-color: var(--bg-color);
     font-family: 'Bebas Neue', sans-serif;
     overflow: hidden;
-    display: flex;
-    justify-content: center;
-    align-items: center;
+    display: flex; justify-content: center; align-items: center;
     color: white;
-
-    touch-action: none;
-    overscroll-behavior: none;
-    -webkit-user-select: none;
-    user-select: none;
+    touch-action: none; overscroll-behavior: none;
+    -webkit-user-select: none; user-select: none;
     -webkit-tap-highlight-color: transparent;
 }
 
-#root {
-    width: 100%;
-    height: 100%;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-}
+#root { width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; }
 
 #game-container {
-    position: relative;
-    box-sizing: border-box;
+    position: relative; box-sizing: border-box;
     background: #111;
     border: 2px solid var(--gta-pink);
     box-shadow: 0 0 20px var(--gta-pink), inset 0 0 20px var(--gta-pink);
     overflow: hidden;
-
-    width: min(100vw, calc(100dvh * 2)); 
-    height: min(100dvh, calc(100vw / 2)); 
-    
-    width: min(100vw, calc(100vh * 2));
-    height: min(100vh, calc(100vw / 2));
+    width: min(100vw, calc(100dvh * 2)); height: min(100dvh, calc(100vw / 2));
+    width: min(100vw, calc(100vh * 2)); height: min(100vh, calc(100vw / 2));
 }
+@media (pointer: fine) and (min-width: 1220px) { #game-container { width: 1200px; height: 600px; } }
 
-@media (pointer: fine) and (min-width: 1220px) {
-    #game-container {
-        width: 1200px;
-        height: 600px;
-    }
-}
+canvas { display: block; width: 100%; height: 100%; object-fit: contain; touch-action: none; }
 
-canvas {
-    display: block;
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-    touch-action: none;
-}
+/* >>> EMOJI STYLES <<< */
+.emoji-apple { font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif; }
+.emoji-twemoji { font-family: "Jdecked Twemoji", "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif; }
+.emoji-noto { font-family: "Noto Color Emoji", "Apple Color Emoji", "Segoe UI Emoji", sans-serif; }
 
 /* МЕНЮ */
 .menu-overlay {
-    position: absolute;
-    top: 0; left: 0; width: 100%; height: 100%;
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
     background: rgba(0, 0, 0, 0.85);
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    z-index: 10;
-    padding: 2%;
-    box-sizing: border-box;
-    text-align: center;
+    display: flex; flex-direction: column; justify-content: center; align-items: center;
+    z-index: 10; padding: 2%; box-sizing: border-box; text-align: center;
 }
-
-.title {
-    font-size: clamp(24px, 6vmin, 80px);
-    color: var(--gta-pink);
-    text-shadow: 2px 2px 0px var(--gta-cyan), -1px -1px 0px var(--gta-green);
-    margin-bottom: clamp(5px, 1.5vmin, 10px);
-    text-transform: uppercase;
-    letter-spacing: 2px;
-    line-height: 0.9;
-}
-
-.subtitle {
-    font-size: clamp(12px, 2.5vmin, 24px);
-    color: var(--gta-green);
-    margin-bottom: clamp(10px, 3vmin, 40px);
-    letter-spacing: 4px;
-}
-
-.settings {
-    display: flex;
-    gap: clamp(8px, 2vmin, 15px);
-    margin-bottom: clamp(10px, 3vmin, 40px);
-    flex-wrap: wrap;
-    justify-content: center;
-}
+.title { font-size: clamp(24px, 6vmin, 80px); color: var(--gta-pink); text-shadow: 2px 2px 0px var(--gta-cyan), -1px -1px 0px var(--gta-green); margin-bottom: clamp(5px, 1.5vmin, 10px); text-transform: uppercase; letter-spacing: 2px; line-height: 0.9; }
+.subtitle { font-size: clamp(12px, 2.5vmin, 24px); color: var(--gta-green); margin-bottom: clamp(10px, 3vmin, 40px); letter-spacing: 4px; }
+.settings { display: flex; gap: clamp(8px, 2vmin, 15px); margin-bottom: clamp(10px, 3vmin, 40px); flex-wrap: wrap; justify-content: center; }
 
 .btn {
-    background: transparent;
-    color: white;
-    border: 2px solid white;
+    background: transparent; color: white; border: 2px solid white;
     padding: clamp(4px, 1.5vmin, 10px) clamp(10px, 3vmin, 20px);
-    font-family: 'Bebas Neue', sans-serif;
-    font-size: clamp(14px, 3vmin, 24px);
-    cursor: pointer;
-    transition: all 0.2s;
-    text-transform: uppercase;
-    touch-action: manipulation;
-    -webkit-tap-highlight-color: transparent;
+    font-family: 'Bebas Neue', sans-serif; font-size: clamp(14px, 3vmin, 24px);
+    cursor: pointer; transition: all 0.2s; text-transform: uppercase;
+    touch-action: manipulation; -webkit-tap-highlight-color: transparent;
 }
+.btn:hover, .btn:active { background: white; color: black; }
+.btn.active { border-color: var(--gta-pink); color: var(--gta-pink); box-shadow: 0 0 10px var(--gta-pink); }
+.btn-start { border-color: var(--gta-green); color: var(--gta-green); font-size: clamp(18px, 4vmin, 32px); padding: clamp(8px, 2vmin, 15px) clamp(15px, 5vmin, 50px); }
+.btn-start:hover, .btn-start:active { background: var(--gta-green); color: black; box-shadow: 0 0 20px var(--gta-green); }
+.menu-overlay p { font-size: clamp(10px, 1.8vmin, 16px) !important; margin: clamp(2px, 1vmin, 8px) 0 !important; line-height: 1.2; }
 
-.btn:hover, .btn:active {
-    background: white;
-    color: black;
-}
-
-.btn.active {
-    border-color: var(--gta-pink);
-    color: var(--gta-pink);
-    box-shadow: 0 0 10px var(--gta-pink);
-}
-
-.btn-start {
-    border-color: var(--gta-green);
-    color: var(--gta-green);
-    font-size: clamp(18px, 4vmin, 32px);
-    padding: clamp(8px, 2vmin, 15px) clamp(15px, 5vmin, 50px);
-}
-
-.btn-start:hover, .btn-start:active {
-    background: var(--gta-green);
-    color: black;
-    box-shadow: 0 0 20px var(--gta-green);
-}
-
-.menu-overlay p {
-    font-size: clamp(10px, 1.8vmin, 16px) !important;
-    margin: clamp(2px, 1vmin, 8px) 0 !important;
-    line-height: 1.2;
-}
-
-/* >>> ПАНЕЛЬ ВЫБОРА ПЕРСОНАЖЕЙ (справа) <<< */
+/* ПАНЕЛЬ ВЫБОРА ПЕРСОНАЖЕЙ */
 .char-panel {
-    position: absolute;
-    top: 50%;
-    right: 2%;
-    transform: translateY(-50%);
-    display: flex;
-    flex-direction: column;
-    gap: clamp(3px, 0.8vmin, 6px);
-    z-index: 11;
-    background: rgba(0, 0, 0, 0.7);
-    border: 2px solid rgba(255, 0, 127, 0.5);
-    border-radius: 12px;
+    position: absolute; top: 50%; right: 2%; transform: translateY(-50%);
+    display: flex; flex-direction: column; gap: clamp(3px, 0.8vmin, 6px);
+    z-index: 11; background: rgba(0, 0, 0, 0.7);
+    border: 2px solid rgba(255, 0, 127, 0.5); border-radius: 12px;
     padding: clamp(5px, 1.2vmin, 10px);
     box-shadow: 0 0 15px rgba(255, 0, 127, 0.35);
-    max-height: 85%;
-    overflow-y: auto;
+    max-height: 85%; overflow-y: auto;
 }
-
-.char-panel-title {
-    font-size: clamp(9px, 1.6vmin, 14px);
-    color: var(--gta-cyan);
-    letter-spacing: 2px;
-    text-align: center;
-    text-transform: uppercase;
-    margin-bottom: 2px;
-    text-shadow: 1px 1px 0 #000;
-    white-space: nowrap;
-}
-
+.char-panel-title { font-size: clamp(9px, 1.6vmin, 14px); color: var(--gta-cyan); letter-spacing: 2px; text-align: center; text-transform: uppercase; margin-bottom: 2px; text-shadow: 1px 1px 0 #000; white-space: nowrap; }
 .char-btn {
-    background: rgba(0, 0, 0, 0.5);
-    border: 2px solid #555;
-    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.5); border: 2px solid #555; border-radius: 8px;
     padding: clamp(3px, 0.8vmin, 6px) clamp(4px, 1vmin, 8px);
-    cursor: pointer;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 1px;
-    transition: all 0.2s;
-    color: white;
-    font-family: 'Bebas Neue', sans-serif;
-    min-width: clamp(52px, 8.5vmin, 75px);
-    touch-action: manipulation;
-    -webkit-tap-highlight-color: transparent;
+    cursor: pointer; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 1px; transition: all 0.2s; color: white;
+    font-family: 'Bebas Neue', sans-serif; min-width: clamp(52px, 8.5vmin, 75px);
+    touch-action: manipulation; -webkit-tap-highlight-color: transparent;
 }
-
-.char-btn .char-emoji {
-    font-size: clamp(20px, 4vmin, 32px);
-    line-height: 1;
-    display: block;
-}
-
-.char-btn .char-name {
-    font-size: clamp(8px, 1.4vmin, 12px);
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    color: #ccc;
-    display: block;
-    white-space: nowrap;
-}
-
-.char-btn:hover {
-    border-color: white;
-}
-
-.char-btn:hover .char-name {
-    color: white;
-}
-
-.char-btn.active {
-    border-color: var(--gta-pink);
-    box-shadow: 0 0 10px var(--gta-pink);
-    background: rgba(255, 0, 127, 0.15);
-}
-
-.char-btn.active .char-name {
-    color: var(--gta-pink);
-}
+.char-btn .char-emoji { font-size: clamp(20px, 4vmin, 32px); line-height: 1; display: block; }
+.char-btn .char-name { font-size: clamp(8px, 1.4vmin, 12px); letter-spacing: 1px; text-transform: uppercase; color: #ccc; display: block; white-space: nowrap; }
+.char-btn:hover { border-color: white; }
+.char-btn:hover .char-name { color: white; }
+.char-btn.active { border-color: var(--gta-pink); box-shadow: 0 0 10px var(--gta-pink); background: rgba(255, 0, 127, 0.15); }
+.char-btn.active .char-name { color: var(--gta-pink); }
 
 /* HUD */
 .hud-left {
-    position: absolute; 
-    top: 2%; left: 2%;
+    position: absolute; top: 2%; left: 2%;
     font-family: 'Courier New', Courier, monospace;
-    font-size: clamp(10px, 1.8vmin, 20px);
-    color: #00FF41;
-    text-shadow: 1px 1px 0 #000;
-    z-index: 5;
-    display: flex; 
-    flex-direction: column; 
-    gap: 2px;
+    font-size: clamp(10px, 1.8vmin, 20px); color: #00FF41;
+    text-shadow: 1px 1px 0 #000; z-index: 5;
+    display: flex; flex-direction: column; gap: 2px;
+}
+.hud-right {
+    position: absolute; top: 2%; right: 2%;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: clamp(10px, 1.8vmin, 20px); color: #ff007f;
+    text-shadow: 1px 1px 0 #000; z-index: 5;
+    display: flex; gap: clamp(5px, 1.5vmin, 15px);
+    flex-wrap: wrap; justify-content: flex-end; max-width: 70%;
 }
 
-.hud-right {
-    position: absolute; 
-    top: 2%; right: 2%;
-    font-family: 'Courier New', Courier, monospace;
-    font-size: clamp(10px, 1.8vmin, 20px);
-    color: #ff007f;
-    text-shadow: 1px 1px 0 #000;
-    z-index: 5;
-    display: flex; 
-    gap: clamp(5px, 1.5vmin, 15px);
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    max-width: 70%;
+/* >>> COMBO INDICATOR <<< */
+.combo-indicator {
+    position: absolute; top: 8%; left: 50%; transform: translateX(-50%);
+    font-family: 'Bebas Neue', sans-serif; font-size: clamp(20px, 4vmin, 40px);
+    letter-spacing: 4px; text-transform: uppercase;
+    text-shadow: 0 0 15px currentColor, 0 0 30px currentColor;
+    z-index: 6; pointer-events: none; font-weight: bold;
+    transition: all 0.15s ease-out;
+    animation: comboPop 0.3s ease-out;
 }
+@keyframes comboPop { 0% { transform: translateX(-50%) scale(1.4); } 100% { transform: translateX(-50%) scale(1); } }
+.combo-x2 { color: var(--combo-x2); }
+.combo-x3 { color: var(--combo-x3); }
+.combo-x5 { color: var(--combo-x5); }
 
 .game-btn {
-    position: absolute;
-    bottom: calc(10px + env(safe-area-inset-bottom, 0px));
-    z-index: 15;
-    width: clamp(40px, 8vmin, 56px);
-    height: clamp(40px, 8vmin, 56px);
-    border-radius: 50%;
-    background: rgba(0, 0, 0, 0.5);
-    border: 2px solid var(--gta-pink);
-    color: var(--gta-pink);
-    font-size: clamp(16px, 4vmin, 24px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 0 10px rgba(255, 0, 127, 0.5);
-    touch-action: manipulation;
-    padding: 0;
-    line-height: 1;
-    cursor: pointer;
+    position: absolute; bottom: calc(10px + env(safe-area-inset-bottom, 0px)); z-index: 15;
+    width: clamp(40px, 8vmin, 56px); height: clamp(40px, 8vmin, 56px);
+    border-radius: 50%; background: rgba(0, 0, 0, 0.5);
+    border: 2px solid var(--gta-pink); color: var(--gta-pink);
+    font-size: clamp(16px, 4vmin, 24px); display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 0 10px rgba(255, 0, 127, 0.5); touch-action: manipulation;
+    padding: 0; line-height: 1; cursor: pointer;
 }
-
 #btn-pause { right: calc(10px + env(safe-area-inset-right, 0px)); }
 #btn-fullscreen { right: calc(10px + 8vmin + 20px + env(safe-area-inset-right, 0px)); }
-
 .game-btn:active { background: rgba(255, 0, 127, 0.3); }
 
-/* ==================================================================
-   >>> SETTINGS SCREEN (hi-tech GTA neon console) <<<
-   ================================================================== */
-.settings-overlay {
-    position: absolute;
-    top: 0; left: 0; width: 100%; height: 100%;
-    background: rgba(0, 0, 0, 0.9);
-    z-index: 20;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    padding: 3%;
-    box-sizing: border-box;
-    animation: fadeIn 0.25s ease-out;
-}
-
-@keyframes fadeIn {
-    from { opacity: 0; transform: scale(0.97); }
-    to   { opacity: 1; transform: scale(1); }
-}
-
-.settings-panel {
-    position: relative;
-    width: min(90%, 780px);
-    max-height: 95%;
-    overflow-y: auto;
-    background: var(--panel-bg);
-    border: 2px solid var(--panel-border);
-    border-radius: 14px;
-    box-shadow: 0 0 30px var(--panel-glow), inset 0 0 40px rgba(255, 0, 127, 0.05);
-    padding: clamp(14px, 3vmin, 28px) clamp(16px, 4vmin, 36px);
-    font-family: 'Bebas Neue', sans-serif;
-    color: white;
-    display: flex;
-    flex-direction: column;
-    gap: clamp(10px, 2vmin, 20px);
-}
-
-/* Decorative corner brackets */
-.settings-panel::before,
-.settings-panel::after {
-    content: '';
-    position: absolute;
-    width: 24px; height: 24px;
-    border: 2px solid var(--gta-cyan);
-    pointer-events: none;
-}
-.settings-panel::before {
-    top: 8px; left: 8px;
-    border-right: none;
-    border-bottom: none;
-}
-.settings-panel::after {
-    bottom: 8px; right: 8px;
-    border-left: none;
-    border-top: none;
-}
-
-.settings-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding-bottom: clamp(6px, 1.5vmin, 12px);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
-    margin-bottom: clamp(4px, 1vmin, 8px);
-}
-
-.settings-title {
-    font-size: clamp(22px, 4vmin, 40px);
-    letter-spacing: 4px;
-    color: var(--gta-pink);
-    text-shadow: 0 0 12px rgba(255, 0, 127, 0.6);
-    text-transform: uppercase;
-}
-
-.settings-close {
-    background: transparent;
-    border: 2px solid var(--gta-cyan);
-    color: var(--gta-cyan);
-    width: clamp(32px, 5vmin, 44px);
-    height: clamp(32px, 5vmin, 44px);
-    border-radius: 8px;
-    font-size: clamp(16px, 3vmin, 22px);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s;
-    touch-action: manipulation;
-}
-.settings-close:hover, .settings-close:active {
-    background: var(--gta-cyan);
-    color: black;
-    box-shadow: 0 0 12px var(--gta-cyan);
-}
-
-.settings-section {
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-left: 3px solid var(--gta-green);
-    border-radius: 8px;
-    padding: clamp(8px, 2vmin, 16px) clamp(10px, 2.5vmin, 20px);
-    display: flex;
-    flex-direction: column;
-    gap: clamp(8px, 1.6vmin, 14px);
-}
-
-.settings-section-title {
-    font-size: clamp(12px, 2vmin, 16px);
-    letter-spacing: 3px;
-    color: var(--gta-green);
-    text-transform: uppercase;
-    text-shadow: 0 0 6px rgba(0, 255, 65, 0.5);
-    margin-bottom: 2px;
-}
-
-/* Row: label + control */
-.setting-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: clamp(8px, 2vmin, 20px);
-    flex-wrap: wrap;
-}
-
-.setting-label {
-    font-size: clamp(12px, 2vmin, 18px);
-    letter-spacing: 2px;
-    color: white;
-    text-transform: uppercase;
-    flex: 1 1 auto;
-    min-width: 100px;
-}
-
-.setting-value {
-    font-family: 'Courier New', Courier, monospace;
-    font-size: clamp(10px, 1.6vmin, 14px);
-    color: var(--gta-cyan);
-    min-width: 36px;
-    text-align: right;
-}
-
-/* Range slider */
-.setting-slider {
-    -webkit-appearance: none;
-    appearance: none;
-    width: clamp(120px, 30vmin, 240px);
-    height: 6px;
-    background: linear-gradient(90deg, var(--gta-pink) 0%, var(--gta-pink) var(--fill, 50%), rgba(255,255,255,0.1) var(--fill, 50%), rgba(255,255,255,0.1) 100%);
-    border-radius: 3px;
-    outline: none;
-    cursor: pointer;
-    touch-action: manipulation;
-}
-.setting-slider::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 18px; height: 18px;
-    border-radius: 50%;
-    background: var(--gta-pink);
-    box-shadow: 0 0 10px var(--gta-pink);
-    border: 2px solid white;
-    cursor: pointer;
-}
-.setting-slider::-moz-range-thumb {
-    width: 18px; height: 18px;
-    border-radius: 50%;
-    background: var(--gta-pink);
-    box-shadow: 0 0 10px var(--gta-pink);
-    border: 2px solid white;
-    cursor: pointer;
-}
-
-/* Toggle switch */
-.setting-toggle {
-    position: relative;
-    width: clamp(50px, 8vmin, 64px);
-    height: clamp(24px, 4vmin, 30px);
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 15px;
-    border: 2px solid rgba(255, 255, 255, 0.25);
-    cursor: pointer;
-    transition: all 0.25s;
-    padding: 0;
-    flex-shrink: 0;
-    touch-action: manipulation;
-}
-.setting-toggle::after {
-    content: '';
-    position: absolute;
-    top: 50%;
-    left: 2px;
-    transform: translateY(-50%);
-    width: clamp(18px, 3vmin, 22px);
-    height: clamp(18px, 3vmin, 22px);
-    background: #bbb;
-    border-radius: 50%;
-    transition: all 0.25s;
-}
-.setting-toggle.on {
-    background: rgba(0, 255, 65, 0.2);
-    border-color: var(--gta-green);
-    box-shadow: 0 0 12px rgba(0, 255, 65, 0.5);
-}
-.setting-toggle.on::after {
-    left: calc(100% - clamp(18px, 3vmin, 22px) - 2px);
-    background: var(--gta-green);
-    box-shadow: 0 0 10px var(--gta-green);
-}
-
-/* Segmented control (Low / Med / High) */
-.segmented {
-    display: inline-flex;
-    border: 2px solid rgba(255, 255, 255, 0.2);
-    border-radius: 8px;
-    overflow: hidden;
-    flex-shrink: 0;
-}
-.segmented button {
-    background: transparent;
-    color: rgba(255, 255, 255, 0.6);
-    border: none;
-    padding: clamp(4px, 1vmin, 8px) clamp(10px, 2.5vmin, 18px);
-    font-family: 'Bebas Neue', sans-serif;
-    font-size: clamp(11px, 1.8vmin, 15px);
-    letter-spacing: 1px;
-    cursor: pointer;
-    transition: all 0.2s;
-    text-transform: uppercase;
-    touch-action: manipulation;
-    -webkit-tap-highlight-color: transparent;
-}
-.segmented button:hover {
-    color: white;
-    background: rgba(255, 255, 255, 0.08);
-}
-.segmented button.active {
-    background: var(--gta-pink);
-    color: white;
-    text-shadow: 0 0 6px rgba(0, 0, 0, 0.6);
-}
-
-/* Settings footer with reset */
-.settings-footer {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 10px;
-    flex-wrap: wrap;
-    padding-top: clamp(4px, 1vmin, 8px);
-    border-top: 1px solid rgba(255, 255, 255, 0.12);
-    margin-top: clamp(4px, 1vmin, 8px);
-}
-
-.settings-hint {
-    font-family: 'Courier New', Courier, monospace;
-    font-size: clamp(9px, 1.4vmin, 12px);
-    color: rgba(255, 255, 255, 0.4);
-    letter-spacing: 1px;
-}
-
-.settings-reset {
-    background: transparent;
-    border: 2px solid var(--gta-cyan);
-    color: var(--gta-cyan);
-    padding: clamp(4px, 1vmin, 8px) clamp(12px, 2.5vmin, 20px);
-    font-family: 'Bebas Neue', sans-serif;
-    font-size: clamp(11px, 1.8vmin, 15px);
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    cursor: pointer;
-    border-radius: 6px;
-    transition: all 0.2s;
-    touch-action: manipulation;
-}
-.settings-reset:hover, .settings-reset:active {
-    background: var(--gta-cyan);
-    color: black;
-    box-shadow: 0 0 12px var(--gta-cyan);
-}
-
-/* Gear icon button on menu */
-.settings-open-btn {
-    background: transparent;
-    border: 2px solid var(--gta-cyan);
-    color: var(--gta-cyan);
-    padding: clamp(4px, 1vmin, 8px) clamp(12px, 2.5vmin, 22px);
-    font-family: 'Bebas Neue', sans-serif;
-    font-size: clamp(14px, 2.5vmin, 20px);
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    cursor: pointer;
-    border-radius: 6px;
-    transition: all 0.2s;
-    touch-action: manipulation;
-    margin-bottom: clamp(8px, 2vmin, 15px);
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-}
-.settings-open-btn:hover, .settings-open-btn:active {
-    background: var(--gta-cyan);
-    color: black;
-    box-shadow: 0 0 15px var(--gta-cyan);
-}
-
-/* Small screens: make settings panel more compact */
-@media (max-height: 500px) {
-    .settings-panel { max-height: 98%; }
-    .settings-section { padding: 6px 10px; }
-    .settings-title { font-size: 20px; }
-}
+/* SETTINGS */
+.settings-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.9); z-index: 20; display: flex; justify-content: center; align-items: center; padding: 3%; box-sizing: border-box; animation: fadeIn 0.25s ease-out; }
+@keyframes fadeIn { from { opacity: 0; transform: scale(0.97); } to { opacity: 1; transform: scale(1); } }
+.settings-panel { position: relative; width: min(90%, 780px); max-height: 95%; overflow-y: auto; background: var(--panel-bg); border: 2px solid var(--panel-border); border-radius: 14px; box-shadow: 0 0 30px var(--panel-glow), inset 0 0 40px rgba(255, 0, 127, 0.05); padding: clamp(14px, 3vmin, 28px) clamp(16px, 4vmin, 36px); font-family: 'Bebas Neue', sans-serif; color: white; display: flex; flex-direction: column; gap: clamp(10px, 2vmin, 20px); }
+.settings-panel::before, .settings-panel::after { content: ''; position: absolute; width: 24px; height: 24px; border: 2px solid var(--gta-cyan); pointer-events: none; }
+.settings-panel::before { top: 8px; left: 8px; border-right: none; border-bottom: none; }
+.settings-panel::after { bottom: 8px; right: 8px; border-left: none; border-top: none; }
+.settings-header { display: flex; justify-content: space-between; align-items: center; padding-bottom: clamp(6px, 1.5vmin, 12px); border-bottom: 1px solid rgba(255, 255, 255, 0.12); margin-bottom: clamp(4px, 1vmin, 8px); }
+.settings-title { font-size: clamp(22px, 4vmin, 40px); letter-spacing: 4px; color: var(--gta-pink); text-shadow: 0 0 12px rgba(255, 0, 127, 0.6); text-transform: uppercase; }
+.settings-close { background: transparent; border: 2px solid var(--gta-cyan); color: var(--gta-cyan); width: clamp(32px, 5vmin, 44px); height: clamp(32px, 5vmin, 44px); border-radius: 8px; font-size: clamp(16px, 3vmin, 22px); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; touch-action: manipulation; }
+.settings-close:hover, .settings-close:active { background: var(--gta-cyan); color: black; box-shadow: 0 0 12px var(--gta-cyan); }
+.settings-section { background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-left: 3px solid var(--gta-green); border-radius: 8px; padding: clamp(8px, 2vmin, 16px) clamp(10px, 2.5vmin, 20px); display: flex; flex-direction: column; gap: clamp(8px, 1.6vmin, 14px); }
+.settings-section-title { font-size: clamp(12px, 2vmin, 16px); letter-spacing: 3px; color: var(--gta-green); text-transform: uppercase; text-shadow: 0 0 6px rgba(0, 255, 65, 0.5); margin-bottom: 2px; }
+.setting-row { display: flex; align-items: center; justify-content: space-between; gap: clamp(8px, 2vmin, 20px); flex-wrap: wrap; }
+.setting-label { font-size: clamp(12px, 2vmin, 18px); letter-spacing: 2px; color: white; text-transform: uppercase; flex: 1 1 auto; min-width: 100px; }
+.setting-value { font-family: 'Courier New', Courier, monospace; font-size: clamp(10px, 1.6vmin, 14px); color: var(--gta-cyan); min-width: 36px; text-align: right; }
+.setting-slider { -webkit-appearance: none; appearance: none; width: clamp(120px, 30vmin, 240px); height: 6px; background: linear-gradient(90deg, var(--gta-pink) 0%, var(--gta-pink) var(--fill, 50%), rgba(255,255,255,0.1) var(--fill, 50%), rgba(255,255,255,0.1) 100%); border-radius: 3px; outline: none; cursor: pointer; touch-action: manipulation; }
+.setting-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 18px; height: 18px; border-radius: 50%; background: var(--gta-pink); box-shadow: 0 0 10px var(--gta-pink); border: 2px solid white; cursor: pointer; }
+.setting-slider::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; background: var(--gta-pink); box-shadow: 0 0 10px var(--gta-pink); border: 2px solid white; cursor: pointer; }
+.setting-toggle { position: relative; width: clamp(50px, 8vmin, 64px); height: clamp(24px, 4vmin, 30px); background: rgba(255, 255, 255, 0.1); border-radius: 15px; border: 2px solid rgba(255, 255, 255, 0.25); cursor: pointer; transition: all 0.25s; padding: 0; flex-shrink: 0; touch-action: manipulation; }
+.setting-toggle::after { content: ''; position: absolute; top: 50%; left: 2px; transform: translateY(-50%); width: clamp(18px, 3vmin, 22px); height: clamp(18px, 3vmin, 22px); background: #bbb; border-radius: 50%; transition: all 0.25s; }
+.setting-toggle.on { background: rgba(0, 255, 65, 0.2); border-color: var(--gta-green); box-shadow: 0 0 12px rgba(0, 255, 65, 0.5); }
+.setting-toggle.on::after { left: calc(100% - clamp(18px, 3vmin, 22px) - 2px); background: var(--gta-green); box-shadow: 0 0 10px var(--gta-green); }
+.segmented { display: inline-flex; border: 2px solid rgba(255, 255, 255, 0.2); border-radius: 8px; overflow: hidden; flex-shrink: 0; }
+.segmented button { background: transparent; color: rgba(255, 255, 255, 0.6); border: none; padding: clamp(4px, 1vmin, 8px) clamp(10px, 2.5vmin, 18px); font-family: 'Bebas Neue', sans-serif; font-size: clamp(11px, 1.8vmin, 15px); letter-spacing: 1px; cursor: pointer; transition: all 0.2s; text-transform: uppercase; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+.segmented button:hover { color: white; background: rgba(255, 255, 255, 0.08); }
+.segmented button.active { background: var(--gta-pink); color: white; text-shadow: 0 0 6px rgba(0, 0, 0, 0.6); }
+.settings-footer { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; padding-top: clamp(4px, 1vmin, 8px); border-top: 1px solid rgba(255, 255, 255, 0.12); margin-top: clamp(4px, 1vmin, 8px); }
+.settings-hint { font-family: 'Courier New', Courier, monospace; font-size: clamp(9px, 1.4vmin, 12px); color: rgba(255, 255, 255, 0.4); letter-spacing: 1px; }
+.settings-reset { background: transparent; border: 2px solid var(--gta-cyan); color: var(--gta-cyan); padding: clamp(4px, 1vmin, 8px) clamp(12px, 2.5vmin, 20px); font-family: 'Bebas Neue', sans-serif; font-size: clamp(11px, 1.8vmin, 15px); letter-spacing: 2px; text-transform: uppercase; cursor: pointer; border-radius: 6px; transition: all 0.2s; touch-action: manipulation; }
+.settings-reset:hover, .settings-reset:active { background: var(--gta-cyan); color: black; box-shadow: 0 0 12px var(--gta-cyan); }
+.settings-open-btn { background: transparent; border: 2px solid var(--gta-cyan); color: var(--gta-cyan); padding: clamp(4px, 1vmin, 8px) clamp(12px, 2.5vmin, 22px); font-family: 'Bebas Neue', sans-serif; font-size: clamp(14px, 2.5vmin, 20px); letter-spacing: 2px; text-transform: uppercase; cursor: pointer; border-radius: 6px; transition: all 0.2s; touch-action: manipulation; margin-bottom: clamp(8px, 2vmin, 15px); display: inline-flex; align-items: center; gap: 8px; }
+.settings-open-btn:hover, .settings-open-btn:active { background: var(--gta-cyan); color: black; box-shadow: 0 0 15px var(--gta-cyan); }
+@media (max-height: 500px) { .settings-panel { max-height: 98%; } .settings-section { padding: 6px 10px; } .settings-title { font-size: 20px; } }
