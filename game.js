@@ -843,7 +843,7 @@ function Game() {
             )
         ),
 // >>> СЛОЙ ДЛЯ ВСЕХ UI ПАКЕТОВ
-window.GameEvents.emit('ui-mount', { gameState });
+window.GameEvents.emit('ui-mount', { gameState })
     );
 }
 
