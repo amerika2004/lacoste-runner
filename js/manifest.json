@@ -1,5 +1,5 @@
 {
   "modules": [
-    "js/plugins/stats_extended.js"
+    "js/plugins/all_in_one.js"
   ]
 }
