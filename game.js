@@ -8,6 +8,7 @@ const HOLD_THRUST = 0.45;
 const GROUND_Y = 530; 
 const BASE_SPEED = 4.0; 
 const SPEED_MULTIPLIER = 0.8;
+const FRAME_COUNT = 12;
 
 const DEFAULT_SETTINGS = {
     sfxVolume: 0.7, ambientVolume: 0.25, masterVolume: 1.0,
