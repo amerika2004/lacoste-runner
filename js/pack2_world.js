@@ -63,7 +63,12 @@
         let currentSpeed = 0;
         if (!WorldState.isTripping && !p.isEating) {
             currentSpeed = WorldState.speed * cfg.SPEED.SPEED_MULTIPLIER;
-            WorldState.distance += currentSpeed * 0.03;
+            // Множитель из Пакета 6
+let comboMult = 1;
+if (window.StatsState && window.StatsState.comboMult) {
+    comboMult = window.StatsState.comboMult;
+}
+WorldState.distance += currentSpeed * 0.03 * comboMult;
             WorldState.bgOffset -= currentSpeed;
         }
 
