@@ -1,4 +1,4 @@
-const { useState, useEffect, useRef, useCallback } = React;
+АЯconst { useState, useEffect, useRef, useCallback } = React;
 
 const FLIP_CROC = false; 
 
@@ -332,6 +332,14 @@ function Game() {
     const isBarrelTripRef = useRef(false); const pendingBarrelDamageRef = useRef(false); const isBarrelFlyingRef = useRef(false); const barrelFlyVelocityYRef = useRef(0);
     const isFallingIntoPitRef = useRef(false); const pitTargetRef = useRef(null); const pitFallTimerRef = useRef(0); const pitVelocityRef = useRef(0);
     const isPitDeathDelayRef = useRef(false); const pitDeathDelayTimerRef = useRef(0);
+        // >>> ЭКСПОРТ ДЛЯ ПАКЕТОВ (больше game.js не трогаем)
+    window.GameRefs = {
+        player: playerRef,
+        health: healthRef,
+        obstacles: obstaclesRef,
+        distance: distanceRef,
+        speedPenalty: speedPenaltyRef
+    };
 
     const puddleImg = useRef(new Image()); const puddleNightImg = useRef(new Image());
     const rockImg = useRef(new Image()); const rockNightImg = useRef(new Image());
