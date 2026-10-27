@@ -1,33 +1,27 @@
 /* ==================================================================
-   PACK 2 — Statistics, Toasts, Controls, Power-ups, Weather
-   Подключается после game.js. Использует window.Pack2Hooks + window.Pack2UI.
+   PACK 2 — Statistics, Toasts, Power-ups, Weather
+   Обновлено под window.GameEvents
    ================================================================== */
 (function () {
     'use strict';
-
-    const { useState, useEffect, useRef, useCallback } = React;
 
     // -------------------- STATE --------------------
     const Pack2State = {
         sessionStats: {
             distance: 0, foodCollected: 0, obstaclesPassed: 0,
             damageTaken: 0, comboMax: 0, powerupsCollected: 0,
-            time: 0, // в секундах
+            time: 0,
         },
         totalRecord: parseInt(localStorage.getItem('lacosteTotalRecord') || '0'),
-        weather: 'clear', // 'clear' | 'rain' | 'fog' | 'storm'
+        weather: 'clear',
         biomeIndex: 0,
         biomeDistance: 0,
-        biomeGoal: 500,
-        powerupActive: null, // { kind, expiresAt }
+        powerupActive: null,
         powerupExpiresAt: 0,
         notifications: [],
         statsSnapshot: null,
-        controlsDismissed: false,
-        weatherParticles: [],
         timeSinceLastDamage: 0,
         lastDistance: 0,
-        damageFlash: 0,
         runStartTime: 0,
     };
 
@@ -43,6 +37,9 @@
             toastListeners.forEach(fn => fn([...Pack2State.notifications]));
         }, duration);
     }
+
+    // Экспортируем toast для других пакетов (например, pack3)
+    window.Pack2Hooks = { toast };
 
     // -------------------- WEATHER --------------------
     const WEATHER_TYPES = {
@@ -60,6 +57,7 @@
         }
         return 'clear';
     }
+
     function changeWeather(newWeather, silent) {
         if (Pack2State.weather === newWeather) return;
         Pack2State.weather = newWeather;
@@ -71,222 +69,142 @@
 
     // -------------------- POWER-UPS --------------------
     const POWERUPS = {
-        shield:  { emoji: '🛡️', label: 'Shield',  duration: 0,      color: '#00BFFF' }, // 0 = до первого удара
-        magnet:  { emoji: '🧲', label: 'Magnet',  duration: 5000,   color: '#FF00FF' },
-        slowmo:  { emoji: '⏳', label: 'Slow-mo', duration: 3000,   color: '#0080FF' },
-        sprint:  { emoji: '⚡', label: 'Sprint',  duration: 3000,   color: '#FFD700' },
+        shield:  { emoji: '🛡️', label: 'Shield',  duration: 0 },
+        magnet:  { emoji: '🧲', label: 'Magnet',  duration: 5000 },
+        slowmo:  { emoji: '⏳', label: 'Slow-mo', duration: 3000 },
+        sprint:  { emoji: '⚡', label: 'Sprint',  duration: 3000 },
     };
-    const POWERUP_WEIGHTS = { shield: 30, magnet: 25, slowmo: 25, sprint: 20 };
-    function pickRandomPowerup() {
-        const total = Object.values(POWERUP_WEIGHTS).reduce((a, b) => a + b, 0);
-        let r = Math.random() * total;
-        for (const [key, w] of Object.entries(POWERUP_WEIGHTS)) {
-            r -= w;
-            if (r <= 0) return key;
-        }
-        return 'shield';
+
+    function isPowerupActive(kind) {
+        return Pack2State.powerupActive === kind && performance.now() < Pack2State.powerupExpiresAt;
     }
+
     function activatePowerup(kind) {
         Pack2State.powerupActive = kind;
         Pack2State.powerupExpiresAt = POWERUPS[kind].duration > 0
             ? performance.now() + POWERUPS[kind].duration
             : Infinity;
         toast(`${POWERUPS[kind].emoji} ${POWERUPS[kind].label}!`, 'success', 1800);
-    }
-    function isPowerupActive(kind) {
-        return Pack2State.powerupActive === kind && performance.now() < Pack2State.powerupExpiresAt;
-    }
-    function tickPowerup() {
-        if (Pack2State.powerupActive && performance.now() >= Pack2State.powerupExpiresAt) {
-            Pack2State.powerupActive = null;
-        }
+        Pack2State.sessionStats.powerupsCollected++;
     }
 
-    // -------------------- SESSION STATS --------------------
-    function resetSessionStats() {
+    // -------------------- EVENTS --------------------
+    window.GameEvents.on('start', (data) => {
         Pack2State.sessionStats = {
             distance: 0, foodCollected: 0, obstaclesPassed: 0,
             damageTaken: 0, comboMax: 0, powerupsCollected: 0,
             time: 0,
         };
+        Pack2State.biomeIndex = 0;
+        Pack2State.biomeDistance = 0;
         Pack2State.runStartTime = performance.now();
-        Pack2State.timeSinceLastDamage = 0;
-        Pack2State.damageFlash = 0;
-    }
+        Pack2State.powerupActive = null;
+        Pack2State.statsSnapshot = null;
+        changeWeather('clear', true);
+        
+        setTimeout(() => toast(`🏁 До смены биома 500м`, 'info', 2500), 800);
+    });
 
-    function updateTotalRecord(distance) {
-        if (distance > Pack2State.totalRecord) {
-            Pack2State.totalRecord = distance;
-            localStorage.setItem('lacosteTotalRecord', distance.toString());
-            return true;
+    window.GameEvents.on('tick', (data) => {
+        Pack2State.sessionStats.distance = data.distance;
+        Pack2State.sessionStats.time = Math.floor((performance.now() - Pack2State.runStartTime) / 1000);
+        if (data.foodEaten > Pack2State.sessionStats.foodCollected) {
+            Pack2State.sessionStats.foodCollected = data.foodEaten;
         }
-        return false;
-    }
 
-    // -------------------- HOOKS --------------------
-    window.Pack2Hooks = {
-        onGameStart: (data) => {
-            resetSessionStats();
-            Pack2State.biomeIndex = 0;
-            Pack2State.biomeDistance = 0;
-            Pack2State.biomeGoal = 500;
-            Pack2State.weatherParticles = [];
-            Pack2State.controlsDismissed = false;
-            // Начинаем с чистого неба
-            changeWeather('clear', true);
-            // Через 0.8 сек показываем первый тост-подсказку
-            setTimeout(() => {
-                toast(`🏁 До смены биома ${Pack2State.biomeGoal}м`, 'info', 2500);
-            }, 800);
-        },
-
-        onGameOver: (data) => {
-            const elapsed = (performance.now() - Pack2State.runStartTime) / 1000;
-            Pack2State.sessionStats.distance = data.distance;
-            Pack2State.sessionStats.time = Math.floor(elapsed);
-            Pack2State.sessionStats.comboMax = data.combo;
-            const isNewRecord = updateTotalRecord(data.distance);
-            Pack2State.statsSnapshot = {
-                ...Pack2State.sessionStats,
-                character: data.character,
-                background: data.background,
-                timeOfDay: data.timeOfDay,
-                isNewRecord,
-                totalRecord: Pack2State.totalRecord,
-            };
+        if (Pack2State.powerupActive && performance.now() >= Pack2State.powerupExpiresAt) {
             Pack2State.powerupActive = null;
-        },
+        }
 
-        onTick: (data) => {
-            // Обновление дистанции
-            Pack2State.sessionStats.distance = data.distance;
-            Pack2State.sessionStats.time = Math.floor((performance.now() - Pack2State.runStartTime) / 1000);
-
-            // Комбо
-            if (data.combo !== undefined) {
-                if (data.combo > Pack2State.sessionStats.comboMax) Pack2State.sessionStats.comboMax = data.combo;
-            }
-
-            // Power-up истечение
-            tickPowerup();
-
-            // Slow-mo / Sprint эффекты (визуально в drawHooks)
-            // (Реальное замедление делает игра сама — мы только визуал + бейдж)
-
-            // Магнит: притягиваем еду
-            if (isPowerupActive('magnet')) {
-                const magnetRadius = 200;
-                const p = data.player;
-                data.foods.forEach(food => {
-                    const dx = (p.x + p.width / 2) - (food.x + food.width / 2);
-                    const dy = (p.y + p.height / 2) - (food.y + food.height / 2);
-                    const dist = Math.sqrt(dx * dx + dy * dy);
-                    if (dist < magnetRadius) {
-                        food.x += dx * 0.15;
-                        food.y += dy * 0.15;
-                    }
-                });
-            }
-
-            // Погодные эффекты
-            const weather = Pack2State.weather;
-            if (weather === 'rain' || weather === 'storm') {
-                // Дождь: шанс спотыкания на луже +10% (упрощённо: спавним частицы)
-                // Частицы капель
-                if (data.distance > Pack2State.lastDistance + 2) {
-                    Pack2State.lastDistance = data.distance;
-                    for (let i = 0; i < 3; i++) {
-                        Pack2State.weatherParticles.push({
-                            x: Math.random() * 1200,
-                            y: -10,
-                            vy: 8 + Math.random() * 4,
-                            vx: (weather === 'storm' ? -2 : -1) + Math.random() * 2,
-                            life: 60,
-                            maxLife: 60,
-                            kind: 'rain',
-                        });
-                    }
+        // Магнит
+        if (isPowerupActive('magnet') && data.player) {
+            data.foods.forEach(food => {
+                const dx = (data.player.x + data.player.width / 2) - (food.x + food.width / 2);
+                const dy = (data.player.y + data.player.height / 2) - (food.y + food.height / 2);
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist < 200) {
+                    food.x += dx * 0.15;
+                    food.y += dy * 0.15;
                 }
-            }
-            if (weather === 'fog') {
-                // Туман: визуальный overlay (в Pack2UI)
-            }
-            if (weather === 'storm') {
-                // Молния раз в 8-15 сек
-                if (!Pack2State._lightningNext) Pack2State._lightningNext = performance.now() + 8000 + Math.random() * 7000;
-                if (performance.now() > Pack2State._lightningNext) {
-                    Pack2State._lightningNext = performance.now() + 8000 + Math.random() * 7000;
-                    Pack2State._lightningFlash = 1.0;
-                    toast('⚡ Гроза!', 'danger', 1200);
-                }
-            }
-            if (Pack2State._lightningFlash > 0) {
-                Pack2State._lightningFlash = Math.max(0, Pack2State._lightningFlash - 0.06);
-            }
-
-            // Обновление частиц
-            Pack2State.weatherParticles.forEach(p => {
-                p.x += p.vx;
-                p.y += p.vy;
-                p.life--;
             });
-            Pack2State.weatherParticles = Pack2State.weatherParticles.filter(p => p.life > 0 && p.y < 700);
+        }
 
-            // Биом прогресс
-            const prevBiomeDist = Pack2State.biomeDistance;
-            Pack2State.biomeDistance = data.distance - Pack2State.biomeIndex * 500;
-            if (data.distance >= (Pack2State.biomeIndex + 1) * 500) {
-                Pack2State.biomeIndex++;
-                Pack2State.biomeGoal = 500;
-                // Смена погоды на новом биоме
-                const newWeather = pickRandomWeather();
-                changeWeather(newWeather, false);
-                toast(`🌍 Биом ${Pack2State.biomeIndex + 1}!`, 'success', 2200);
-            } else if (prevBiomeDist < 450 && Pack2State.biomeDistance >= 450) {
-                // За 50м до смены биома
-                toast(`⚠️ Биом через 50м`, 'info', 1800);
+        // Прогресс биома (каждые 500м)
+        const newBiomeIndex = Math.floor(data.distance / 500);
+        Pack2State.biomeDistance = data.distance - (newBiomeIndex * 500);
+        
+        if (newBiomeIndex > Pack2State.biomeIndex) {
+            Pack2State.biomeIndex = newBiomeIndex;
+            const newWeather = pickRandomWeather();
+            changeWeather(newWeather, false);
+            toast(`🌍 Зона ${Pack2State.biomeIndex + 1}!`, 'success', 2200);
+        } else if (data.distance > 0 && Pack2State.biomeDistance > 450 && Pack2State.biomeDistance < 460) {
+            // Одноразовое уведомление за 50м до смены
+            if (!Pack2State._warnedBiome) {
+                Pack2State._warnedBiome = true;
+                toast(`⚠️ Смена зоны через 50м`, 'info', 1800);
             }
-        },
+        }
+        if (Pack2State.biomeDistance < 10) Pack2State._warnedBiome = false;
 
-        onFoodEaten: (food) => {
-            Pack2State.sessionStats.foodCollected++;
-            if (food.type === 'golden') toast('⭐ +50', 'success', 1000);
-            if (food.type === 'rare') toast('💎 +2 HP', 'success', 1000);
-            if (food.type === 'poison') {
-                Pack2State.damageFlash = 0.6;
-                toast('☠ Отравлен!', 'danger', 1500);
+        // Power-up события (шанс спавна 0.5% на тик)
+        if (!Pack2State.powerupActive && Math.random() < 0.002) {
+            const kinds = Object.keys(POWERUPS);
+            activatePowerup(kinds[Math.floor(Math.random() * kinds.length)]);
+        }
+    });
+
+    window.GameEvents.on('eat', (data) => {
+        Pack2State.sessionStats.foodCollected++;
+    });
+
+    window.GameEvents.on('hit', (data) => {
+        if (isPowerupActive('shield')) {
+            toast('🛡️ Щит поглотил удар!', 'success', 1500);
+            Pack2State.powerupActive = null;
+            // Восстанавливаем здоровье
+            if (window.GameRefs && window.GameRefs.health) {
+                window.GameRefs.health.current = Math.min(6, window.GameRefs.health.current + 1);
             }
-        },
+            return;
+        }
+        Pack2State.sessionStats.damageTaken++;
+        Pack2State.timeSinceLastDamage = 0;
+        Pack2State._weatherFlash = 0.6;
+    });
 
-        onObstacleHit: (obs) => {
-            Pack2State.sessionStats.damageTaken++;
-            Pack2State.timeSinceLastDamage = 0;
-            if (isPowerupActive('shield')) {
-                toast('🛡️ Щит поглотил удар!', 'success', 1500);
-                Pack2State.powerupActive = null;
-            } else {
-                Pack2State.damageFlash = 0.6;
-            }
-        },
+    window.GameEvents.on('barrel_hit', () => {
+        if (isPowerupActive('shield')) {
+            toast('🛡️ Щит поглотил взрыв!', 'success', 1500);
+            Pack2State.powerupActive = null;
+            return;
+        }
+        Pack2State.sessionStats.damageTaken++;
+    });
 
-        onBarrelHit: () => {
-            Pack2State.sessionStats.damageTaken++;
-            Pack2State.damageFlash = 0.6;
-        },
+    window.GameEvents.on('gameover', (data) => {
+        Pack2State.sessionStats.distance = data.distance;
+        Pack2State.sessionStats.comboMax = data.combo || 1;
+        
+        let isNewRecord = false;
+        if (data.distance > Pack2State.totalRecord) {
+            Pack2State.totalRecord = data.distance;
+            localStorage.setItem('lacosteTotalRecord', data.distance.toString());
+            isNewRecord = true;
+        }
 
-        onPitFall: () => {
-            Pack2State.damageFlash = 0.8;
-        },
-
-        // Используется в Pack2UI для отрисовки погоды/частиц
-        getWeatherParticles: () => Pack2State.weatherParticles,
-        getState: () => Pack2State,
-    };
+        Pack2State.statsSnapshot = {
+            ...Pack2State.sessionStats,
+            isNewRecord,
+            totalRecord: Pack2State.totalRecord,
+        };
+        Pack2State.powerupActive = null;
+    });
 
     // -------------------- REACT UI --------------------
     function ToastContainer() {
-        const [toasts, setToasts] = useState([]);
-        useEffect(() => {
+        const [toasts, setToasts] = React.useState([]);
+        React.useEffect(() => {
             toastListeners.push(setToasts);
             return () => {
                 const idx = toastListeners.indexOf(setToasts);
@@ -311,9 +229,6 @@
         return React.createElement('div', { className: 'pack2-stats-overlay' },
             React.createElement('div', { className: 'pack2-stats-panel' },
                 React.createElement('div', { className: 'pack2-stats-title' }, snapshot.isNewRecord ? '🏆 NEW RECORD!' : '📊 SESSION STATS'),
-                React.createElement('div', { className: 'pack2-stats-subtitle' },
-                    snapshot.isNewRecord ? 'Личный рекорд побит!' : 'Результаты забега'
-                ),
                 React.createElement('div', { className: 'pack2-stats-grid' },
                     card('📏', 'Дистанция', `${snapshot.distance} м`),
                     card('⏱️', 'Время', formatTime(snapshot.time)),
@@ -330,65 +245,12 @@
         );
     }
 
-    function ControlsScreen({ onClose }) {
-        const isTouch = 'ontouchstart' in window;
-        return React.createElement('div', { className: 'pack2-controls-overlay' },
-            React.createElement('div', { className: 'pack2-controls-panel' },
-                React.createElement('div', { className: 'pack2-controls-title' }, '🎮 Управление'),
-                React.createElement('div', { className: 'pack2-controls-subtitle', style: { textAlign: 'center', color: '#aaa', fontSize: '12px', marginBottom: '12px', letterSpacing: '2px' } }, 'Нажми «Понятно» чтобы начать'),
-
-                // PC
-                React.createElement('div', { className: 'pack2-controls-section' },
-                    React.createElement('h4', null, '🖥️ ПК'),
-                    React.createElement('div', { className: 'pack2-controls-row' },
-                        React.createElement('span', { className: 'pack2-key' }, 'Space'),
-                        React.createElement('span', { className: 'pack2-controls-desc' }, 'Прыжок (удерживай = высокий)')
-                    ),
-                    React.createElement('div', { className: 'pack2-controls-row' },
-                        React.createElement('span', { className: 'pack2-key' }, '↑'),
-                        React.createElement('span', { className: 'pack2-controls-desc' }, 'Альтернатива: прыжок')
-                    ),
-                    React.createElement('div', { className: 'pack2-controls-row' },
-                        React.createElement('span', { className: 'pack2-key' }, 'Esc'),
-                        React.createElement('span', { className: 'pack2-controls-desc' }, 'Пауза / продолжить')
-                    ),
-                    React.createElement('div', { className: 'pack2-controls-row' },
-                        React.createElement('span', { className: 'pack2-key' }, 'N'),
-                        React.createElement('span', { className: 'pack2-controls-desc' }, 'День / ночь')
-                    )
-                ),
-
-                // Mobile
-                React.createElement('div', { className: 'pack2-controls-section' },
-                    React.createElement('h4', null, '📱 Телефон'),
-                    React.createElement('div', { className: 'pack2-controls-row' },
-                        React.createElement('span', { className: 'pack2-key' }, '👆 Тап'),
-                        React.createElement('span', { className: 'pack2-controls-desc' }, 'Прыжок')
-                    ),
-                    React.createElement('div', { className: 'pack2-controls-row' },
-                        React.createElement('span', { className: 'pack2-key' }, '👆 Долгое'),
-                        React.createElement('span', { className: 'pack2-controls-desc' }, 'Высокий прыжок')
-                    ),
-                    React.createElement('div', { className: 'pack2-controls-row' },
-                        React.createElement('span', { className: 'pack2-key' }, '⏸️'),
-                        React.createElement('span', { className: 'pack2-controls-desc' }, 'Пауза (правый нижний угол)')
-                    )
-                ),
-
-                React.createElement('div', { className: 'pack2-controls-actions' },
-                    React.createElement('button', { className: 'pack2-controls-btn primary', onClick: onClose }, '✅ Понятно, играем!')
-                )
-            )
-        );
-    }
-
     function PowerupBadge() {
-        const [active, setActive] = useState(null);
-        useEffect(() => {
+        const [active, setActive] = React.useState(null);
+        React.useEffect(() => {
             const id = setInterval(() => {
-                const s = Pack2State;
-                if (s.powerupActive && performance.now() < s.powerupExpiresAt) {
-                    setActive(s.powerupActive);
+                if (Pack2State.powerupActive && performance.now() < Pack2State.powerupExpiresAt) {
+                    setActive(Pack2State.powerupActive);
                 } else {
                     setActive(null);
                 }
@@ -404,8 +266,8 @@
     }
 
     function WeatherHud() {
-        const [weather, setWeather] = useState(Pack2State.weather);
-        useEffect(() => {
+        const [weather, setWeather] = React.useState(Pack2State.weather);
+        React.useEffect(() => {
             const id = setInterval(() => setWeather(Pack2State.weather), 200);
             return () => clearInterval(id);
         }, []);
@@ -414,19 +276,16 @@
     }
 
     function BiomeBar() {
-        const [progress, setProgress] = useState(0);
-        const [goal, setGoal] = useState(500);
-        useEffect(() => {
+        const [progress, setProgress] = React.useState(0);
+        React.useEffect(() => {
             const id = setInterval(() => {
-                const s = Pack2State;
-                const p = Math.min(100, (s.biomeDistance / 500) * 100);
+                const p = Math.min(100, (Pack2State.biomeDistance / 500) * 100);
                 setProgress(p);
-                setGoal(500 - s.biomeDistance);
             }, 150);
             return () => clearInterval(id);
         }, []);
         return React.createElement('div', { className: 'pack2-biome-bar' },
-            React.createElement('div', { className: 'pack2-biome-label' }, `До биома: ${Math.max(0, Math.ceil(goal))}м`),
+            React.createElement('div', { className: 'pack2-biome-label' }, `До смены зоны: ${Math.max(0, Math.ceil(500 - Pack2State.biomeDistance))}м`),
             React.createElement('div', { className: 'pack2-biome-track' },
                 React.createElement('div', { className: 'pack2-biome-fill', style: { width: `${progress}%` } })
             )
@@ -434,63 +293,38 @@
     }
 
     // -------------------- MAIN UI WRAPPER --------------------
-    window.Pack2UI = function ({ gameState, distanceRef }) {
-        const [showControls, setShowControls] = useState(false);
-        const [showStats, setShowStats] = useState(false);
-        const [snapshot, setSnapshot] = useState(null);
+    function Pack2UI({ gameState }) {
+        const [showStats, setShowStats] = React.useState(false);
+        const [snapshot, setSnapshot] = React.useState(null);
 
-        // Controls screen — при первом старте игры
-        useEffect(() => {
-            if (gameState === 'playing' && !Pack2State.controlsDismissed) {
-                setShowControls(true);
-                Pack2State.controlsDismissed = true;
-            }
-        }, [gameState]);
-
-        // Stats — при смерти
-        useEffect(() => {
+        React.useEffect(() => {
             if (gameState === 'gameover' && Pack2State.statsSnapshot) {
                 setSnapshot(Pack2State.statsSnapshot);
                 setShowStats(true);
             } else if (gameState !== 'gameover') {
                 setShowStats(false);
-                setSnapshot(null);
             }
         }, [gameState]);
 
-        const weatherClass = Pack2State.weather === 'rain' ? 'rain'
-            : Pack2State.weather === 'fog' ? 'fog'
-            : Pack2State.weather === 'storm' ? 'storm' : '';
+        const weatherClass = Pack2State.weather === 'rain' ? 'rain' : Pack2State.weather === 'fog' ? 'fog' : Pack2State.weather === 'storm' ? 'storm' : '';
 
         return React.createElement(React.Fragment, null,
-            // Погодный overlay
-            weatherClass ? React.createElement('div', { className: `pack2-weather-overlay ${weatherClass}` }) : null,
-
-            // Тосты (всегда)
             React.createElement(ToastContainer),
-
-            // HUD power-up и погода (только в игре)
+            gameState === 'playing' && weatherClass ? React.createElement('div', { className: `pack2-weather-overlay ${weatherClass}` }) : null,
             gameState === 'playing' ? React.createElement(React.Fragment, null,
                 React.createElement(PowerupBadge),
                 React.createElement(WeatherHud),
                 React.createElement(BiomeBar)
             ) : null,
-
-            // Controls (первый старт)
-            showControls ? React.createElement(ControlsScreen, { onClose: () => setShowControls(false) }) : null,
-
-            // Stats (после смерти)
             showStats ? React.createElement(StatsOverlay, { snapshot, onClose: () => setShowStats(false) }) : null
         );
-    };
+    }
 
-    // -------------------- WEATHER PARTICLES (canvas overlay) --------------------
-    // Вызывается из RenderEngine? Нет — рендерим частицы поверх канваса через отдельный элемент.
-    // Простое решение: клиентский div с CSS-частицами (дождь), а для грома — вспышка.
-    // Если хочешь рендерить на канвасе — скажи, добавим хук в RenderEngine.draw.
-
-    // Для простоты: дождь на CSS через JS-инъекцию span-ов
-    // (реализовано в Pack2UI через weatherParticles, но проще — оставим CSS-эффект)
+    if (window.PackUIs) {
+        window.PackUIs.push(Pack2UI);
+    } else {
+        window.PackUIs = [Pack2UI];
+    }
 
     console.log('%c⚡ PACK 2 loaded', 'color:#FF007F;font-weight:bold;font-size:14px');
 })();
