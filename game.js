@@ -849,12 +849,11 @@ function Game() {
                     React.createElement('button', { className: 'settings-reset', onClick: () => setSettings({ ...DEFAULT_SETTINGS }) }, 'RESET')
                 )
             )
-        ),
+        ), // <<< ВОТ ЗДЕСЬ ЗАКРЫВАЕТСЯ БЛОК НАСТРОЕК
+
         // >>> УНИВЕРСАЛЬНЫЙ СЛОЙ ДЛЯ ВСЕХ UI ПАКЕТОВ
         window.PackUIs && window.PackUIs.map((UI, i) => React.createElement(UI, { key: i, gameState }))
-    )
-}
-    );
+    ); // <<< ЗДЕСЬ ЗАКРЫВАЕТСЯ ОБЩИЙ КОНТЕЙНЕР
 }
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
