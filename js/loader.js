@@ -1,73 +1,92 @@
-/* =============================================================
-   LOADER — загружает модули из manifest.json и запускает игру
-   Порядок:
-   1. Читает js/manifest.json
-   2. Загружает все модули (параллельно скачивает, последовательно выполняет)
-   3. Вызывает window.GameBoot.trigger() → запускает React (game.js)
-   ============================================================= */
+/* ==================================================================
+   loader.js — последовательная загрузка плагинов + триггер GameBoot
+   ================================================================== */
 (function () {
     'use strict';
-    const startTime = performance.now();
 
-    function log(msg, color) {
-        console.log(`%c${msg}`, `color:${color || '#00FF41'}`);
-    }
+    /* === 1. СТАБЫ (на случай если game.js загрузится позже) === */
+    window.GameEvents = window.GameEvents || {
+        listeners: {},
+        on(e, cb) { (this.listeners[e] = this.listeners[e] || []).push(cb); },
+        emit(e, d) {
+            (this.listeners[e] || []).forEach(cb => {
+                try { cb(d); } catch (err) { console.error(err); }
+            });
+        }
+    };
 
-    // === ЗАГРУЗКА ОДНОГО СКРИПТА ===
+    window.GameBoot = window.GameBoot || {
+        triggered: false,
+        callbacks: [],
+        onReady(cb) {
+            if (this.triggered) { try { cb(); } catch (e) { console.error(e); } return; }
+            this.callbacks.push(cb);
+        },
+        trigger() {
+            if (this.triggered) return;
+            this.triggered = true;
+            this.callbacks.forEach(cb => { try { cb(); } catch (e) { console.error(e); } });
+            this.callbacks = [];
+        }
+    };
+
+    window.PackUIs = window.PackUIs || [];
+
+    /* === 2. КОНФИГ === */
+    const PLUGINS = [
+        'js/plugins/all_in_one.js',
+        // другие плагины добавляй сюда — загрузятся строго по порядку
+    ];
+
+    /* === 3. УТИЛИТЫ === */
     function loadScript(src) {
-        return new Promise((resolve) => {
+        return new Promise((resolve, reject) => {
             const s = document.createElement('script');
             s.src = src;
-            s.async = false;  // гарантирует порядок выполнения
+            s.async = false;              // сохраняет порядок в DOM
             s.onload = () => {
-                const elapsed = (performance.now() - startTime).toFixed(0);
-                log(`✅ ${src} (${elapsed}ms)`);
+                console.log(`✅ ${src}`);
                 resolve();
             };
             s.onerror = () => {
-                console.error(`❌ FAILED: ${src}`);
-                resolve(); // не роняем загрузку из-за одного файла
+                console.error(`❌ Не удалось загрузить: ${src}`);
+                reject(new Error(src));
             };
-            document.body.appendChild(s);
+            document.head.appendChild(s);
         });
     }
 
-    // === ГЛАВНЫЙ ЗАПУСК ===
-    async function boot() {
-        // Ждём, пока game.js создаст инфраструктуру (GameBoot, GameEvents, PackUIs)
-        if (!window.GameBoot) {
-            console.error('❌ game.js не загружен — GameBoot не найден');
-            return;
+    // Ждём React — плагин использует React.createElement и React.useState
+    function waitForReact(cb, attempts = 0) {
+        if (window.React && window.ReactDOM) return cb();
+        if (attempts > 50) {
+            console.warn('⚠️ React не найден за 5с — грузим плагины всё равно');
+            return cb();
+        }
+        setTimeout(() => waitForReact(cb, attempts + 1), 100);
+    }
+
+    /* === 4. ПОСЛЕДОВАТЕЛЬНОСТЬ ЗАГРУЗКИ === */
+    async function bootSequence() {
+        // Шаг 1: загружаем плагины по одному
+        for (const src of PLUGINS) {
+            try {
+                await loadScript(src);
+            } catch (e) {
+                console.error(`⚠️ Пропускаю ${src}:`, e.message);
+            }
         }
 
-        // Читаем манифест
-        let modules = [];
-        try {
-            const res = await fetch('js/manifest.json?t=' + Date.now(), { cache: 'no-store' });
-            if (!res.ok) throw new Error('HTTP ' + res.status);
-            const data = await res.json();
-            modules = data.modules || [];
-            log(`📦 Manifest loaded: ${modules.length} modules`, '#00FFFF');
-        } catch (e) {
-            console.warn('⚠️ manifest.json not found — booting without plugins', e);
-        }
+        // Шаг 2: лог «Bootstrapping» — ПОСЛЕ плагинов, но ДО триггера
+        console.log(
+            `%c🎮 Bootstrapping...  [PackUIs: ${window.PackUIs.length}]`,
+            'color:#00FFFF;font-weight:bold'
+        );
 
-        // Загружаем все модули
-        await Promise.all(modules.map(loadScript));
-
-        const elapsed = (performance.now() - startTime).toFixed(0);
-        log(`🚀 All modules ready in ${elapsed}ms`, '#FFD700');
-        console.log('%c🎮 Bootstrapping...', 'color:#FF007F;font-weight:bold');
-
-        // === ТРИГГЕР СТАРТА REACT ===
-        // game.js ждёт window.GameBoot.onReady(...) → вызываем trigger()
+        // Шаг 3: триггерим GameBoot → game.js запускает React-рендер
         window.GameBoot.trigger();
     }
 
-    // Запуск после готовности DOM
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', boot);
-    } else {
-        boot();
-    }
+    /* === 5. СТАРТ === */
+    waitForReact(bootSequence);
 })();
