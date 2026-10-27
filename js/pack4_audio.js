@@ -1,6 +1,6 @@
 /* ==================================================================
-   PACK 4 — AUDIO (Фоновая музыка + Твои SFX)
-   Без синтезаторов и нагнетания. Только твои файлы.
+   PACK 4 — AUDIO (Фоновая музыка и SFX)
+   Без синтезаторов. Только твои файлы.
    ================================================================== */
 (function () {
     'use strict';
@@ -66,7 +66,7 @@
         }
     });
 
-    // === НАСТРОЙКИ ===
+    // === НАСТРОЙКИ (ГРОМКОСТЬ/ВЫКЛ) ===
     window.GameEvents.on('settings_changed', (settings) => {
         AudioState.settings = settings;
         applyVolume();
@@ -144,5 +144,5 @@
         if (AudioState.nightAmbient) AudioState.nightAmbient.volume = ambVol;
     }
 
-    console.log('%c🔊 [Pack 4] Audio loaded (Ambient + SFX)', 'color:#FF007F;font-weight:bold');
+    console.log('%c🔊 [Pack 4] Audio loaded', 'color:#FF007F;font-weight:bold');
 })();
