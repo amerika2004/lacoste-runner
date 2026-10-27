@@ -1,5 +1,5 @@
 /* ==================================================================
-   PACK 2 — WORLD (Фон, Препятствия, Еда, Коллизии)
+   PACK 2 — WORLD (Фон, Спавн, Коллизии, Еда, Смерть)
    ================================================================== */
 (function () {
     'use strict';
@@ -7,11 +7,12 @@
     // === СОСТОЯНИЕ МИРА ===
     const WorldState = {
         distance: 0,
-        speed: window.GameConfig.BASE_SPEED,
+        speed: 4,
         bgOffset: 0,
         isAlive: true,
-        timeOfDay: 'day',
+        health: 6,
         background: 'default',
+        timeOfDay: 'day',
         
         obstacles: [],
         foods: [],
@@ -21,7 +22,6 @@
         foodTimer: 0,
         spawnCooldown: 0,
         
-        health: 6,
         isTripping: false,
         tripTimer: 0,
     };
@@ -29,27 +29,25 @@
     // Экспортируем для UI и других модулей
     window.WorldState = WorldState;
 
-    // === ИНИЦИАЛИЗАЦИЯ ===
+    // === ИНИЦИАЛИЗАЦИЯ ПРИ СТАРТЕ ===
     window.GameEvents.on('game_start', (data) => {
         const cfg = window.GameConfig;
-        
         WorldState.distance = 0;
-        WorldState.speed = cfg.BASE_SPEED;
+        WorldState.speed = cfg.SPEED.BASE_SPEED;
         WorldState.bgOffset = 0;
         WorldState.isAlive = true;
-        WorldState.timeOfDay = data.timeOfDay || 'day';
+        WorldState.health = 6;
         WorldState.background = data.background || 'default';
+        WorldState.timeOfDay = data.timeOfDay || 'day';
         
         WorldState.obstacles = [];
         WorldState.foods = [];
         WorldState.explosions = [];
-        
         WorldState.spawnTimer = 0;
         WorldState.foodTimer = 0;
         WorldState.spawnCooldown = 0;
-        
-        WorldState.health = 6;
         WorldState.isTripping = false;
+        WorldState.tripTimer = 0;
     });
 
     // === ЛОГИКА (ТИК 60 FPS) ===
@@ -59,12 +57,12 @@
         const cfg = window.GameConfig;
         const p = window.PlayerState;
         const bgConfig = cfg.BACKGROUNDS[WorldState.background];
-        const gy = cfg.GROUND_Y + (bgConfig.groundOffset || 0);
-
-        // 1. Движение мира (если игрок не спотыкается и не ест)
+        const groundY = cfg.PHYSICS.GROUND_Y + (bgConfig.offset || 0);
+        
+        // 1. Скорость (если не спотыкаемся и не едим)
         let currentSpeed = 0;
         if (!WorldState.isTripping && !p.isEating) {
-            currentSpeed = WorldState.speed * cfg.SPEED_MULTIPLIER;
+            currentSpeed = WorldState.speed * cfg.SPEED.SPEED_MULTIPLIER;
             WorldState.distance += currentSpeed * 0.03;
             WorldState.bgOffset -= currentSpeed;
         }
@@ -76,11 +74,10 @@
             } else {
                 WorldState.spawnTimer++;
                 if (WorldState.spawnTimer > Math.max(70, 140 - currentSpeed * 3) + Math.random() * 40) {
-                    
-                    const types = bgConfig.obstacleTypes || ['barrel', 'rock', 'cactus', 'puddle', 'pit'];
+                    const types = bgConfig.types || ['barrel', 'rock', 'cactus', 'puddle', 'pit'];
                     const type = types[Math.floor(Math.random() * types.length)];
+                    
                     let w = 40, h = 40, yOffset = 0;
-
                     if (type === 'rock') { w = 120; h = 120; yOffset = 30; }
                     if (type === 'cactus') { w = 70; h = 110; }
                     if (type === 'barrel') { w = 50; h = 60; }
@@ -89,7 +86,7 @@
 
                     WorldState.obstacles.push({
                         x: 1200,
-                        y: gy - h + yOffset,
+                        y: groundY - h + yOffset,
                         w: w, h: h, type: type
                     });
                     WorldState.spawnTimer = 0;
@@ -104,10 +101,10 @@
                 
                 if (safe) {
                     const char = cfg.CHARACTERS[p.charId];
-                    const foodList = char.foodEmojis || ['🍗', '🍔'];
+                    const foodList = char.food || ['🍗', '🍔'];
                     const baseFood = foodList[Math.floor(Math.random() * foodList.length)];
                     
-                    // Определяем тип еды по весам
+                    // Взвешенный рандом для типа еды
                     const r = Math.random() * 100;
                     let foodType = 'normal';
                     if (r > 85) foodType = 'golden';
@@ -118,10 +115,8 @@
 
                     WorldState.foods.push({
                         x: 1200,
-                        y: Math.random() > 0.5 ? gy - 80 : gy - 40,
-                        w: 40, h: 40,
-                        emoji: emoji,
-                        type: foodType
+                        y: Math.random() > 0.5 ? groundY - 80 : groundY - 40,
+                        w: 40, h: 40, emoji: emoji, type: foodType
                     });
                     WorldState.foodTimer = 0;
                 }
@@ -141,12 +136,12 @@
                 const o = WorldState.obstacles[i];
                 
                 // Хитбокс игрока (немного уменьшен)
-                const px = p.x + p.width * 0.6;
-                const py = p.y + p.height * 0.4;
-                const pw = p.width * 0.25;
-                const ph = p.height * 0.4;
+                const px = p.x + p.w * 0.6;
+                const py = p.y + p.h * 0.4;
+                const pw = p.w * 0.25;
+                const ph = p.h * 0.4;
 
-                // Хитбоксы препятствий (упрощённо)
+                // Хитбоксы препятствий
                 let ox = o.x + 10, oy = o.y + 5, ow = o.w - 20, oh = o.h - 5;
                 if (o.type === 'puddle') { oy = o.y + o.h * 0.5; oh = o.h * 0.5; }
                 if (o.type === 'rock') { oy = o.y + o.h * 0.2; oh = o.h * 0.8; }
@@ -159,34 +154,29 @@
                 if (px < ox + ow && px + pw > ox && py < oy + oh && py + ph > oy) {
                     
                     if (o.type === 'pit') {
-                        // Смерть в яме
                         WorldState.isAlive = false;
-                        p.isFallingIntoPit = true;
                         window.GameEvents.emit('pit_fall');
+                        window.GameEvents.emit('gameover', { distance: WorldState.distance, health: WorldState.health });
                         break;
                     } else if (o.type === 'barrel') {
-                        // Взрыв бочки
                         WorldState.obstacles.splice(i, 1);
                         WorldState.health -= 1;
-                        p.isTripping = true;
                         WorldState.isTripping = true;
                         WorldState.tripTimer = 0;
+                        p.isTripping = true;
                         window.RenderEngine.shake(12, 20);
                         window.RenderEngine.flash('255,150,0', 0.3);
                         WorldState.explosions.push({ x: o.x + o.w/2, y: o.y + o.h/2, size: o.h * 6, timer: 0, maxTimer: 30 });
-                        
                         window.GameEvents.emit('barrel_hit', { health: WorldState.health });
                         break;
                     } else {
-                        // Обычное препятствие (камень, кактус, лужа)
                         WorldState.obstacles.splice(i, 1);
                         WorldState.health -= 1;
-                        p.isTripping = true;
                         WorldState.isTripping = true;
                         WorldState.tripTimer = 0;
+                        p.isTripping = true;
                         window.RenderEngine.flash('255,0,0', 0.4);
                         window.RenderEngine.shake(6, 12);
-                        
                         window.GameEvents.emit('hit', { health: WorldState.health, type: o.type });
                         break;
                     }
@@ -194,16 +184,12 @@
             }
         }
 
-        // 6. Логика спотыкания (трип)
+        // 6. Логика спотыкания (восстановление)
         if (WorldState.isTripping) {
             WorldState.tripTimer++;
             if (WorldState.tripTimer > 120) {
                 WorldState.isTripping = false;
                 p.isTripping = false;
-            }
-            if (WorldState.health <= 0 && WorldState.isAlive) {
-                WorldState.isAlive = false;
-                window.GameEvents.emit('gameover', { distance: Math.floor(WorldState.distance), health: 0 });
             }
         }
 
@@ -211,12 +197,11 @@
         if (!WorldState.isTripping && !p.isEating) {
             for (let i = WorldState.foods.length - 1; i >= 0; i--) {
                 const f = WorldState.foods[i];
-                const px = p.x + 20, py = p.y + 20, pw = p.width - 40, ph = p.height - 20;
+                const px = p.x + 20, py = p.y + 20, pw = p.w - 40, ph = p.h - 20;
 
                 if (px < f.x + f.w && px + pw > f.x && py < f.y + f.h && py + ph > f.y) {
                     WorldState.foods.splice(i, 1);
                     
-                    // Логика эффектов
                     if (f.type === 'golden') {
                         WorldState.distance += 50;
                         window.RenderEngine.flash('255,215,0', 0.2);
@@ -228,29 +213,26 @@
                         window.RenderEngine.flash('139,0,255', 0.4);
                     }
                     
-                    // Триггер поедания (для панды)
                     const char = cfg.CHARACTERS[p.charId];
                     if (char.eatEmoji && f.emoji === char.eatEmoji) {
-                        p.isEating = true;
-                        p.eatTimer = 0;
-                        window.GameEvents.emit('eat_start', { emoji: f.emoji });
+                        if (window.startEating) window.startEating();
                     } else {
                         window.GameEvents.emit('eat', { type: f.type, emoji: f.emoji });
+                    }
+                    
+                    if (WorldState.health <= 0) {
+                        WorldState.isAlive = false;
+                        window.GameEvents.emit('gameover', { distance: WorldState.distance, health: WorldState.health });
                     }
                 }
             }
         }
 
-        // 8. Логика поедания (остановка мира)
-        if (p.isEating) {
-            p.eatTimer = (p.eatTimer || 0) + 1;
-            if (p.eatTimer > 60) { // Условно 1 секунда
-                p.isEating = false;
-                p.eatTimer = 0;
-            }
-        }
+        // 8. Обновление взрывов
+        WorldState.explosions.forEach(ex => ex.timer++);
+        WorldState.explosions = WorldState.explosions.filter(ex => ex.timer < ex.maxTimer);
         
-        // 9. Обновляем UI и шлём данные
+        // 9. Отправляем данные для UI
         window.GameEvents.emit('world_tick', { distance: WorldState.distance, health: WorldState.health, speed: currentSpeed });
     });
 
@@ -260,13 +242,11 @@
         if (!ctx) return;
 
         const cfg = window.GameConfig;
-        const bgConfig = cfg.BACKGROUNDS[WorldState.background];
         const W = 1200, H = 600;
 
         // 1. Фон
-        const bgImg = bgConfig ? (WorldState.timeOfDay === 'night' ? bgConfig.nightImg : bgConfig.dayImg) : null;
-        const bgAsset = window.GameAssets.backgrounds[WorldState.background];
-        const img = window.getTimeImg(bgAsset, WorldState.timeOfDay);
+        const bgAsset = window.GameAssets.bg[WorldState.background];
+        const img = WorldState.timeOfDay === 'night' ? bgAsset.night : bgAsset.day;
         
         if (img && img.complete) {
             const scale = H / img.naturalHeight;
@@ -281,27 +261,23 @@
             ctx.fillRect(0, 0, W, H);
         }
 
-        // 2. Яма (если игрок падает в неё)
-        // (В реальности нужно рисовать pit_img)
-        
-        // 3. Препятствия
+        // 2. Препятствия
         WorldState.obstacles.forEach(o => {
-            const obsAsset = window.GameAssets.obstacles[o.type];
-            const obsImg = window.getTimeImg(obsAsset, WorldState.timeOfDay);
+            const obsAsset = window.GameAssets.obs[o.type];
+            const obsImg = WorldState.timeOfDay === 'night' ? obsAsset.night : obsAsset.day;
             
             if (obsImg && obsImg.complete) {
                 ctx.drawImage(obsImg, o.x, o.y, o.w, o.h);
             } else {
-                ctx.fillStyle = o.type === 'pit' ? 'black' : (o.type === 'puddle' ? 'rgba(0,150,255,0.5)' : '#888');
+                ctx.fillStyle = o.type === 'pit' ? 'black' : '#888';
                 ctx.fillRect(o.x, o.y, o.w, o.h);
             }
         });
 
-        // 4. Еда
+        // 3. Еда
         ctx.textBaseline = 'bottom';
         WorldState.foods.forEach(f => {
             ctx.font = '40px Arial';
-            // Свечение для особых типов
             let shadowColor = '#fff';
             if (f.type === 'golden') shadowColor = '#FFD700';
             else if (f.type === 'rare') shadowColor = '#00FFFF';
@@ -313,7 +289,7 @@
             ctx.shadowBlur = 0;
         });
 
-        // 5. Взрывы
+        // 4. Взрывы
         WorldState.explosions.forEach(expl => {
             const progress = expl.timer / expl.maxTimer;
             const scale = 1 + progress * 0.5;
@@ -323,21 +299,11 @@
             ctx.save();
             ctx.globalAlpha = alpha;
             ctx.fillStyle = 'orange';
-            ctx.beginPath();
-            ctx.arc(expl.x, expl.y, size / 2, 0, Math.PI * 2);
-            ctx.fill();
+            ctx.beginPath(); ctx.arc(expl.x, expl.y, size / 2, 0, Math.PI * 2); ctx.fill();
             ctx.fillStyle = 'yellow';
-            ctx.beginPath();
-            ctx.arc(expl.x, expl.y, size / 4, 0, Math.PI * 2);
-            ctx.fill();
+            ctx.beginPath(); ctx.arc(expl.x, expl.y, size / 4, 0, Math.PI * 2); ctx.fill();
             ctx.restore();
         });
-    });
-
-    // Обновление таймеров взрывов
-    window.GameEvents.on('tick', () => {
-        WorldState.explosions.forEach(ex => ex.timer++);
-        WorldState.explosions = WorldState.explosions.filter(ex => ex.timer < ex.maxTimer);
     });
 
     console.log('%c🌍 [Pack 2] World loaded', 'color:#FFD700;font-weight:bold');
