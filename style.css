@@ -174,3 +174,369 @@ canvas { display: block; width: 100%; height: 100%; object-fit: contain; touch-a
 .settings-open-btn { background: transparent; border: 2px solid var(--gta-cyan); color: var(--gta-cyan); padding: clamp(4px, 1vmin, 8px) clamp(12px, 2.5vmin, 22px); font-family: 'Bebas Neue', sans-serif; font-size: clamp(14px, 2.5vmin, 20px); letter-spacing: 2px; text-transform: uppercase; cursor: pointer; border-radius: 6px; transition: all 0.2s; touch-action: manipulation; margin-bottom: clamp(8px, 2vmin, 15px); display: inline-flex; align-items: center; gap: 8px; }
 .settings-open-btn:hover, .settings-open-btn:active { background: var(--gta-cyan); color: black; box-shadow: 0 0 15px var(--gta-cyan); }
 @media (max-height: 500px) { .settings-panel { max-height: 98%; } .settings-section { padding: 6px 10px; } .settings-title { font-size: 20px; } }
+/* ==================================================================
+   PACK 2 — Statistics, Toasts, Controls screen, Power-ups, Weather
+   ================================================================== */
+
+/* --- TOASTS (уведомления) --- */
+.pack2-toast-container {
+    position: absolute;
+    top: 12%;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 25;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    pointer-events: none;
+    align-items: center;
+    max-width: 80%;
+}
+
+.pack2-toast {
+    background: linear-gradient(135deg, rgba(255, 0, 127, 0.92), rgba(139, 0, 255, 0.92));
+    color: #fff;
+    padding: clamp(8px, 1.5vmin, 14px) clamp(16px, 3vmin, 26px);
+    border-radius: 12px;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(14px, 2.4vmin, 22px);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    box-shadow: 0 0 25px rgba(255, 0, 127, 0.6), 0 4px 12px rgba(0, 0, 0, 0.6);
+    border: 2px solid rgba(255, 255, 255, 0.35);
+    animation: pack2ToastIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+    white-space: nowrap;
+    text-align: center;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.pack2-toast.success {
+    background: linear-gradient(135deg, rgba(0, 255, 65, 0.92), rgba(0, 200, 200, 0.92));
+}
+.pack2-toast.danger {
+    background: linear-gradient(135deg, rgba(255, 0, 0, 0.92), rgba(139, 0, 0, 0.92));
+}
+.pack2-toast.info {
+    background: linear-gradient(135deg, rgba(0, 150, 255, 0.92), rgba(0, 80, 200, 0.92));
+}
+.pack2-toast.leaving {
+    animation: pack2ToastOut 0.35s ease-in forwards;
+}
+
+@keyframes pack2ToastIn {
+    0% { opacity: 0; transform: translateY(-20px) scale(0.85); }
+    100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes pack2ToastOut {
+    0% { opacity: 1; transform: translateY(0) scale(1); }
+    100% { opacity: 0; transform: translateY(-20px) scale(0.85); }
+}
+
+/* --- STATS OVERLAY (после смерти) --- */
+.pack2-stats-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.92);
+    z-index: 30;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 3%;
+    box-sizing: border-box;
+    animation: pack2FadeIn 0.3s ease-out;
+}
+@keyframes pack2FadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+.pack2-stats-panel {
+    position: relative;
+    width: min(92%, 640px);
+    max-height: 92%;
+    overflow-y: auto;
+    background: linear-gradient(180deg, rgba(20, 10, 35, 0.98), rgba(10, 5, 20, 0.98));
+    border: 2px solid var(--gta-pink);
+    border-radius: 16px;
+    box-shadow: 0 0 40px rgba(255, 0, 127, 0.5), inset 0 0 60px rgba(255, 0, 127, 0.05);
+    padding: clamp(16px, 3vmin, 30px);
+    font-family: 'Bebas Neue', sans-serif;
+    color: white;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.pack2-stats-title {
+    font-size: clamp(24px, 4.5vmin, 44px);
+    color: var(--gta-pink);
+    text-shadow: 3px 3px 0 var(--gta-cyan), 0 0 20px rgba(255, 0, 127, 0.7);
+    text-align: center;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    line-height: 1;
+}
+
+.pack2-stats-subtitle {
+    text-align: center;
+    color: var(--gta-green);
+    font-size: clamp(11px, 1.8vmin, 15px);
+    letter-spacing: 3px;
+    margin-top: -8px;
+    margin-bottom: 4px;
+}
+
+.pack2-stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+@media (max-width: 500px) {
+    .pack2-stats-grid { grid-template-columns: 1fr; }
+}
+
+.pack2-stat-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
+    padding: 10px 12px;
+    transition: all 0.2s;
+}
+.pack2-stat-card:hover {
+    border-color: var(--gta-pink);
+    background: rgba(255, 0, 127, 0.08);
+}
+.pack2-stat-icon {
+    font-size: clamp(20px, 3vmin, 28px);
+    filter: drop-shadow(0 0 8px rgba(255, 200, 100, 0.5));
+    flex-shrink: 0;
+}
+.pack2-stat-content {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+}
+.pack2-stat-label {
+    font-size: clamp(9px, 1.4vmin, 11px);
+    letter-spacing: 1px;
+    color: rgba(255, 255, 255, 0.6);
+    text-transform: uppercase;
+}
+.pack2-stat-value {
+    font-size: clamp(16px, 2.6vmin, 22px);
+    color: var(--gta-cyan);
+    font-family: 'Courier New', Courier, monospace;
+    font-weight: bold;
+    text-shadow: 0 0 8px rgba(0, 255, 255, 0.5);
+}
+
+.pack2-stat-card.record .pack2-stat-value {
+    color: var(--gta-pink);
+    text-shadow: 0 0 12px rgba(255, 0, 127, 0.8);
+}
+
+/* --- CONTROLS SCREEN (start of game) --- */
+.pack2-controls-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.94);
+    z-index: 35;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 3%;
+    animation: pack2FadeIn 0.3s ease-out;
+}
+.pack2-controls-panel {
+    width: min(94%, 720px);
+    max-height: 92%;
+    overflow-y: auto;
+    background: linear-gradient(180deg, rgba(20, 10, 35, 0.98), rgba(10, 5, 20, 0.98));
+    border: 2px solid var(--gta-cyan);
+    border-radius: 16px;
+    box-shadow: 0 0 40px rgba(0, 255, 255, 0.4), inset 0 0 60px rgba(0, 255, 255, 0.04);
+    padding: clamp(16px, 3vmin, 30px);
+    font-family: 'Bebas Neue', sans-serif;
+    color: white;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+.pack2-controls-title {
+    font-size: clamp(20px, 4vmin, 36px);
+    color: var(--gta-cyan);
+    text-shadow: 3px 3px 0 var(--gta-pink), 0 0 20px rgba(0, 255, 255, 0.6);
+    text-align: center;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+}
+.pack2-controls-section {
+    background: rgba(255, 255, 255, 0.03);
+    border-left: 3px solid var(--gta-green);
+    border-radius: 8px;
+    padding: 12px 16px;
+}
+.pack2-controls-section h4 {
+    margin: 0 0 10px;
+    font-size: clamp(14px, 2vmin, 18px);
+    color: var(--gta-green);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+}
+.pack2-controls-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 6px 0;
+    border-bottom: 1px dashed rgba(255, 255, 255, 0.08);
+}
+.pack2-controls-row:last-child {
+    border-bottom: none;
+}
+.pack2-key {
+    background: linear-gradient(180deg, #333, #111);
+    border: 2px solid #555;
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    color: #fff;
+    box-shadow: 0 2px 0 #000, inset 0 1px 0 rgba(255, 255, 255, 0.15);
+    min-width: 60px;
+    text-align: center;
+    flex-shrink: 0;
+}
+.pack2-controls-desc {
+    font-size: clamp(12px, 1.8vmin, 15px);
+    letter-spacing: 1px;
+    color: #ddd;
+    text-transform: uppercase;
+}
+.pack2-controls-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    margin-top: 8px;
+    flex-wrap: wrap;
+}
+.pack2-controls-btn {
+    background: transparent;
+    border: 2px solid var(--gta-cyan);
+    color: var(--gta-cyan);
+    padding: 10px 26px;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(14px, 2.2vmin, 18px);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    cursor: pointer;
+    border-radius: 8px;
+    transition: all 0.2s;
+    touch-action: manipulation;
+}
+.pack2-controls-btn:hover, .pack2-controls-btn:active {
+    background: var(--gta-cyan);
+    color: #000;
+    box-shadow: 0 0 20px var(--gta-cyan);
+}
+.pack2-controls-btn.primary {
+    border-color: var(--gta-green);
+    color: var(--gta-green);
+}
+.pack2-controls-btn.primary:hover, .pack2-controls-btn.primary:active {
+    background: var(--gta-green);
+    color: #000;
+    box-shadow: 0 0 20px var(--gta-green);
+}
+
+/* --- WEATHER OVERLAY (canvas-drawn, but CSS overlay for tint) --- */
+.pack2-weather-overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 2;
+    transition: opacity 1s ease;
+}
+.pack2-weather-overlay.rain { background: linear-gradient(180deg, rgba(30, 60, 100, 0.15), rgba(10, 20, 40, 0.25)); }
+.pack2-weather-overlay.fog { background: radial-gradient(ellipse at center, rgba(180, 180, 200, 0) 30%, rgba(120, 120, 140, 0.55) 100%); }
+.pack2-weather-overlay.storm { background: linear-gradient(180deg, rgba(15, 20, 40, 0.35), rgba(0, 0, 0, 0.55)); }
+
+/* --- HUD POWER-UP BADGE --- */
+.pack2-powerup-badge {
+    position: absolute;
+    top: 16%;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 6;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: linear-gradient(135deg, rgba(0, 0, 0, 0.8), rgba(30, 0, 60, 0.85));
+    border: 2px solid var(--gta-cyan);
+    border-radius: 30px;
+    padding: 6px 14px;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(12px, 2vmin, 16px);
+    color: var(--gta-cyan);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    box-shadow: 0 0 15px rgba(0, 255, 255, 0.5);
+    pointer-events: none;
+    animation: pack2BadgePop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes pack2BadgePop {
+    0% { transform: translateX(-50%) scale(0.3); opacity: 0; }
+    100% { transform: translateX(-50%) scale(1); opacity: 1; }
+}
+.pack2-powerup-badge.shield { border-color: #00BFFF; color: #00BFFF; box-shadow: 0 0 15px rgba(0, 191, 255, 0.6); }
+.pack2-powerup-badge.magnet { border-color: #FF00FF; color: #FF00FF; box-shadow: 0 0 15px rgba(255, 0, 255, 0.6); }
+.pack2-powerup-badge.slowmo { border-color: #0080FF; color: #0080FF; box-shadow: 0 0 15px rgba(0, 128, 255, 0.6); }
+.pack2-powerup-badge.sprint { border-color: #FFD700; color: #FFD700; box-shadow: 0 0 15px rgba(255, 215, 0, 0.6); }
+
+/* --- WEATHER HUD ICON --- */
+.pack2-weather-hud {
+    position: absolute;
+    top: 16%;
+    right: 3%;
+    z-index: 6;
+    font-size: clamp(20px, 3.5vmin, 28px);
+    filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.4));
+    pointer-events: none;
+    animation: pack2BadgePop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* --- BIOME PROGRESS BAR --- */
+.pack2-biome-bar {
+    position: absolute;
+    bottom: 2%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(60%, 500px);
+    z-index: 6;
+    pointer-events: none;
+}
+.pack2-biome-label {
+    text-align: center;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(9px, 1.4vmin, 12px);
+    letter-spacing: 2px;
+    color: rgba(255, 255, 255, 0.7);
+    text-transform: uppercase;
+    margin-bottom: 3px;
+    text-shadow: 1px 1px 0 #000;
+}
+.pack2-biome-track {
+    height: 4px;
+    background: rgba(0, 0, 0, 0.6);
+    border-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    overflow: hidden;
+}
+.pack2-biome-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--gta-green), var(--gta-cyan), var(--gta-pink));
+    border-radius: 4px;
+    transition: width 0.3s ease;
+    box-shadow: 0 0 10px rgba(0, 255, 200, 0.6);
+}
