@@ -2,6 +2,7 @@
   "modules": [
     "js/pack0_core.js",
     "js/pack1_player.js",
+    "js/pack2_world.js",
     "js/pack1.js",
     "js/pack2.js",
     "js/pack3.js",
