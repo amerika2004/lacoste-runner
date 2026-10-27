@@ -19,6 +19,17 @@ const DEFAULT_SETTINGS = {
 
 // ======================= RENDER ENGINE =======================
 const RenderEngine = (function () {
+    // >>> PACK 2 hooks (заполняется из js/pack2.js)
+window.Pack2Hooks = window.Pack2Hooks || {
+    onGameStart: null,
+    onGameOver: null,
+    onTick: null,
+    onFoodEaten: null,
+    onObstacleHit: null,
+    onBarrelHit: null,
+    onPitFall: null,
+    drawWeather: null,
+};
     const QUALITY = {
         low:    { parallax: false, bloom: false, particles: false, shake: false, trail: false, vignette: false, flash: false, maxParticles: 0 },
         medium: { parallax: true,  bloom: false, particles: true,  shake: true,  trail: false, vignette: false, flash: true,  maxParticles: 200 },
@@ -383,9 +394,31 @@ function Game() {
         resetCombo();
         pitAudioEndedRef.current = false; if (pitAudioRef.current) { pitAudioRef.current.pause(); pitAudioRef.current.currentTime = 0; }
         RenderEngine.reset(); setScore(0); setSpeedDisplay(1.0); setPowerDisplay(1.0); setGameState('playing');
+                // >>> PACK 2: старт игры
+        if (window.Pack2Hooks && typeof window.Pack2Hooks.onGameStart === 'function') {
+            window.Pack2Hooks.onGameStart({
+                distance: 0,
+                character,
+                background,
+                timeOfDay,
+            });
+        }
     };
 
-    const handleGameOver = () => { RenderEngine.reset(); if (pitAudioRef.current) pitAudioRef.current.pause(); setGameState('gameover'); if (Math.floor(distanceRef.current) > highScore) { const newHigh = Math.floor(distanceRef.current); setHighScore(newHigh); localStorage.setItem('lacosteHighScore', newHigh); } };
+    const handleGameOver = () => { RenderEngine.reset(); if (pitAudioRef.current) pitAudioRef.current.pause(); setGameState('gameover'); if (Math.floor(distanceRef.current) > highScore) { const newHigh = Math.floor(distanceRef.current); setHighScore(newHigh); localStorage.setItem('lacosteHighScore', newHigh); }         // >>> PACK 2: смерть — статистика
+        if (window.Pack2Hooks && typeof window.Pack2Hooks.onGameOver === 'function') {
+            window.Pack2Hooks.onGameOver({
+                distance: Math.floor(distanceRef.current),
+                score: Math.floor(distanceRef.current),
+                health: healthRef.current,
+                character,
+                background,
+                timeOfDay,
+                foodEaten: playerRef.current.foodEaten,
+                combo: comboRef.current,
+            });
+        } 
+    };
 
     const handleHit = (index, type) => {
         if (isTrippingRef.current) return;
@@ -569,6 +602,20 @@ function Game() {
             }
             return true;
         });
+                // >>> PACK 2: тик каждый кадр (погода, эффекты, уведомления)
+        if (window.Pack2Hooks && typeof window.Pack2Hooks.onTick === 'function') {
+            window.Pack2Hooks.onTick({
+                distance: distanceRef.current,
+                speed: currentSpeed,
+                health: healthRef.current,
+                score: Math.floor(distanceRef.current),
+                obstacles: obstaclesRef.current,
+                foods: foodsRef.current,
+                player: playerRef.current,
+                groundY: gy,
+                settings: settingsRef.current,
+            });
+        }
     };
         const describeScene = () => {
         const char = CHARACTERS[character] || CHARACTERS.crocodile;
@@ -786,6 +833,8 @@ function Game() {
                 )
             )
         )
+                               // >>> PACK 2: слой для тостов, статистики, контролов, погоды
+        window.Pack2UI ? window.Pack2UI({ gameState, distanceRef }) : null
     );
 }
 
