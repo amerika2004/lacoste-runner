@@ -1,15 +1,55 @@
+// ======================= 0. СИСТЕМА ПЛАГИНОВ (ИНФРАСТРУКТУРА) =======================
+window.GameEvents = {
+    listeners: {},
+    on(event, cb) {
+        if (!this.listeners[event]) this.listeners[event] = [];
+        this.listeners[event].push(cb);
+    },
+    emit(event, data) {
+        if (this.listeners[event]) {
+            this.listeners[event].forEach(cb => { try { cb(data); } catch (e) { console.error(`[EventBus] ${event}:`, e); } });
+        }
+    }
+};
+
+window.PackUIs = [];          // Сюда плагины пушат React-компоненты
+window.GameCharacters = {};   // Сюда плагины регистрируют персонажей
+window.GameRefs = {};         // Экспорт игровых рефов для плагинов
+
+window.GameBoot = {
+    triggered: false,
+    callbacks: [],
+    onReady(cb) {
+        if (this.triggered) { try { cb(); } catch(e) { console.error(e); } return; }
+        this.callbacks.push(cb);
+    },
+    trigger() {
+        if (this.triggered) return;
+        this.triggered = true;
+        window.__MODULES_READY__ = true;
+        // Сливаем персонажей из плагинов в монолит (доступны в меню и рендере)
+        if (window.GameCharacters) {
+            Object.keys(window.GameCharacters).forEach(k => {
+                if (!CHARACTERS[k]) CHARACTERS[k] = window.GameCharacters[k];
+            });
+        }
+        this.callbacks.forEach(cb => { try { cb(); } catch(e) { console.error(e); } });
+        this.callbacks = [];
+    }
+};
+
+// ======================= ОСНОВНОЙ КОД МОНОЛИТА =======================
 const { useState, useEffect, useRef, useCallback } = React;
 
 const FLIP_CROC = false; 
 
-// === НАСТРОЙКИ ФИЗИКИ ===
 const GRAVITY = 0.75;        
 const JUMP_FORCE = -10.5;    
 const HOLD_THRUST = 0.45;    
 const GROUND_Y = 530; 
 const BASE_SPEED = 4.0; 
 const SPEED_MULTIPLIER = 0.8;
-const FRAME_COUNT = 12; // <--- ТА САМАЯ КОНСТАНТА, КОТОРОЙ НЕ ХВАТАЛО
+const FRAME_COUNT = 12;
 
 const DEFAULT_SETTINGS = {
     sfxVolume: 0.7, ambientVolume: 0.25, masterVolume: 1.0,
@@ -70,7 +110,6 @@ const RenderEngine = (function () {
             ctx.save();
             ctx.translate(shakeX, shakeY);
 
-            // 1. BACKGROUND
             const { bg } = scene;
             if (bg.img && bg.img.complete && bg.img.naturalWidth > 0) {
                 const scale = H / bg.img.naturalHeight;
@@ -87,17 +126,14 @@ const RenderEngine = (function () {
                 for (let i = offset; i < W; i += exactWidth) ctx.drawImage(bg.img, i, 0, exactWidth, H);
             } else { ctx.fillStyle = bg.fallbackColor; ctx.fillRect(0, 0, W, H); }
 
-            // 2. PIT OVERLAY
             if (scene.pitOverlay && scene.pitOverlay.img && scene.pitOverlay.img.complete) {
                 ctx.drawImage(scene.pitOverlay.img, scene.pitOverlay.x, scene.pitOverlay.y, scene.pitOverlay.w, scene.pitOverlay.h);
             }
 
-            // 3. TRAIL
             if (config.trail) {
                 state.trail.forEach(t => { const a = (t.life / t.maxLife) * 0.4; ctx.save(); ctx.globalAlpha = a; ctx.drawImage(t.img, t.x, t.y, t.w, t.h); ctx.restore(); });
             }
 
-            // 4. PLAYER
             const p = scene.player;
             if (p.img && p.img.complete && p.img.naturalWidth > 0) {
                 ctx.save();
@@ -124,7 +160,6 @@ const RenderEngine = (function () {
                 ctx.restore();
             } else { ctx.fillStyle = 'red'; ctx.fillRect(p.x, p.y, p.w, p.h); }
 
-            // 5. FOOD
             ctx.save();
             ctx.globalAlpha = 1.0;
             ctx.textBaseline = 'bottom';
@@ -141,7 +176,6 @@ const RenderEngine = (function () {
             ctx.shadowBlur = 0;
             ctx.restore();
 
-            // 6. OBSTACLES
             const { images, pickImg } = scene;
             scene.obstacles.forEach(obs => {
                 if (scene.isPitDeath && scene.pitTarget === obs) return;
@@ -155,7 +189,6 @@ const RenderEngine = (function () {
                 else { ctx.fillStyle = fallback; ctx.fillRect(obs.x, obs.y, obs.w, obs.h); }
             });
 
-            // 7. EXPLOSIONS
             scene.explosions.forEach(expl => {
                 const progress = expl.timer / expl.maxTimer;
                 const scale = 1 + progress * 0.5;
@@ -172,7 +205,6 @@ const RenderEngine = (function () {
                 }
             });
 
-            // 8. PARTICLES
             if (config.particles) {
                 if (!state.cache.particleSprite) state.cache.particleSprite = makeParticleSprite();
                 const sprite = state.cache.particleSprite;
@@ -187,7 +219,6 @@ const RenderEngine = (function () {
                 });
             }
 
-            // 9. BLOOM
             if (config.bloom) {
                 ctx.save();
                 ctx.globalCompositeOperation = 'lighter';
@@ -203,19 +234,16 @@ const RenderEngine = (function () {
                 ctx.restore();
             }
 
-            // 10. VIGNETTE
             if (config.vignette) {
                 if (!state.cache.vignetteCanvas || state.cache.vignetteCanvas.width !== W) state.cache.vignetteCanvas = makeVignette(W, H);
                 ctx.drawImage(state.cache.vignetteCanvas, 0, 0);
             }
 
-            // 11. FLASH
             if (state.flashAlpha > 0) {
                 ctx.fillStyle = `rgba(${state.flashColor},${state.flashAlpha})`;
                 ctx.fillRect(0, 0, W, H);
             }
 
-            // 12. DEATH FADE
             if (scene.deathFade != null) {
                 ctx.fillStyle = `rgba(0,0,0,${scene.deathFade})`;
                 ctx.fillRect(0, 0, W, H);
@@ -225,6 +253,9 @@ const RenderEngine = (function () {
         },
     };
 })();
+
+// Экспорт рендера в window для плагинов
+window.RenderEngine = RenderEngine;
 
 function Game() {
     const [gameState, setGameState] = useState('menu');
@@ -252,9 +283,19 @@ function Game() {
     const backgroundRef = useRef(background);
     const groundYRef = useRef(GROUND_Y + (BACKGROUNDS[background]?.groundOffset || 0));
 
+    // >>> Экспорт рефов для плагинов
+    useEffect(() => {
+        window.GameRefs = {
+            player: playerRef, obstacles: obstaclesRef, foods: foodsRef,
+            distance: distanceRef, health: healthRef, combo: comboRef,
+            comboMult: comboMultRef, settings: settingsRef,
+            getGameState: () => gameState
+        };
+    }, [gameState]);
+
     useEffect(() => { timeOfDayRef.current = timeOfDay; localStorage.setItem('lacosteTimeOfDay', timeOfDay); }, [timeOfDay]);
     useEffect(() => { backgroundRef.current = background; localStorage.setItem('lacosteBackground', background); const bg = BACKGROUNDS[background] || BACKGROUNDS.default; groundYRef.current = GROUND_Y + (bg.groundOffset || 0); }, [background]);
-    useEffect(() => { localStorage.setItem('lacosteSettings', JSON.stringify(settings)); RenderEngine.setQuality(settings.graphics); document.body.className = `emoji-${settings.emojiStyle}`; settingsRef.current = settings; }, [settings]);
+    useEffect(() => { localStorage.setItem('lacosteSettings', JSON.stringify(settings)); RenderEngine.setQuality(settings.graphics); document.body.className = `emoji-${settings.emojiStyle}`; settingsRef.current = settings; window.GameEvents.emit('settings_changed', settings); }, [settings]);
 
     const initChar = CHARACTERS[character] || CHARACTERS.crocodile;
     const initGroundY = GROUND_Y + (BACKGROUNDS[background]?.groundOffset || 0);
@@ -325,8 +366,8 @@ function Game() {
     const calculateJumpMultiplier = (playerHeight, gameSpeed, penalty = 1.0) => { const char = CHARACTERS[character] || CHARACTERS.crocodile; const sizeFactor = Math.sqrt(playerHeight / char.baseHeight); const speedFactor = 1 + (gameSpeed - 1) * 0.10; return Math.max(1.0, sizeFactor * speedFactor * penalty); };
     const toggleFullscreen = () => { if (!document.fullscreenElement) { document.documentElement.requestFullscreen().catch((err) => console.warn("Fullscreen error:", err)); if (screen.orientation && screen.orientation.lock) { screen.orientation.lock('landscape').catch((err) => console.warn("Orientation lock error:", err)); } } else { if (document.exitFullscreen) document.exitFullscreen(); } };
 
-    const resetCombo = () => { comboRef.current = 0; comboMultRef.current = 1; setComboDisplay({ mult: 1, count: 0 }); };
-    const addCombo = () => { if (!settingsRef.current.comboEnabled) return; comboRef.current++; let mult = 1; if (comboRef.current >= 8) mult = 5; else if (comboRef.current >= 5) mult = 3; else if (comboRef.current >= 3) mult = 2; comboMultRef.current = mult; setComboDisplay({ mult, count: comboRef.current }); };
+    const resetCombo = () => { comboRef.current = 0; comboMultRef.current = 1; setComboDisplay({ mult: 1, count: 0 }); window.GameEvents.emit('combo_changed', { mult: 1, count: 0 }); };
+    const addCombo = () => { if (!settingsRef.current.comboEnabled) return; comboRef.current++; let mult = 1; if (comboRef.current >= 8) mult = 5; else if (comboRef.current >= 5) mult = 3; else if (comboRef.current >= 3) mult = 2; comboMultRef.current = mult; setComboDisplay({ mult, count: comboRef.current }); window.GameEvents.emit('combo_changed', { mult, count: comboRef.current }); };
 
     const doJump = (p) => {
         if (p.isJumping || isTrippingRef.current || isFallingIntoPitRef.current || isPitDeathDelayRef.current || isBarrelFlyingRef.current || isEatingRef.current) return;
@@ -336,21 +377,25 @@ function Game() {
         addCombo();
         if (jumpAudioRef.current && settingsRef.current.soundEnabled) { jumpAudioRef.current.currentTime = 0; jumpAudioRef.current.play().catch(() => {}); }
         RenderEngine.spawnParticles(p.x + p.width / 2, p.y + p.height, 6, { colors: ['#FFFFFF', '#AAAAAA'], speed: 2, life: 20, size: 2, gravity: 0.1 });
+        // >>> Событие для плагинов
+        window.GameEvents.emit('jump', { x: p.x, y: p.y });
     };
 
     const handleKeyDown = useCallback((e) => {
         if (e.code === 'Escape') { e.preventDefault(); if (showSettings) { setShowSettings(false); return; } if (isFallingIntoPitRef.current || isPitDeathDelayRef.current) return; if (gameState === 'playing') setGameState('paused'); else if (gameState === 'paused') setGameState('playing'); return; }
-        if (e.code === 'KeyN') { e.preventDefault(); setTimeOfDay(prev => prev === 'day' ? 'night' : 'day'); return; }
+        if (e.code === 'KeyN') { e.preventDefault(); setTimeOfDay(prev => prev === 'day' ? 'night' : 'day'); window.GameEvents.emit('time_changed', { timeOfDay: timeOfDay === 'day' ? 'night' : 'day' }); return; }
         if (e.code === 'Space' || e.code === 'ArrowUp') { e.preventDefault(); if (gameState === 'menu') setGameState('playing'); else if (gameState === 'gameover') resetGame(); else if (gameState === 'playing') doJump(playerRef.current); }
+        // >>> Событие ввода для плагинов
+        window.GameEvents.emit('input_keydown', e);
     }, [gameState, character, showSettings]);
 
-    const handleKeyUp = useCallback((e) => { if (e.code === 'Space' || e.code === 'ArrowUp') playerRef.current.isHoldingJump = false; }, []);
+    const handleKeyUp = useCallback((e) => { if (e.code === 'Space' || e.code === 'ArrowUp') playerRef.current.isHoldingJump = false; window.GameEvents.emit('input_keyup', e); }, []);
     useEffect(() => { window.addEventListener('keydown', handleKeyDown); window.addEventListener('keyup', handleKeyUp); return () => { window.removeEventListener('keydown', handleKeyDown); window.removeEventListener('keyup', handleKeyUp); }; }, [handleKeyDown, handleKeyUp]);
 
     useEffect(() => {
         const canvas = canvasRef.current; if (!canvas) return;
-        const handleTouchStart = (e) => { if (e.target.closest('.game-btn') || e.target.closest('.btn') || e.target.closest('.char-btn') || e.target.closest('.settings-panel') || e.target.closest('.settings-open-btn')) return; e.preventDefault(); if (gameState !== 'playing') return; doJump(playerRef.current); };
-        const handleTouchEnd = (e) => { if (e.target.closest('.game-btn') || e.target.closest('.btn') || e.target.closest('.char-btn') || e.target.closest('.settings-panel') || e.target.closest('.settings-open-btn')) return; if (gameState !== 'playing') return; e.preventDefault(); playerRef.current.isHoldingJump = false; };
+        const handleTouchStart = (e) => { if (e.target.closest('.game-btn') || e.target.closest('.btn') || e.target.closest('.char-btn') || e.target.closest('.settings-panel') || e.target.closest('.settings-open-btn')) return; e.preventDefault(); if (gameState !== 'playing') return; doJump(playerRef.current); window.GameEvents.emit('input_touch_start', e); };
+        const handleTouchEnd = (e) => { if (e.target.closest('.game-btn') || e.target.closest('.btn') || e.target.closest('.char-btn') || e.target.closest('.settings-panel') || e.target.closest('.settings-open-btn')) return; if (gameState !== 'playing') return; e.preventDefault(); playerRef.current.isHoldingJump = false; window.GameEvents.emit('input_touch_end', e); };
         canvas.addEventListener('touchstart', handleTouchStart, { passive: false }); canvas.addEventListener('touchend', handleTouchEnd, { passive: false }); canvas.addEventListener('touchcancel', handleTouchEnd, { passive: false });
         return () => { canvas.removeEventListener('touchstart', handleTouchStart); canvas.removeEventListener('touchend', handleTouchEnd); canvas.removeEventListener('touchcancel', handleTouchEnd); };
     }, [gameState, character]);
@@ -368,9 +413,21 @@ function Game() {
         resetCombo();
         pitAudioEndedRef.current = false; if (pitAudioRef.current) { pitAudioRef.current.pause(); pitAudioRef.current.currentTime = 0; }
         RenderEngine.reset(); setScore(0); setSpeedDisplay(1.0); setPowerDisplay(1.0); setGameState('playing');
+        // >>> Событие старта
+        window.GameEvents.emit('game_start', { character, background, timeOfDay, settings: settingsRef.current });
     };
 
-    const handleGameOver = () => { RenderEngine.reset(); if (pitAudioRef.current) pitAudioRef.current.pause(); setGameState('gameover'); if (Math.floor(distanceRef.current) > highScore) { const newHigh = Math.floor(distanceRef.current); setHighScore(newHigh); localStorage.setItem('lacosteHighScore', newHigh); } };
+    const handleGameOver = () => { 
+        RenderEngine.reset(); 
+        if (pitAudioRef.current) pitAudioRef.current.pause(); 
+        setGameState('gameover'); 
+        if (Math.floor(distanceRef.current) > highScore) { 
+            const newHigh = Math.floor(distanceRef.current); 
+            setHighScore(newHigh); localStorage.setItem('lacosteHighScore', newHigh); 
+        }
+        // >>> Событие game over
+        window.GameEvents.emit('gameover', { distance: Math.floor(distanceRef.current), health: healthRef.current, character, background, timeOfDay });
+    };
 
     const handleHit = (index, type) => {
         if (isTrippingRef.current) return;
@@ -383,6 +440,8 @@ function Game() {
         isTrippingRef.current = true; tripTimerRef.current = 0; isBarrelTripRef.current = false;
         const p = playerRef.current; p.y = groundYRef.current - p.height; p.velocityY = 0; p.isJumping = false; p.tilt = 0;
         speedPenaltyRef.current = speedPenaltyRef.current * 0.65;
+        // >>> Событие удара
+        window.GameEvents.emit('hit', { health: healthRef.current, type });
     };
 
     const handleBarrelHit = (index) => {
@@ -396,6 +455,8 @@ function Game() {
         obstaclesRef.current.splice(index, 1); obstaclesRef.current = obstaclesRef.current.filter(o => (o.x + o.width) > p.x && o.x < canvas.width); foodsRef.current = foodsRef.current.filter(f => f.x < canvas.width);
         spawnCooldownRef.current = 90; spawnTimerRef.current = 0; isBarrelFlyingRef.current = true; isBarrelTripRef.current = true; barrelFlyVelocityYRef.current = -20;
         p.velocityY = 0; p.isJumping = false; p.isHoldingJump = false; p.tilt = 0;
+        // >>> Событие бочки
+        window.GameEvents.emit('barrel_hit', { x: obs.x, y: obs.y });
     };
 
     const updateLogic = () => {
@@ -528,7 +589,7 @@ function Game() {
                 else if (obs.type === 'pit') { const w = obs.width * 0.5, h = obs.height * 0.5; obsHitboxX = obs.x + (obs.width - w) / 2 + obs.width * 0.35; obsHitboxWidth = w; obsHitboxY = obs.y + (obs.height - h) / 2; obsHitboxHeight = h; }
                 else if (obs.type === 'cactus') { const pad = obs.width * 0.3; obsHitboxX = obs.x + pad; obsHitboxWidth = obs.width - pad * 2; }
                 if (hitboxX < obsHitboxX + obsHitboxWidth && hitboxX + hitboxWidth > obsHitboxX && hitboxY < obsHitboxY + obsHitboxHeight && hitboxY + hitboxHeight > obsHitboxY) {
-                    if (obs.type === 'pit') { isFallingIntoPitRef.current = true; pitTargetRef.current = obs; pitFallTimerRef.current = 0; pitVelocityRef.current = 0; p.velocityY = 0; p.isJumping = false; p.isHoldingJump = false; RenderEngine.spawnParticles(obs.x + obs.width / 2, gy, 20, { colors: ['#FF007F', '#FFD700', '#888888'], speed: 4, life: 30, size: 3, gravity: 0.2 }); RenderEngine.shake(10, 15); return; }
+                    if (obs.type === 'pit') { isFallingIntoPitRef.current = true; pitTargetRef.current = obs; pitFallTimerRef.current = 0; pitVelocityRef.current = 0; p.velocityY = 0; p.isJumping = false; p.isHoldingJump = false; RenderEngine.spawnParticles(obs.x + obs.width / 2, gy, 20, { colors: ['#FF007F', '#FFD700', '#888888'], speed: 4, life: 30, size: 3, gravity: 0.2 }); RenderEngine.shake(10, 15); window.GameEvents.emit('pit_fall', { x: obs.x }); return; }
                     else if (obs.type === 'barrel') { handleBarrelHit(i); break; }
                     else { handleHit(i, obs.type); break; }
                 }
@@ -544,10 +605,17 @@ function Game() {
                 else if (food.type === 'poison') { speedPenaltyRef.current = speedPenaltyRef.current * 0.9; RenderEngine.spawnParticles(food.x + 20, food.y + 20, 15, { colors: ['#8B00FF', '#FF007F'], speed: 5, life: 30, size: 4 }); }
                 else { p.foodEaten++; if (p.foodEaten >= p.foodTarget) { p.width += 2; p.height += 1.3; p.y = gy - p.height; p.foodEaten = 0; p.foodTarget = p.foodTarget + 1; healthRef.current = Math.min(6, healthRef.current + 1); setHealth(healthRef.current); RenderEngine.spawnParticles(p.x + p.width / 2, p.y + p.height / 2, 12, { colors: ['#FFD700', '#FFFFFF'], speed: 3, life: 30, size: 3, gravity: 0.1 }); } }
                 if (isEatTrigger) { isEatingRef.current = true; eatTimerRef.current = 0; eatFrameIdxRef.current = 0; p.y = gy - p.height; p.velocityY = 0; p.isJumping = false; p.isHoldingJump = false; p.tilt = 0; p.bob = 0; }
+                // >>> Событие еды
+                window.GameEvents.emit('eat', { type: food.type, emoji: food.emoji });
                 return false;
             }
             return true;
         });
+
+        // >>> Событие world_tick (раз в 5 кадров, чтобы не спамить)
+        if (Math.floor(distanceRef.current) % 5 === 0) {
+            window.GameEvents.emit('world_tick', { distance: distanceRef.current, health: healthRef.current });
+        }
     };
 
     const describeScene = () => {
@@ -590,12 +658,21 @@ function Game() {
                 accumulatorRef.current += deltaTime;
                 const FRAME_TIME = 1000 / 60;
                 let loops = 0;
-                while (accumulatorRef.current >= FRAME_TIME && loops < 5) { updateLogic(); RenderEngine.update(); accumulatorRef.current -= FRAME_TIME; loops++; }
+                while (accumulatorRef.current >= FRAME_TIME && loops < 5) { 
+                    updateLogic(); 
+                    RenderEngine.update(); 
+                    // >>> Событие tick для плагинов (60 раз в секунду)
+                    window.GameEvents.emit('tick');
+                    accumulatorRef.current -= FRAME_TIME; 
+                    loops++; 
+                }
                 if (gameState !== 'playing') return;
                 const canvas = canvasRef.current;
                 const ctx = canvas.getContext('2d');
                 const scene = describeScene();
                 RenderEngine.draw(ctx, canvas, scene);
+                // >>> Событие render_frame для плагинов (каждый кадр)
+                window.GameEvents.emit('render_frame', { ctx });
                 requestRef.current = requestAnimationFrame(gameLoop);
             };
             requestRef.current = requestAnimationFrame(gameLoop);
@@ -764,9 +841,28 @@ function Game() {
                     React.createElement('button', { className: 'settings-reset', onClick: () => setSettings({ ...DEFAULT_SETTINGS }) }, 'RESET')
                 )
             )
-        ) : null
+        ) : null,
+
+        // >>> СЛОЙ ДЛЯ UI-ПЛАГИНОВ
+        (window.PackUIs || []).map((UI, i) => React.createElement(UI, { key: i, gameState, setGameState, GameConfig: { DEFAULT_SETTINGS, BACKGROUNDS, CHARACTERS, FOOD_TYPES } }))
     );
 }
 
-const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(React.createElement(Game));
+// ======================= 1. ЗАПУСК С ОЖИДАНИЕМ ПЛАГИНОВ =======================
+function boot() { 
+    if (!window.__BOOTED__) { 
+        window.__BOOTED__ = true; 
+        console.log('%c🎮 Booting React (Monolith + Plugins)...', 'color:#FF007F;font-weight:bold');
+        ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(Game)); 
+    } 
+}
+
+window.GameBoot.onReady(boot);
+
+// Фоллбэк: если loader.js не подключен/упал — запускаем монолит через 5 сек
+setTimeout(() => { 
+    if (!window.__BOOTED__) { 
+        console.warn('⚠️ Loader fallback: booting monolith without plugins');
+        window.GameBoot.trigger();
+    } 
+}, 5000);
