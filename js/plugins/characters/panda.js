@@ -16,5 +16,4 @@ window.GameCharacters.panda = {
         for (let i = 1; i <= c.eatFrameCount; i++) new Image().src = `${c.eatFolder}/${i}.png`;
     }
 })();
-
 console.log('🐼 Panda registered + preloading frames');
