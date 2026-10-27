@@ -832,7 +832,7 @@ function Game() {
                     React.createElement('button', { className: 'settings-reset', onClick: () => setSettings({ ...DEFAULT_SETTINGS }) }, 'RESET')
                 )
             )
-        )
+        ),
                                // >>> PACK 2: слой для тостов, статистики, контролов, погоды
         window.Pack2UI ? window.Pack2UI({ gameState, distanceRef }) : null
     );
