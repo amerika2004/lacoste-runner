@@ -4,7 +4,6 @@
 (function () {
     'use strict';
 
-    // === СОСТОЯНИЕ МИРА ===
     const WorldState = {
         distance: 0,
         speed: 4,
@@ -26,10 +25,8 @@
         tripTimer: 0,
     };
 
-    // Экспортируем для UI и других модулей
     window.WorldState = WorldState;
 
-    // === ИНИЦИАЛИЗАЦИЯ ПРИ СТАРТЕ ===
     window.GameEvents.on('game_start', (data) => {
         const cfg = window.GameConfig;
         WorldState.distance = 0;
@@ -50,7 +47,6 @@
         WorldState.tripTimer = 0;
     });
 
-    // === ЛОГИКА (ТИК 60 FPS) ===
     window.GameEvents.on('tick', () => {
         if (!WorldState.isAlive) return;
 
@@ -59,20 +55,14 @@
         const bgConfig = cfg.BACKGROUNDS[WorldState.background];
         const groundY = cfg.PHYSICS.GROUND_Y + (bgConfig.offset || 0);
         
-        // 1. Скорость (если не спотыкаемся и не едим)
         let currentSpeed = 0;
         if (!WorldState.isTripping && !p.isEating) {
             currentSpeed = WorldState.speed * cfg.SPEED.SPEED_MULTIPLIER;
-            // Множитель из Пакета 6
-let comboMult = 1;
-if (window.StatsState && window.StatsState.comboMult) {
-    comboMult = window.StatsState.comboMult;
-}
-WorldState.distance += currentSpeed * 0.03 * comboMult;
+            WorldState.distance += currentSpeed * 0.03;
             WorldState.bgOffset -= currentSpeed;
         }
 
-        // 2. Спавн препятствий
+        // Спавн препятствий
         if (!WorldState.isTripping && !p.isEating) {
             if (WorldState.spawnCooldown > 0) {
                 WorldState.spawnCooldown--;
@@ -98,7 +88,7 @@ WorldState.distance += currentSpeed * 0.03 * comboMult;
                 }
             }
 
-            // 3. Спавн еды
+            // Спавн еды
             WorldState.foodTimer++;
             if (WorldState.foodTimer > 100 + Math.random() * 80) {
                 let safe = true;
@@ -109,7 +99,6 @@ WorldState.distance += currentSpeed * 0.03 * comboMult;
                     const foodList = char.food || ['🍗', '🍔'];
                     const baseFood = foodList[Math.floor(Math.random() * foodList.length)];
                     
-                    // Взвешенный рандом для типа еды
                     const r = Math.random() * 100;
                     let foodType = 'normal';
                     if (r > 85) foodType = 'golden';
@@ -128,25 +117,23 @@ WorldState.distance += currentSpeed * 0.03 * comboMult;
             }
         }
 
-        // 4. Движение объектов
+        // Движение объектов
         WorldState.obstacles.forEach(o => o.x -= currentSpeed);
         WorldState.obstacles = WorldState.obstacles.filter(o => o.x + o.w > 0);
         
         WorldState.foods.forEach(f => f.x -= currentSpeed);
         WorldState.foods = WorldState.foods.filter(f => f.x + f.w > 0);
 
-        // 5. Коллизии с препятствиями
+        // Коллизии с препятствиями
         if (!WorldState.isTripping && !p.isEating) {
             for (let i = WorldState.obstacles.length - 1; i >= 0; i--) {
                 const o = WorldState.obstacles[i];
                 
-                // Хитбокс игрока (немного уменьшен)
                 const px = p.x + p.w * 0.6;
                 const py = p.y + p.h * 0.4;
                 const pw = p.w * 0.25;
                 const ph = p.h * 0.4;
 
-                // Хитбоксы препятствий
                 let ox = o.x + 10, oy = o.y + 5, ow = o.w - 20, oh = o.h - 5;
                 if (o.type === 'puddle') { oy = o.y + o.h * 0.5; oh = o.h * 0.5; }
                 if (o.type === 'rock') { oy = o.y + o.h * 0.2; oh = o.h * 0.8; }
@@ -169,8 +156,10 @@ WorldState.distance += currentSpeed * 0.03 * comboMult;
                         WorldState.isTripping = true;
                         WorldState.tripTimer = 0;
                         p.isTripping = true;
-                        window.RenderEngine.shake(12, 20);
-                        window.RenderEngine.flash('255,150,0', 0.3);
+                        if (window.RenderEngine) {
+                            window.RenderEngine.shake(12, 20);
+                            window.RenderEngine.flash('255,150,0', 0.3);
+                        }
                         WorldState.explosions.push({ x: o.x + o.w/2, y: o.y + o.h/2, size: o.h * 6, timer: 0, maxTimer: 30 });
                         window.GameEvents.emit('barrel_hit', { health: WorldState.health });
                         break;
@@ -180,8 +169,10 @@ WorldState.distance += currentSpeed * 0.03 * comboMult;
                         WorldState.isTripping = true;
                         WorldState.tripTimer = 0;
                         p.isTripping = true;
-                        window.RenderEngine.flash('255,0,0', 0.4);
-                        window.RenderEngine.shake(6, 12);
+                        if (window.RenderEngine) {
+                            window.RenderEngine.flash('255,0,0', 0.4);
+                            window.RenderEngine.shake(6, 12);
+                        }
                         window.GameEvents.emit('hit', { health: WorldState.health, type: o.type });
                         break;
                     }
@@ -189,7 +180,7 @@ WorldState.distance += currentSpeed * 0.03 * comboMult;
             }
         }
 
-        // 6. Логика спотыкания (восстановление)
+        // Логика спотыкания
         if (WorldState.isTripping) {
             WorldState.tripTimer++;
             if (WorldState.tripTimer > 120) {
@@ -198,7 +189,7 @@ WorldState.distance += currentSpeed * 0.03 * comboMult;
             }
         }
 
-        // 7. Коллизии с едой
+        // Коллизии с едой
         if (!WorldState.isTripping && !p.isEating) {
             for (let i = WorldState.foods.length - 1; i >= 0; i--) {
                 const f = WorldState.foods[i];
@@ -209,13 +200,13 @@ WorldState.distance += currentSpeed * 0.03 * comboMult;
                     
                     if (f.type === 'golden') {
                         WorldState.distance += 50;
-                        window.RenderEngine.flash('255,215,0', 0.2);
+                        if (window.RenderEngine) window.RenderEngine.flash('255,215,0', 0.2);
                     } else if (f.type === 'rare') {
                         WorldState.health = Math.min(6, WorldState.health + 2);
-                        window.RenderEngine.flash('0,255,255', 0.2);
+                        if (window.RenderEngine) window.RenderEngine.flash('0,255,255', 0.2);
                     } else if (f.type === 'poison') {
                         WorldState.health -= 1;
-                        window.RenderEngine.flash('139,0,255', 0.4);
+                        if (window.RenderEngine) window.RenderEngine.flash('139,0,255', 0.4);
                     }
                     
                     const char = cfg.CHARACTERS[p.charId];
@@ -233,15 +224,15 @@ WorldState.distance += currentSpeed * 0.03 * comboMult;
             }
         }
 
-        // 8. Обновление взрывов
+        // Обновление взрывов
         WorldState.explosions.forEach(ex => ex.timer++);
         WorldState.explosions = WorldState.explosions.filter(ex => ex.timer < ex.maxTimer);
         
-        // 9. Отправляем данные для UI
+        // Отправка данных для UI
         window.GameEvents.emit('world_tick', { distance: WorldState.distance, health: WorldState.health, speed: currentSpeed });
     });
 
-    // === РЕНДЕР ФОНА, ОБЪЕКТОВ И ПРЕПЯТСТВИЙ ===
+    // РЕНДЕР (с защитой от отсутствия картинок)
     window.GameEvents.on('render_frame', (e) => {
         const ctx = e.ctx;
         if (!ctx) return;
@@ -250,16 +241,19 @@ WorldState.distance += currentSpeed * 0.03 * comboMult;
         const W = 1200, H = 600;
 
         // 1. Фон
-        const bgAsset = window.GameAssets.bg[WorldState.background];
-        const img = WorldState.timeOfDay === 'night' ? bgAsset.night : bgAsset.day;
+        let bgImg = null;
+        if (window.GameAssets && window.GameAssets.bg && window.GameAssets.bg[WorldState.background]) {
+            const bgAsset = window.GameAssets.bg[WorldState.background];
+            bgImg = WorldState.timeOfDay === 'night' ? bgAsset.night : bgAsset.day;
+        }
         
-        if (img && img.complete) {
-            const scale = H / img.naturalHeight;
-            const w = Math.ceil(img.naturalWidth * scale);
+        if (bgImg && bgImg.complete) {
+            const scale = H / bgImg.naturalHeight;
+            const w = Math.ceil(bgImg.naturalWidth * scale);
             let offset = WorldState.bgOffset % w;
             if (offset > 0) offset -= w;
             for (let i = offset; i < W; i += w) {
-                ctx.drawImage(img, i, 0, w, H);
+                ctx.drawImage(bgImg, i, 0, w, H);
             }
         } else {
             ctx.fillStyle = WorldState.timeOfDay === 'night' ? '#0a0512' : '#1a0b2e';
@@ -268,8 +262,11 @@ WorldState.distance += currentSpeed * 0.03 * comboMult;
 
         // 2. Препятствия
         WorldState.obstacles.forEach(o => {
-            const obsAsset = window.GameAssets.obs[o.type];
-            const obsImg = WorldState.timeOfDay === 'night' ? obsAsset.night : obsAsset.day;
+            let obsImg = null;
+            if (window.GameAssets && window.GameAssets.obs && window.GameAssets.obs[o.type]) {
+                const obsAsset = window.GameAssets.obs[o.type];
+                obsImg = WorldState.timeOfDay === 'night' ? obsAsset.night : obsAsset.day;
+            }
             
             if (obsImg && obsImg.complete) {
                 ctx.drawImage(obsImg, o.x, o.y, o.w, o.h);
