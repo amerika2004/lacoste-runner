@@ -1,5 +1,6 @@
 {
   "modules": [
+    "js/config.js",
     "js/pack0_core.js",
     "js/pack1_player.js",
     "js/pack2_world.js",
