@@ -1,133 +1,211 @@
 /* ==================================================================
-   PACK 0 — CORE CONFIG & ASSETS
-   Фундамент игры. Настройки, реестры персонажей/фонов, базовые ассеты.
+   PACK 1 — PLAYER (Физика, прыжки, анимация персонажа)
    ================================================================== */
 (function () {
     'use strict';
 
-    // 1. Глобальные настройки физики и спавна
-    window.GameConfig = {
-        GRAVITY: 0.75,
-        JUMP_FORCE: -10.5,
-        HOLD_THRUST: 0.45,
-        BASE_SPEED: 4.0,
-        SPEED_MULTIPLIER: 0.8,
-        GROUND_Y: 530,
+    // === СОСТОЯНИЕ ИГРОКА ===
+    const PlayerState = {
+        x: 100,
+        y: 0,
+        vx: 0,
+        vy: 0,
+        w: 165,
+        h: 110,
+        isJumping: false,
+        isHolding: false,
+        charId: 'crocodile',
+        frame: 0,
+        tilt: 0,
+        isEating: false,
+        eatTimer: 0,
+        eatFrameIdx: 0,
+        lastEatFrameTime: 0,
+        baseY: 0, // для прыжков и приземления
+    };
+
+    // Экспортируем состояние для доступа из pack2_world (коллизии)
+    window.PlayerState = PlayerState;
+
+    // === ИНИЦИАЛИЗАЦИЯ ПРИ СТАРТЕ ИГРЫ ===
+    window.GameEvents.on('game_start', (data) => {
+        const cfg = window.GameConfig;
+        const char = cfg.CHARACTERS[data.character] || cfg.CHARACTERS['crocodile'];
+        const bg = cfg.BACKGROUNDS[data.background] || cfg.BACKGROUNDS['default'];
         
-        // 2. Реестр персонажей
-        CHARACTERS: {
-            crocodile: { 
-                id: 'crocodile', 
-                name: 'Crocodile', 
-                emoji: '🐊', 
-                folder: 'source/characters/crocodile', 
-                frameCount: 12, 
-                baseWidth: 165.4, 
-                baseHeight: 110.3,
-                foodEmojis: ['🍗', '🍔', '🍕', '🥩']
-            },
-            panda: { 
-                id: 'panda', 
-                name: 'Panda', 
-                emoji: '🐼', 
-                folder: 'source/characters/panda', 
-                frameCount: 20, 
-                baseWidth: 160, 
-                baseHeight: 120,
-                foodEmojis: ['🎋'],
-                eatEmoji: '🎋',
-                eatFolder: 'source/characters/panda/eating',
-                eatFrameCount: 8,
-                eatDuration: 4.0
-            }
-        },
+        PlayerState.charId = char.id;
+        PlayerState.w = char.w;
+        PlayerState.h = char.h;
+        PlayerState.x = 100;
+        
+        // Учитываем смещение фона (например, cartoon)
+        const groundY = cfg.PHYSICS.GROUND_Y + (bg.offset || 0);
+        PlayerState.baseY = groundY - PlayerState.h;
+        PlayerState.y = PlayerState.baseY;
+        
+        PlayerState.vy = 0;
+        PlayerState.isJumping = false;
+        PlayerState.isHolding = false;
+        PlayerState.tilt = 0;
+        PlayerState.frame = 0;
+        PlayerState.isEating = false;
+        PlayerState.eatTimer = 0;
+        PlayerState.eatFrameIdx = 0;
+        PlayerState.lastEatFrameTime = Date.now();
+    });
 
-        // 3. Реестр фонов
-        BACKGROUNDS: {
-            default: { 
-                id: 'default', 
-                name: 'Forest', 
-                emoji: '🌳', 
-                dayImg: 'source/landscape.jpg', 
-                nightImg: 'source/landscape_n.jpg', 
-                groundOffset: 0, 
-                obstacleTypes: ['barrel', 'rock', 'cactus', 'puddle', 'pit'] 
-            },
-            cartoon: { 
-                id: 'cartoon', 
-                name: 'Cartoon', 
-                emoji: '🌲', 
-                dayImg: 'source/cartoon_forest.png', 
-                nightImg: 'source/cartoon_forest_n.png', 
-                groundOffset: 30, 
-                obstacleTypes: ['rock', 'puddle', 'pit'] 
-            }
-        },
-
-        // 4. Типы еды
-        FOOD_TYPES: {
-            normal:  { weight: 70, color: '#FFFFFF', emoji: null },
-            golden:  { weight: 15, color: '#FFD700', emoji: '⭐', scoreBonus: 50 },
-            rare:    { weight: 10, color: '#00FFFF', emoji: '💎', healBonus: 2 },
-            poison:  { weight: 5,  color: '#8B00FF', emoji: '☠', speedPenalty: 0.1 },
+    // === ВВОД ===
+    // Клавиатура
+    window.GameEvents.on('input_keydown', (e) => {
+        if ((e.code === 'Space' || e.code === 'ArrowUp') && !PlayerState.isJumping && !PlayerState.isEating) {
+            if (e.preventDefault) e.preventDefault();
+            doJump();
         }
-    };
+    });
 
-    // 5. Кэш изображений (чтобы не грузить одно и то же дважды)
-    window.GameAssets = {
-        walkFrames: {}, // { crocodile: [img1, img2...], panda: [...] }
-        eatFrames: {},  // { panda: [img1, img2...] }
-        backgrounds: {},// { default: { day: img, night: img } }
-        obstacles: {},  // { barrel: img, rock: img ... }
+    window.GameEvents.on('input_keyup', (e) => {
+        if (e.code === 'Space' || e.code === 'ArrowUp') {
+            PlayerState.isHolding = false;
+        }
+    });
 
-        init() {
-            const cfg = window.GameConfig;
+    // Тач
+    window.GameEvents.on('input_touch', (e) => {
+        if (!PlayerState.isJumping && !PlayerState.isEating) {
+            doJump();
+        }
+    });
+    
+    // Отпускание тача (для высокого прыжка)
+    window.GameEvents.on('input_touch_end', () => {
+        PlayerState.isHolding = false;
+    });
+
+    function doJump() {
+        const cfg = window.GameConfig;
+        PlayerState.vy = cfg.PHYSICS.JUMP_FORCE;
+        PlayerState.isJumping = true;
+        PlayerState.isHolding = true;
+        window.GameEvents.emit('jump');
+    }
+
+    // === ЛОГИКА (ТИК 60 FPS) ===
+    window.GameEvents.on('tick', () => {
+        const cfg = window.GameConfig;
+        const gravity = cfg.PHYSICS.GRAVITY;
+        const holdThrust = cfg.PHYSICS.HOLD_THRUST;
+        const groundY = cfg.PHYSICS.GROUND_Y + (cfg.BACKGROUNDS[window.GameState?.background || 'default']?.offset || 0);
+        const floorY = groundY - PlayerState.h;
+
+        // 1. Обработка поедания (остановка физики)
+        if (PlayerState.isEating) {
+            PlayerState.eatTimer++;
+            const char = cfg.CHARACTERS[PlayerState.charId];
+            const totalFrames = char.eatDuration || 240;
             
-            // Загружаем персонажей
-            Object.values(cfg.CHARACTERS).forEach(char => {
-                this.walkFrames[char.id] = [];
-                for (let i = 1; i <= char.frameCount; i++) {
-                    const img = new Image();
-                    img.src = `${char.folder}/${i}.png`;
-                    this.walkFrames[char.id].push(img);
-                }
-                if (char.eatFolder && char.eatFrameCount) {
-                    this.eatFrames[char.id] = [];
-                    for (let i = 1; i <= char.eatFrameCount; i++) {
-                        const img = new Image();
-                        img.src = `${char.eatFolder}/${i}.png`;
-                        this.eatFrames[char.id].push(img);
-                    }
-                }
-            });
+            // Анимация поедания
+            const frames = window.GameAssets.eat[PlayerState.charId] || [];
+            if (frames.length > 0) {
+                const frameIdx = Math.min(frames.length - 1, Math.floor((PlayerState.eatTimer / totalFrames) * frames.length));
+                PlayerState.eatFrameIdx = frameIdx;
+            }
+            
+            // Стоим на месте
+            PlayerState.y = floorY;
+            PlayerState.vy = 0;
+            PlayerState.isJumping = false;
+            PlayerState.tilt = 0;
 
-            // Загружаем фоны
-            Object.values(cfg.BACKGROUNDS).forEach(bg => {
-                const day = new Image(); day.src = bg.dayImg;
-                const night = new Image(); night.src = bg.nightImg;
-                this.backgrounds[bg.id] = { day, night };
-            });
-
-            // Загружаем препятствия (день/ночь)
-            const obsList = ['puddle', 'rock', 'pit', 'barrel', 'cactus', 'explosion'];
-            obsList.forEach(obs => {
-                const day = new Image(); day.src = `source/${obs}.png`;
-                const night = new Image(); night.src = `source/${obs}_n.png`;
-                this.obstacles[obs] = { day, night };
-            });
-
-            console.log('✅ [Pack 0] Core config and assets initialized');
+            // Окончание еды
+            if (PlayerState.eatTimer >= totalFrames) {
+                PlayerState.isEating = false;
+                PlayerState.eatTimer = 0;
+                PlayerState.eatFrameIdx = 0;
+            }
+            return;
         }
+
+        // 2. Физика прыжка
+        if (PlayerState.isJumping) {
+            PlayerState.vy += gravity;
+            if (PlayerState.isHolding) {
+                PlayerState.vy -= holdThrust;
+            }
+            PlayerState.y += PlayerState.vy;
+
+            // Наклон в прыжке
+            PlayerState.tilt = PlayerState.vy * 0.025;
+            PlayerState.tilt = Math.max(-0.35, Math.min(0.35, PlayerState.tilt));
+
+            // Приземление
+            if (PlayerState.y >= floorY) {
+                PlayerState.y = floorY;
+                PlayerState.vy = 0;
+                PlayerState.isJumping = false;
+                PlayerState.tilt = 0;
+                window.GameEvents.emit('land');
+            }
+        } else {
+            // Покачивание при беге
+            PlayerState.y = floorY + Math.sin(Date.now() / 80) * 2.5;
+        }
+
+        // 3. Анимация бега (если не прыгаем и не едим)
+        if (!PlayerState.isJumping && !PlayerState.isEating) {
+            const frames = window.GameAssets.walk[PlayerState.charId] || [];
+            if (frames.length > 0) {
+                const speed = 0.1 + (window.WorldState?.speed || 4) * 0.02;
+                PlayerState.frame = (PlayerState.frame + speed) % frames.length;
+            }
+        }
+    });
+
+    // === РЕНДЕР (ВЫЗЫВАЕТСЯ КАЖДЫЙ КАДР) ===
+    window.GameEvents.on('render_frame', (e) => {
+        const ctx = e.ctx;
+        if (!ctx) return;
+
+        let img = null;
+        if (PlayerState.isEating) {
+            const eatFrames = window.GameAssets.eat[PlayerState.charId] || [];
+            if (eatFrames.length > 0) {
+                img = eatFrames[PlayerState.eatFrameIdx % eatFrames.length];
+            }
+        } else {
+            const walkFrames = window.GameAssets.walk[PlayerState.charId] || [];
+            if (walkFrames.length > 0) {
+                img = walkFrames[Math.floor(PlayerState.frame) % walkFrames.length];
+            }
+        }
+
+        if (img && img.complete) {
+            ctx.save();
+            
+            // Точка поворота — центр персонажа
+            const centerX = PlayerState.x + PlayerState.w / 2;
+            const centerY = PlayerState.y + PlayerState.h / 2;
+            
+            ctx.translate(centerX, centerY);
+            ctx.rotate(PlayerState.tilt);
+            
+            // Рисуем картинку с учётом возможного масштаба (если персонаж вырос)
+            ctx.drawImage(img, -PlayerState.w / 2, -PlayerState.h / 2, PlayerState.w, PlayerState.h);
+            
+            ctx.restore();
+        } else {
+            // Заглушка (красный прямоугольник)
+            ctx.fillStyle = 'red';
+            ctx.fillRect(PlayerState.x, PlayerState.y, PlayerState.w, PlayerState.h);
+        }
+    });
+
+    // Экспорт функции для запуска поедания (вызывается из pack2_world при сборе еды)
+    window.startEating = function() {
+        PlayerState.isEating = true;
+        PlayerState.eatTimer = 0;
+        PlayerState.eatFrameIdx = 0;
+        PlayerState.lastEatFrameTime = Date.now();
     };
 
-    // Запускаем инициализацию при загрузке скрипта
-    // Небольшая задержка, чтобы DOM успел прогрузиться
-    setTimeout(() => window.GameAssets.init(), 0);
-
-    // Утилита для выбора дня/ночи (используется во многих модулях)
-    window.getTimeImg = function(assetsPair, timeOfDay) {
-        if (!assetsPair) return null;
-        return timeOfDay === 'night' ? assetsPair.night : assetsPair.day;
-    };
-
+    console.log('%c🦖 [Pack 1] Player loaded', 'color:#00FF41;font-weight:bold');
 })();
