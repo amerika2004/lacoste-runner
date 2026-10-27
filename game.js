@@ -1,13 +1,10 @@
 /**
- * ==================================================================
  * LACOSTE RUNNER — CORE ENGINE & LOADER
- * Объединяет движок и систему загрузки модулей.
- * ==================================================================
  */
 (function() {
     'use strict';
 
-    // ======================= 1. EVENT BUS & CORE =======================
+    // 1. Шина событий
     window.GameEvents = {
         listeners: {},
         on: function(event, cb) {
@@ -24,6 +21,8 @@
     };
 
     window.PackUIs = [];
+    
+    // 2. Заглушка рендера (плагины перезапишут её)
     window.RenderEngine = {
         init: function(ref) { this.canvas = ref.current; this.ctx = this.canvas.getContext('2d'); },
         setQuality: function() {},
@@ -33,14 +32,14 @@
         render: function() {}
     };
 
-    // ======================= 2. LOADER =======================
+    // 3. Загрузчик плагинов
     function loadScript(src) {
         return new Promise((resolve) => {
             const s = document.createElement('script');
             s.src = src;
-            s.async = false; // Гарантирует порядок
+            s.async = false;
             s.onload = () => { console.log(`✅ Loaded: ${src}`); resolve(); };
-            s.onerror = () => { console.error(`❌ Failed: ${src}`); resolve(); }; // Не роняем загрузку
+            s.onerror = () => { console.error(`❌ Failed: ${src}`); resolve(); };
             document.body.appendChild(s);
         });
     }
@@ -52,7 +51,7 @@
             const data = await res.json();
             modules = data.modules || [];
         } catch (e) {
-            console.warn('manifest.json not found, using empty list.', e);
+            console.warn('manifest.json not found', e);
         }
 
         for (const src of modules) {
@@ -63,7 +62,7 @@
         bootReact();
     }
 
-    // ======================= 3. REACT ENGINE =======================
+    // 4. React-движок
     const { useState, useEffect, useRef } = React;
 
     function Game() {
@@ -75,7 +74,6 @@
             if (window.RenderEngine) window.RenderEngine.init(canvasRef);
         }, []);
 
-        // Главный цикл
         useEffect(() => {
             if (gameState === 'playing') {
                 const loop = () => {
@@ -93,7 +91,6 @@
             return () => cancelAnimationFrame(requestRef.current);
         }, [gameState]);
 
-        // Ввод
         useEffect(() => {
             const kd = (e) => window.GameEvents.emit('input_keydown', e);
             const ku = (e) => window.GameEvents.emit('input_keyup', e);
@@ -105,15 +102,15 @@
             };
         }, []);
 
-        // Встроенный UI (Гарантия запуска)
-        const BuiltInUI = ({ gameState, setGameState }) => {
+        // Встроенное меню (чтобы игра точно запустилась)
+        const BuiltInUI = () => {
             return React.createElement(React.Fragment, null,
                 gameState === 'menu' ? React.createElement('div', { className: 'menu-overlay' },
                     React.createElement('h1', { className: 'title' }, 'LACOSTE RUNNER'),
                     React.createElement('button', { className: 'btn btn-start', onClick: () => {
                         setGameState('playing');
                         window.GameEvents.emit('game_start', { character: 'crocodile', background: 'default' });
-                    }}, 'START (Built-in)')
+                    }}, 'START')
                 ) : null,
                 gameState === 'gameover' ? React.createElement('div', { className: 'menu-overlay' },
                     React.createElement('h1', { style: { color: 'red' } }, 'BUSTED'),
@@ -138,8 +135,7 @@
         root.render(React.createElement(Game));
     }
 
-    // ======================= 4. START =======================
-    // Запускаем загрузку. Если что-то пойдет не так — всё равно запустим React через 3 секунды.
+    // 5. Старт
     loadAll();
     
     setTimeout(() => {
