@@ -1,20 +1,16 @@
-/* ============================================================
-   js/loader.js — авто-загрузчик модулей
-   Читает js/manifest.json и подключает все pack*.js
-   по порядку. Гарантирует, что они исполняются ДО запуска игры.
-   ============================================================ */
 (function () {
     'use strict';
 
-    console.log('%c📦 Loader started', 'color:#00FFFF;font-weight:bold');
+    // Список всех UI-компонентов из пакетов
+    window.PackUIs = [];
 
     function loadScript(src) {
         return new Promise((resolve, reject) => {
             const s = document.createElement('script');
             s.src = src;
-            s.async = false;         // сохраняет порядок
-            s.onload = () => { console.log('%c✅ Loaded: ' + src, 'color:#00FF41'); resolve(); };
-            s.onerror = () => { console.error('%c❌ Failed: ' + src, 'color:#FF0000'); reject(new Error(src)); };
+            s.async = false; // сохраняет порядок
+            s.onload = () => { console.log('✅ Loaded: ' + src); resolve(); };
+            s.onerror = () => { console.error('❌ Failed: ' + src); reject(); };
             document.body.appendChild(s);
         });
     }
@@ -26,21 +22,18 @@
             const data = await res.json();
             modules = data.modules || [];
         } catch (e) {
-            console.warn('manifest.json not found — skipping modules.', e);
+            console.warn('manifest.json not found');
         }
 
         for (const src of modules) {
             await loadScript(src);
         }
 
-        // Все модули загружены. Теперь запускаем игру.
-        if (!window.__GAME_STARTED__) {
-            console.log('%c🚀 All modules ready, booting game...', 'color:#FFD700;font-weight:bold');
-            if (typeof window.__bootGame === 'function') {
-                window.__bootGame();
-            } else {
-                console.error('__bootGame() не найдена — game.js не загрузился?');
-            }
+        console.log('🚀 All modules ready');
+
+        // Принудительно перерисовываем React, чтобы подключить PackUIs
+        if (typeof window.__forceReactUpdate === 'function') {
+            window.__forceReactUpdate();
         }
     }
 
