@@ -839,4 +839,14 @@ function Game() {
 }
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
-root.render(React.createElement(Game));
+
+window.__bootGame = function () {
+    if (window.__GAME_STARTED__) return;
+    window.__GAME_STARTED__ = true;
+    root.render(React.createElement(Game));
+};
+
+// Если loader.js не подключён (например, старый index.html) — запускаем сразу.
+if (!window.__LOADER_ACTIVE__) {
+    window.__bootGame();
+}
