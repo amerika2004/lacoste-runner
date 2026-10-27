@@ -15,6 +15,8 @@
 
     window.GameEvents.on('game_start', (data) => {
         const cfg = window.GameConfig;
+        if (!cfg) return;
+
         const char = cfg.CHARACTERS[data.character] || cfg.CHARACTERS['crocodile'];
         const bg = cfg.BACKGROUNDS[data.background] || cfg.BACKGROUNDS['default'];
         
@@ -51,6 +53,8 @@
 
     window.GameEvents.on('tick', () => {
         const cfg = window.GameConfig;
+        if (!cfg) return;
+
         const groundY = cfg.PHYSICS.GROUND_Y + (cfg.BACKGROUNDS[window.GameState?.background || 'default']?.offset || 0);
         const floorY = groundY - PlayerState.h;
 
@@ -59,7 +63,8 @@
             PlayerState.y = floorY;
             PlayerState.vy = 0;
             PlayerState.isJumping = false;
-            if (PlayerState.eatTimer >= (cfg.CHARACTERS[PlayerState.charId].eatDuration || 240)) {
+            const char = cfg.CHARACTERS[PlayerState.charId];
+            if (PlayerState.eatTimer >= (char.eatDuration || 240)) {
                 PlayerState.isEating = false;
                 PlayerState.eatTimer = 0;
             }
@@ -85,19 +90,22 @@
         }
     });
 
-    // БЕЗОПАСНЫЙ РЕНДЕР
     window.GameEvents.on('render_frame', (e) => {
         const ctx = e.ctx;
         if (!ctx) return;
 
         let img = null;
         
-        // БЕЗОПАСНАЯ ПРОВЕРКА
-        if (window.GameAssets && window.GameAssets.walk && window.GameAssets.walk[PlayerState.charId]) {
-            const frames = window.GameAssets.walk[PlayerState.charId];
-            if (frames && frames.length > 0) {
-                img = frames[Math.floor(PlayerState.frame) % frames.length];
+        // МАКСИМАЛЬНО БЕЗОПАСНАЯ ПРОВЕРКА
+        try {
+            if (window.GameAssets && window.GameAssets.walk && window.GameAssets.walk[PlayerState.charId]) {
+                const frames = window.GameAssets.walk[PlayerState.charId];
+                if (frames && frames.length > 0) {
+                    img = frames[Math.floor(PlayerState.frame) % frames.length];
+                }
             }
+        } catch (err) {
+            console.error("Error accessing assets:", err);
         }
 
         if (img && img.complete) {
@@ -107,7 +115,7 @@
             ctx.drawImage(img, -PlayerState.w / 2, -PlayerState.h / 2, PlayerState.w, PlayerState.h);
             ctx.restore();
         } else {
-            // Заглушка, если картинки нет
+            // Заглушка
             ctx.fillStyle = 'red';
             ctx.fillRect(PlayerState.x, PlayerState.y, PlayerState.w, PlayerState.h);
         }
@@ -118,5 +126,5 @@
         PlayerState.eatTimer = 0;
     };
 
-    console.log('%c🦖 [Pack 1] Player loaded', 'color:#00FF41;font-weight:bold');
+    console.log('%c🦖 [Pack 1] Player loaded (Safe)', 'color:#00FF41;font-weight:bold');
 })();
