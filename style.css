@@ -4,6 +4,9 @@
     --gta-green: #00FF41;
     --gta-cyan: #00FFFF;
     --bg-color: #0b0c10;
+    --panel-bg: rgba(10, 8, 20, 0.92);
+    --panel-border: rgba(255, 0, 127, 0.6);
+    --panel-glow: rgba(255, 0, 127, 0.35);
 }
 
 body, html {
@@ -285,3 +288,316 @@ canvas {
 #btn-fullscreen { right: calc(10px + 8vmin + 20px + env(safe-area-inset-right, 0px)); }
 
 .game-btn:active { background: rgba(255, 0, 127, 0.3); }
+
+/* ==================================================================
+   >>> SETTINGS SCREEN (hi-tech GTA neon console) <<<
+   ================================================================== */
+.settings-overlay {
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.9);
+    z-index: 20;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 3%;
+    box-sizing: border-box;
+    animation: fadeIn 0.25s ease-out;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: scale(0.97); }
+    to   { opacity: 1; transform: scale(1); }
+}
+
+.settings-panel {
+    position: relative;
+    width: min(90%, 780px);
+    max-height: 95%;
+    overflow-y: auto;
+    background: var(--panel-bg);
+    border: 2px solid var(--panel-border);
+    border-radius: 14px;
+    box-shadow: 0 0 30px var(--panel-glow), inset 0 0 40px rgba(255, 0, 127, 0.05);
+    padding: clamp(14px, 3vmin, 28px) clamp(16px, 4vmin, 36px);
+    font-family: 'Bebas Neue', sans-serif;
+    color: white;
+    display: flex;
+    flex-direction: column;
+    gap: clamp(10px, 2vmin, 20px);
+}
+
+/* Decorative corner brackets */
+.settings-panel::before,
+.settings-panel::after {
+    content: '';
+    position: absolute;
+    width: 24px; height: 24px;
+    border: 2px solid var(--gta-cyan);
+    pointer-events: none;
+}
+.settings-panel::before {
+    top: 8px; left: 8px;
+    border-right: none;
+    border-bottom: none;
+}
+.settings-panel::after {
+    bottom: 8px; right: 8px;
+    border-left: none;
+    border-top: none;
+}
+
+.settings-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: clamp(6px, 1.5vmin, 12px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+    margin-bottom: clamp(4px, 1vmin, 8px);
+}
+
+.settings-title {
+    font-size: clamp(22px, 4vmin, 40px);
+    letter-spacing: 4px;
+    color: var(--gta-pink);
+    text-shadow: 0 0 12px rgba(255, 0, 127, 0.6);
+    text-transform: uppercase;
+}
+
+.settings-close {
+    background: transparent;
+    border: 2px solid var(--gta-cyan);
+    color: var(--gta-cyan);
+    width: clamp(32px, 5vmin, 44px);
+    height: clamp(32px, 5vmin, 44px);
+    border-radius: 8px;
+    font-size: clamp(16px, 3vmin, 22px);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    touch-action: manipulation;
+}
+.settings-close:hover, .settings-close:active {
+    background: var(--gta-cyan);
+    color: black;
+    box-shadow: 0 0 12px var(--gta-cyan);
+}
+
+.settings-section {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-left: 3px solid var(--gta-green);
+    border-radius: 8px;
+    padding: clamp(8px, 2vmin, 16px) clamp(10px, 2.5vmin, 20px);
+    display: flex;
+    flex-direction: column;
+    gap: clamp(8px, 1.6vmin, 14px);
+}
+
+.settings-section-title {
+    font-size: clamp(12px, 2vmin, 16px);
+    letter-spacing: 3px;
+    color: var(--gta-green);
+    text-transform: uppercase;
+    text-shadow: 0 0 6px rgba(0, 255, 65, 0.5);
+    margin-bottom: 2px;
+}
+
+/* Row: label + control */
+.setting-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: clamp(8px, 2vmin, 20px);
+    flex-wrap: wrap;
+}
+
+.setting-label {
+    font-size: clamp(12px, 2vmin, 18px);
+    letter-spacing: 2px;
+    color: white;
+    text-transform: uppercase;
+    flex: 1 1 auto;
+    min-width: 100px;
+}
+
+.setting-value {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: clamp(10px, 1.6vmin, 14px);
+    color: var(--gta-cyan);
+    min-width: 36px;
+    text-align: right;
+}
+
+/* Range slider */
+.setting-slider {
+    -webkit-appearance: none;
+    appearance: none;
+    width: clamp(120px, 30vmin, 240px);
+    height: 6px;
+    background: linear-gradient(90deg, var(--gta-pink) 0%, var(--gta-pink) var(--fill, 50%), rgba(255,255,255,0.1) var(--fill, 50%), rgba(255,255,255,0.1) 100%);
+    border-radius: 3px;
+    outline: none;
+    cursor: pointer;
+    touch-action: manipulation;
+}
+.setting-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: var(--gta-pink);
+    box-shadow: 0 0 10px var(--gta-pink);
+    border: 2px solid white;
+    cursor: pointer;
+}
+.setting-slider::-moz-range-thumb {
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: var(--gta-pink);
+    box-shadow: 0 0 10px var(--gta-pink);
+    border: 2px solid white;
+    cursor: pointer;
+}
+
+/* Toggle switch */
+.setting-toggle {
+    position: relative;
+    width: clamp(50px, 8vmin, 64px);
+    height: clamp(24px, 4vmin, 30px);
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 15px;
+    border: 2px solid rgba(255, 255, 255, 0.25);
+    cursor: pointer;
+    transition: all 0.25s;
+    padding: 0;
+    flex-shrink: 0;
+    touch-action: manipulation;
+}
+.setting-toggle::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 2px;
+    transform: translateY(-50%);
+    width: clamp(18px, 3vmin, 22px);
+    height: clamp(18px, 3vmin, 22px);
+    background: #bbb;
+    border-radius: 50%;
+    transition: all 0.25s;
+}
+.setting-toggle.on {
+    background: rgba(0, 255, 65, 0.2);
+    border-color: var(--gta-green);
+    box-shadow: 0 0 12px rgba(0, 255, 65, 0.5);
+}
+.setting-toggle.on::after {
+    left: calc(100% - clamp(18px, 3vmin, 22px) - 2px);
+    background: var(--gta-green);
+    box-shadow: 0 0 10px var(--gta-green);
+}
+
+/* Segmented control (Low / Med / High) */
+.segmented {
+    display: inline-flex;
+    border: 2px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    overflow: hidden;
+    flex-shrink: 0;
+}
+.segmented button {
+    background: transparent;
+    color: rgba(255, 255, 255, 0.6);
+    border: none;
+    padding: clamp(4px, 1vmin, 8px) clamp(10px, 2.5vmin, 18px);
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(11px, 1.8vmin, 15px);
+    letter-spacing: 1px;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-transform: uppercase;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+}
+.segmented button:hover {
+    color: white;
+    background: rgba(255, 255, 255, 0.08);
+}
+.segmented button.active {
+    background: var(--gta-pink);
+    color: white;
+    text-shadow: 0 0 6px rgba(0, 0, 0, 0.6);
+}
+
+/* Settings footer with reset */
+.settings-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding-top: clamp(4px, 1vmin, 8px);
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+    margin-top: clamp(4px, 1vmin, 8px);
+}
+
+.settings-hint {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: clamp(9px, 1.4vmin, 12px);
+    color: rgba(255, 255, 255, 0.4);
+    letter-spacing: 1px;
+}
+
+.settings-reset {
+    background: transparent;
+    border: 2px solid var(--gta-cyan);
+    color: var(--gta-cyan);
+    padding: clamp(4px, 1vmin, 8px) clamp(12px, 2.5vmin, 20px);
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(11px, 1.8vmin, 15px);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    cursor: pointer;
+    border-radius: 6px;
+    transition: all 0.2s;
+    touch-action: manipulation;
+}
+.settings-reset:hover, .settings-reset:active {
+    background: var(--gta-cyan);
+    color: black;
+    box-shadow: 0 0 12px var(--gta-cyan);
+}
+
+/* Gear icon button on menu */
+.settings-open-btn {
+    background: transparent;
+    border: 2px solid var(--gta-cyan);
+    color: var(--gta-cyan);
+    padding: clamp(4px, 1vmin, 8px) clamp(12px, 2.5vmin, 22px);
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: clamp(14px, 2.5vmin, 20px);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    cursor: pointer;
+    border-radius: 6px;
+    transition: all 0.2s;
+    touch-action: manipulation;
+    margin-bottom: clamp(8px, 2vmin, 15px);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+.settings-open-btn:hover, .settings-open-btn:active {
+    background: var(--gta-cyan);
+    color: black;
+    box-shadow: 0 0 15px var(--gta-cyan);
+}
+
+/* Small screens: make settings panel more compact */
+@media (max-height: 500px) {
+    .settings-panel { max-height: 98%; }
+    .settings-section { padding: 6px 10px; }
+    .settings-title { font-size: 20px; }
+}
