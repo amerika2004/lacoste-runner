@@ -16,7 +16,8 @@ const DEFAULT_SETTINGS = {
     emojiStyle: 'apple',
     comboEnabled: true,
 };
-// >>> GLOBAL EVENT BUS (для модулей)
+
+// ======================= EVENT BUS =======================
 window.GameEvents = {
     listeners: {},
     on(event, callback) {
@@ -31,19 +32,10 @@ window.GameEvents = {
         }
     }
 };
+window.PackUIs = window.PackUIs || [];
+
 // ======================= RENDER ENGINE =======================
 const RenderEngine = (function () {
-    // >>> PACK 2 hooks (заполняется из js/pack2.js)
-window.Pack2Hooks = window.Pack2Hooks || {
-    onGameStart: null,
-    onGameOver: null,
-    onTick: null,
-    onFoodEaten: null,
-    onObstacleHit: null,
-    onBarrelHit: null,
-    onPitFall: null,
-    drawWeather: null,
-};
     const QUALITY = {
         low:    { parallax: false, bloom: false, particles: false, shake: false, trail: false, vignette: false, flash: false, maxParticles: 0 },
         medium: { parallax: true,  bloom: false, particles: true,  shake: true,  trail: false, vignette: false, flash: true,  maxParticles: 200 },
@@ -68,7 +60,6 @@ window.Pack2Hooks = window.Pack2Hooks || {
             ctx.save();
             ctx.translate(shakeX, shakeY);
 
-            // 1. BACKGROUND (parallax)
             const { bg } = scene;
             if (bg.img && bg.img.complete && bg.img.naturalWidth > 0) {
                 const scale = H / bg.img.naturalHeight;
@@ -85,17 +76,14 @@ window.Pack2Hooks = window.Pack2Hooks || {
                 for (let i = offset; i < W; i += exactWidth) ctx.drawImage(bg.img, i, 0, exactWidth, H);
             } else { ctx.fillStyle = bg.fallbackColor; ctx.fillRect(0, 0, W, H); }
 
-            // 2. PIT OVERLAY
             if (scene.pitOverlay && scene.pitOverlay.img && scene.pitOverlay.img.complete) {
                 ctx.drawImage(scene.pitOverlay.img, scene.pitOverlay.x, scene.pitOverlay.y, scene.pitOverlay.w, scene.pitOverlay.h);
             }
 
-            // 3. TRAIL
             if (config.trail) {
                 state.trail.forEach(t => { const a = (t.life / t.maxLife) * 0.4; ctx.save(); ctx.globalAlpha = a; ctx.drawImage(t.img, t.x, t.y, t.w, t.h); ctx.restore(); });
             }
 
-            // 4. PLAYER
             const p = scene.player;
             if (p.img && p.img.complete && p.img.naturalWidth > 0) {
                 ctx.save();
@@ -122,7 +110,6 @@ window.Pack2Hooks = window.Pack2Hooks || {
                 ctx.restore();
             } else { ctx.fillStyle = 'red'; ctx.fillRect(p.x, p.y, p.w, p.h); }
 
-            // 5. FOOD (with colored glow for special types)
             ctx.save();
             ctx.globalAlpha = 1.0;
             ctx.textBaseline = 'bottom';
@@ -139,7 +126,6 @@ window.Pack2Hooks = window.Pack2Hooks || {
             ctx.shadowBlur = 0;
             ctx.restore();
 
-            // 6. OBSTACLES
             const { images, pickImg } = scene;
             scene.obstacles.forEach(obs => {
                 if (scene.isPitDeath && scene.pitTarget === obs) return;
@@ -153,7 +139,6 @@ window.Pack2Hooks = window.Pack2Hooks || {
                 else { ctx.fillStyle = fallback; ctx.fillRect(obs.x, obs.y, obs.w, obs.h); }
             });
 
-            // 7. EXPLOSIONS
             scene.explosions.forEach(expl => {
                 const progress = expl.timer / expl.maxTimer;
                 const scale = 1 + progress * 0.5;
@@ -170,7 +155,6 @@ window.Pack2Hooks = window.Pack2Hooks || {
                 }
             });
 
-            // 8. PARTICLES
             if (config.particles) {
                 if (!state.cache.particleSprite) state.cache.particleSprite = makeParticleSprite();
                 const sprite = state.cache.particleSprite;
@@ -185,7 +169,6 @@ window.Pack2Hooks = window.Pack2Hooks || {
                 });
             }
 
-            // 9. BLOOM
             if (config.bloom) {
                 ctx.save();
                 ctx.globalCompositeOperation = 'lighter';
@@ -201,19 +184,16 @@ window.Pack2Hooks = window.Pack2Hooks || {
                 ctx.restore();
             }
 
-            // 10. VIGNETTE
             if (config.vignette) {
                 if (!state.cache.vignetteCanvas || state.cache.vignetteCanvas.width !== W) state.cache.vignetteCanvas = makeVignette(W, H);
                 ctx.drawImage(state.cache.vignetteCanvas, 0, 0);
             }
 
-            // 11. FLASH
             if (state.flashAlpha > 0) {
                 ctx.fillStyle = `rgba(${state.flashColor},${state.flashAlpha})`;
                 ctx.fillRect(0, 0, W, H);
             }
 
-            // 12. DEATH FADE
             if (scene.deathFade != null) {
                 ctx.fillStyle = `rgba(0,0,0,${scene.deathFade})`;
                 ctx.fillRect(0, 0, W, H);
@@ -248,6 +228,20 @@ function pickFoodType() {
     return 'normal';
 }
 
+// ======================= UNIVERSAL UI WRAPPER =======================
+function AllPacksUI({ gameState }) {
+    const [uis, setUis] = React.useState([...window.PackUIs]);
+    React.useEffect(() => {
+        const id = setInterval(() => {
+            if (uis.length !== window.PackUIs.length) setUis([...window.PackUIs]);
+        }, 500);
+        return () => clearInterval(id);
+    }, [uis.length]);
+    return React.createElement(React.Fragment, null,
+        uis.map((UI, i) => React.createElement(UI, { key: i, gameState }))
+    );
+}
+
 function Game() {
     const [gameState, setGameState] = useState('menu');
     const [timeOfDay, setTimeOfDay] = useState(() => localStorage.getItem('lacosteTimeOfDay') || 'day');
@@ -258,9 +252,13 @@ function Game() {
     const [powerDisplay, setPowerDisplay] = useState(1.0);
     const [health, setHealth] = useState(6);
     const [highScore, setHighScore] = useState(() => parseInt(localStorage.getItem('lacosteHighScore')) || 0);
-    const [comboDisplay, setComboDisplay] = useState({ mult: 1, count: 0 });
 
-    const [settings, setSettings] = useState(() => { try { const s = JSON.parse(localStorage.getItem('lacosteSettings') || '{}'); return { ...DEFAULT_SETTINGS, ...s }; } catch { return { ...DEFAULT_SETTINGS }; } });
+    const [settings, setSettings] = useState(() => {
+        try {
+            const s = JSON.parse(localStorage.getItem('lacosteSettings') || '{}');
+            return { ...DEFAULT_SETTINGS, ...s, comboEnabled: s.comboEnabled !== false };
+        } catch { return { ...DEFAULT_SETTINGS }; }
+    });
     const [showSettings, setShowSettings] = useState(false);
 
     useEffect(() => {
@@ -281,7 +279,6 @@ function Game() {
     useEffect(() => { timeOfDayRef.current = timeOfDay; localStorage.setItem('lacosteTimeOfDay', timeOfDay); }, [timeOfDay]);
     useEffect(() => { backgroundRef.current = background; localStorage.setItem('lacosteBackground', background); const bg = BACKGROUNDS[background] || BACKGROUNDS.default; groundYRef.current = GROUND_Y + (bg.groundOffset || 0); }, [background]);
 
-    // Frames
     const walkFramesRef = useRef([]); const currentFrameRef = useRef(0); const lastFrameTimeRef = useRef(0);
     const eatFramesRef = useRef([]); const eatFrameIdxRef = useRef(0); const isEatingRef = useRef(false); const eatTimerRef = useRef(0); const eatSpeedFactorRef = useRef(1.0);
 
@@ -294,30 +291,29 @@ function Game() {
         if (char.eatFolder && char.eatFrameCount) { for (let i = 1; i <= char.eatFrameCount; i++) { const img = new Image(); img.src = `${char.eatFolder}/${i}.png`; eatFramesRef.current.push(img); } }
     }, [character]);
 
-    // Audio
+    // Audio (engine + ambient)
     const pitAudioRef = useRef(null); const pitAudioEndedRef = useRef(false);
-    const barrelAudioRef = useRef(null); const splashAudioRef = useRef(null); const jumpAudioRef = useRef(null);
+    const barrelAudioRef = useRef(null); const splashAudioRef = useRef(null);
     const nightAmbientRef = useRef(null); const dayAmbientRef = useRef(null);
 
     useEffect(() => {
         const pitAudio = new Audio('source/sounds/fall_in_pit.wav'); pitAudio.preload = 'auto'; pitAudioRef.current = pitAudio;
         const barrelAudio = new Audio('source/sounds/barrel_explosion.wav'); barrelAudio.preload = 'auto'; barrelAudioRef.current = barrelAudio;
         const splashAudio = new Audio('source/sounds/splash.wav'); splashAudio.preload = 'auto'; splashAudio.playbackRate = 1.2; splashAudioRef.current = splashAudio;
-        const jumpAudio = new Audio('source/sounds/jump.wav'); jumpAudio.preload = 'auto'; jumpAudioRef.current = jumpAudio;
         const nightAmbient = new Audio('source/sounds/night_forest.mp3'); nightAmbient.loop = true; nightAmbient.preload = 'auto'; nightAmbientRef.current = nightAmbient;
         const dayAmbient = new Audio('source/sounds/forest_day.wav'); dayAmbient.loop = true; dayAmbient.preload = 'auto'; dayAmbientRef.current = dayAmbient;
-        return () => { pitAudio.pause(); pitAudio.src = ''; barrelAudio.pause(); barrelAudio.src = ''; splashAudio.pause(); splashAudio.src = ''; jumpAudio.pause(); jumpAudio.src = ''; nightAmbient.pause(); nightAmbient.src = ''; dayAmbient.pause(); dayAmbient.src = ''; };
+        return () => { pitAudio.pause(); pitAudio.src = ''; barrelAudio.pause(); barrelAudio.src = ''; splashAudio.pause(); splashAudio.src = ''; nightAmbient.pause(); nightAmbient.src = ''; dayAmbient.pause(); dayAmbient.src = ''; };
     }, []);
 
     useEffect(() => {
         const s = settings;
-        [pitAudioRef, barrelAudioRef, splashAudioRef, jumpAudioRef].forEach(ref => { if (ref.current) ref.current.volume = s.soundEnabled ? s.sfxVolume * s.masterVolume : 0; });
+        [pitAudioRef, barrelAudioRef, splashAudioRef].forEach(ref => { if (ref.current) ref.current.volume = s.soundEnabled ? s.sfxVolume * s.masterVolume : 0; });
         [nightAmbientRef, dayAmbientRef].forEach(ref => { if (ref.current) ref.current.volume = s.soundEnabled ? s.ambientVolume * s.masterVolume : 0; });
     }, [settings]);
 
     useEffect(() => {
         const isPaused = gameState === 'paused' || showSettings || gameState === 'menu' || gameState === 'gameover';
-        if (isPaused) { if (pitAudioRef.current) pitAudioRef.current.pause(); if (barrelAudioRef.current) barrelAudioRef.current.pause(); if (splashAudioRef.current) splashAudioRef.current.pause(); if (jumpAudioRef.current) jumpAudioRef.current.pause(); if (nightAmbientRef.current) nightAmbientRef.current.pause(); if (dayAmbientRef.current) dayAmbientRef.current.pause(); }
+        if (isPaused) { if (pitAudioRef.current) pitAudioRef.current.pause(); if (barrelAudioRef.current) barrelAudioRef.current.pause(); if (splashAudioRef.current) splashAudioRef.current.pause(); if (nightAmbientRef.current) nightAmbientRef.current.pause(); if (dayAmbientRef.current) dayAmbientRef.current.pause(); }
         else if (settingsRef.current.soundEnabled && gameState === 'playing') { if (timeOfDayRef.current === 'night' && nightAmbientRef.current) nightAmbientRef.current.play().catch(() => {}); else if (timeOfDayRef.current === 'day' && dayAmbientRef.current) dayAmbientRef.current.play().catch(() => {}); }
     }, [gameState, showSettings]);
 
@@ -327,7 +323,6 @@ function Game() {
         return () => { window.removeEventListener('pointerdown', tryPlay); window.removeEventListener('keydown', tryPlay); };
     }, []);
 
-    // Game refs
     const initChar = CHARACTERS[character] || CHARACTERS.crocodile;
     const initGroundY = GROUND_Y + (BACKGROUNDS[background]?.groundOffset || 0);
     const playerRef = useRef({ x: 100, y: initGroundY - initChar.baseHeight, width: initChar.baseWidth, height: initChar.baseHeight, velocityY: 0, isJumping: false, isHoldingJump: false, jumpMult: 1.0, tilt: 0, bob: 0, foodEaten: 0, foodTarget: 1 });
@@ -337,9 +332,7 @@ function Game() {
     const isBarrelTripRef = useRef(false); const pendingBarrelDamageRef = useRef(false); const isBarrelFlyingRef = useRef(false); const barrelFlyVelocityYRef = useRef(0);
     const isFallingIntoPitRef = useRef(false); const pitTargetRef = useRef(null); const pitFallTimerRef = useRef(0); const pitVelocityRef = useRef(0);
     const isPitDeathDelayRef = useRef(false); const pitDeathDelayTimerRef = useRef(0);
-    const comboRef = useRef(0); const comboMultRef = useRef(1);
 
-    // Images
     const puddleImg = useRef(new Image()); const puddleNightImg = useRef(new Image());
     const rockImg = useRef(new Image()); const rockNightImg = useRef(new Image());
     const pitImg = useRef(new Image()); const pitNightImg = useRef(new Image());
@@ -354,27 +347,16 @@ function Game() {
     const calculateJumpMultiplier = (playerHeight, gameSpeed, penalty = 1.0) => { const char = CHARACTERS[character] || CHARACTERS.crocodile; const sizeFactor = Math.sqrt(playerHeight / char.baseHeight); const speedFactor = 1 + (gameSpeed - 1) * 0.10; return Math.max(1.0, sizeFactor * speedFactor * penalty); };
     const toggleFullscreen = () => { if (!document.fullscreenElement) { document.documentElement.requestFullscreen().catch((err) => console.warn("Fullscreen error:", err)); if (screen.orientation && screen.orientation.lock) { screen.orientation.lock('landscape').catch((err) => console.warn("Orientation lock error:", err)); } } else { if (document.exitFullscreen) document.exitFullscreen(); } };
 
-    const resetCombo = () => { comboRef.current = 0; comboMultRef.current = 1; setComboDisplay({ mult: 1, count: 0 }); };
-    const addCombo = () => {
-        if (!settingsRef.current.comboEnabled) return;
-        comboRef.current++;
-        let mult = 1;
-        if (comboRef.current >= 8) mult = 5;
-        else if (comboRef.current >= 5) mult = 3;
-        else if (comboRef.current >= 3) mult = 2;
-        comboMultRef.current = mult;
-        setComboDisplay({ mult, count: comboRef.current });
-    };
-
     const doJump = (p) => {
         if (p.isJumping || isTrippingRef.current || isFallingIntoPitRef.current || isPitDeathDelayRef.current || isBarrelFlyingRef.current || isEatingRef.current) return;
         const baseMult = 1.0 + Math.floor(distanceRef.current / 100) * 0.04;
         p.jumpMult = calculateJumpMultiplier(p.height, baseMult, speedPenaltyRef.current);
         p.velocityY = JUMP_FORCE * p.jumpMult;
         p.isJumping = true; p.isHoldingJump = true;
-        addCombo();
-        if (jumpAudioRef.current && settingsRef.current.soundEnabled) { jumpAudioRef.current.currentTime = 0; jumpAudioRef.current.play().catch(() => {}); }
-        if (navigator.vibrate) navigator.vibrate(15);
+        
+        // >>> Отправляем событие прыжка (Pack 1 добавит комбо, звук, вибрацию)
+        window.GameEvents.emit('jump');
+        
         RenderEngine.spawnParticles(p.x + p.width / 2, p.y + p.height, 6, { colors: ['#FFFFFF', '#AAAAAA'], speed: 2, life: 20, size: 2, gravity: 0.1 });
     };
 
@@ -394,8 +376,7 @@ function Game() {
         canvas.addEventListener('touchstart', handleTouchStart, { passive: false }); canvas.addEventListener('touchend', handleTouchEnd, { passive: false }); canvas.addEventListener('touchcancel', handleTouchEnd, { passive: false });
         return () => { canvas.removeEventListener('touchstart', handleTouchStart); canvas.removeEventListener('touchend', handleTouchEnd); canvas.removeEventListener('touchcancel', handleTouchEnd); };
     }, [gameState, character]);
-
-    const resetGame = () => {
+        const resetGame = () => {
         const char = CHARACTERS[character] || CHARACTERS.crocodile; const gy = groundYRef.current;
         playerRef.current = { x: 100, y: gy - char.baseHeight, width: char.baseWidth, height: char.baseHeight, velocityY: 0, isJumping: false, isHoldingJump: false, jumpMult: 1.0, tilt: 0, bob: 0, foodEaten: 0, foodTarget: 1 };
         obstaclesRef.current = []; foodsRef.current = []; explosionsRef.current = [];
@@ -405,42 +386,52 @@ function Game() {
         isFallingIntoPitRef.current = false; pitTargetRef.current = null; pitFallTimerRef.current = 0; pitVelocityRef.current = 0;
         isPitDeathDelayRef.current = false; pitDeathDelayTimerRef.current = 0;
         isEatingRef.current = false; eatTimerRef.current = 0; eatFrameIdxRef.current = 0; eatSpeedFactorRef.current = 1.0;
-        resetCombo();
+        
         pitAudioEndedRef.current = false; if (pitAudioRef.current) { pitAudioRef.current.pause(); pitAudioRef.current.currentTime = 0; }
         RenderEngine.reset(); setScore(0); setSpeedDisplay(1.0); setPowerDisplay(1.0); setGameState('playing');
+
+        // >>> PACK EVENTS: старт
         window.GameEvents.emit('start', {
-            character: CHARACTERS[character],
-            background: BACKGROUNDS[background],
-            timeOfDay
+            character, background, timeOfDay,
+            settings: settingsRef.current
         });
     };
 
-    const handleGameOver = () => { RenderEngine.reset(); if (pitAudioRef.current) pitAudioRef.current.pause(); setGameState('gameover'); if (Math.floor(distanceRef.current) > highScore) { const newHigh = Math.floor(distanceRef.current); setHighScore(newHigh); localStorage.setItem('lacosteHighScore', newHigh); }         // >>> PACK 2: смерть — статистика
+    const handleGameOver = () => { 
+        RenderEngine.reset(); 
+        if (pitAudioRef.current) pitAudioRef.current.pause(); 
+        setGameState('gameover'); 
+        if (Math.floor(distanceRef.current) > highScore) { 
+            const newHigh = Math.floor(distanceRef.current); 
+            setHighScore(newHigh); localStorage.setItem('lacosteHighScore', newHigh); 
+        }
+        
+        // >>> PACK EVENTS: смерть
         window.GameEvents.emit('gameover', {
             distance: Math.floor(distanceRef.current),
             score: Math.floor(distanceRef.current),
             health: healthRef.current,
-            character: character,
-            background: background,
-            timeOfDay: timeOfDay,
+            character, background, timeOfDay,
             foodEaten: playerRef.current.foodEaten,
-            combo: comboRef.current
-        }); 
+        });
     };
 
     const handleHit = (index, type) => {
         if (isTrippingRef.current) return;
         obstaclesRef.current.splice(index, 1); healthRef.current -= 1; setHealth(healthRef.current);
         if (type === 'puddle' && splashAudioRef.current && settingsRef.current.soundEnabled) { splashAudioRef.current.currentTime = 0; splashAudioRef.current.playbackRate = 1.2; splashAudioRef.current.play().catch(() => {}); }
-        RenderEngine.flash('255,0,0', 0.4); RenderEngine.shake(6, 12);
-        RenderEngine.spawnParticles(playerRef.current.x + playerRef.current.width / 2, playerRef.current.y + playerRef.current.height / 2, 15, { colors: ['#FF007F', '#FFFFFF'], speed: 4, life: 25, size: 3, gravity: 0.15 });
-        resetCombo();
-        if (navigator.vibrate) navigator.vibrate([30, 50, 30]);
+        
+        // >>> PACK EVENTS: удар
+        window.GameEvents.emit('hit', {
+            playerX: playerRef.current.x + playerRef.current.width / 2,
+            playerY: playerRef.current.y + playerRef.current.height / 2,
+            type
+        });
+
         if (healthRef.current <= 0) { handleGameOver(); return; }
         isTrippingRef.current = true; tripTimerRef.current = 0; isBarrelTripRef.current = false;
         const p = playerRef.current; p.y = groundYRef.current - p.height; p.velocityY = 0; p.isJumping = false; p.tilt = 0;
         speedPenaltyRef.current = speedPenaltyRef.current * 0.65;
-        window.GameEvents.emit('hit', { type, index });
     };
 
     const handleBarrelHit = (index) => {
@@ -451,12 +442,13 @@ function Game() {
         if (barrelAudioRef.current && settingsRef.current.soundEnabled) { barrelAudioRef.current.currentTime = 0; barrelAudioRef.current.play().catch(() => {}); }
         RenderEngine.spawnParticles(obs.x + obs.width / 2, obs.y + obs.height / 2, 30, { colors: ['#FF007F', '#FFD700', '#FFAA00', '#FFFFFF'], speed: 8, life: 40, size: 5, gravity: 0.2, shape: 'circle' });
         RenderEngine.shake(12, 20); RenderEngine.flash('255,150,0', 0.3);
-        resetCombo();
-        if (navigator.vibrate) navigator.vibrate([40, 60, 40]);
+        
+        // >>> PACK EVENTS: взрыв бочки
+        window.GameEvents.emit('barrel_hit');
+
         obstaclesRef.current.splice(index, 1); obstaclesRef.current = obstaclesRef.current.filter(o => (o.x + o.width) > p.x && o.x < canvas.width); foodsRef.current = foodsRef.current.filter(f => f.x < canvas.width);
         spawnCooldownRef.current = 90; spawnTimerRef.current = 0; isBarrelFlyingRef.current = true; isBarrelTripRef.current = true; barrelFlyVelocityYRef.current = -20;
         p.velocityY = 0; p.isJumping = false; p.isHoldingJump = false; p.tilt = 0;
-        window.GameEvents.emit('hit', { type, index });
     };
 
     const updateLogic = () => {
@@ -518,7 +510,12 @@ function Game() {
         if (!isTrippingRef.current) {
             currentSpeed = BASE_SPEED * effectiveSpeedMult * diffMult * eatSpeedFactorRef.current;
             setSpeedDisplay((effectiveSpeedMult * diffMult * eatSpeedFactorRef.current).toFixed(2));
-            distanceRef.current += (currentSpeed * 0.03 * comboMultRef.current);
+            
+            // Множитель комбо приходит из Пакета 1
+            let comboMult = 1;
+            if (window.Pack1State && window.Pack1State.comboMult) comboMult = window.Pack1State.comboMult;
+            
+            distanceRef.current += (currentSpeed * 0.03 * comboMult);
             setScore(Math.floor(distanceRef.current)); bgOffsetRef.current -= currentSpeed;
         } else setSpeedDisplay("0.00");
 
@@ -608,25 +605,30 @@ function Game() {
                 else if (food.type === 'poison') { speedPenaltyRef.current = speedPenaltyRef.current * 0.9; RenderEngine.spawnParticles(food.x + 20, food.y + 20, 15, { colors: ['#8B00FF', '#FF007F'], speed: 5, life: 30, size: 4 }); }
                 else { p.foodEaten++; if (p.foodEaten >= p.foodTarget) { p.width += 2; p.height += 1.3; p.y = gy - p.height; p.foodEaten = 0; p.foodTarget = p.foodTarget + 1; healthRef.current = Math.min(6, healthRef.current + 1); setHealth(healthRef.current); RenderEngine.spawnParticles(p.x + p.width / 2, p.y + p.height / 2, 12, { colors: ['#FFD700', '#FFFFFF'], speed: 3, life: 30, size: 3, gravity: 0.1 }); } }
                 if (isEatTrigger) { isEatingRef.current = true; eatTimerRef.current = 0; eatFrameIdxRef.current = 0; p.y = gy - p.height; p.velocityY = 0; p.isJumping = false; p.isHoldingJump = false; p.tilt = 0; p.bob = 0; }
+                
+                // >>> PACK EVENTS: еда съедена
+                window.GameEvents.emit('eat', { type: food.type, emoji: food.emoji });
                 return false;
             }
             return true;
         });
-            window.GameEvents.emit('tick', {
-                distance: distanceRef.current,
-                speed: currentSpeed,
-                health: healthRef.current,
-                score: Math.floor(distanceRef.current),
-                obstacles: obstaclesRef.current,
-                foods: foodsRef.current,
-                player: playerRef.current,
-                groundY: gy,
-                settings: settingsRef.current,
-                combo: comboRef.current,
-                foodEaten: playerRef.current.foodEaten
-            });
+
+        // >>> PACK EVENTS: тик
+        window.GameEvents.emit('tick', {
+            distance: distanceRef.current,
+            speed: currentSpeed,
+            health: healthRef.current,
+            score: Math.floor(distanceRef.current),
+            obstacles: obstaclesRef.current,
+            foods: foodsRef.current,
+            player: playerRef.current,
+            groundY: gy,
+            settings: settingsRef.current,
+            foodEaten: playerRef.current.foodEaten
+        });
     };
-        const describeScene = () => {
+
+    const describeScene = () => {
         const char = CHARACTERS[character] || CHARACTERS.crocodile;
         const gy = groundYRef.current;
         const bgConfig = BACKGROUNDS[backgroundRef.current] || BACKGROUNDS.default;
@@ -706,8 +708,7 @@ function Game() {
                 React.createElement('span', { style: {color: '#FFD700'} }, `PWR x${powerDisplay}`),
                 React.createElement('span', { style: {color: '#FF00FF'} }, `${speedDisplay === 'REVERSE' ? '◄◄ REV' : `SPD x${speedDisplay}`}`),
                 React.createElement('span', null, `HI ${formatScore(highScore)}  ${formatScore(score)}m`)
-            ),
-            comboDisplay.mult > 1 ? React.createElement('div', { key: comboDisplay.count, className: `combo-indicator combo-x${comboDisplay.mult}` }, `COMBO x${comboDisplay.mult}  ${comboDisplay.count}`) : null
+            )
         ) : null,
 
         React.createElement('canvas', { ref: canvasRef, width: 1200, height: 600 }),
@@ -718,7 +719,6 @@ function Game() {
         ) : null,
 
         gameState === 'menu' ? React.createElement('div', { className: 'menu-overlay' },
-            // CELESTIAL DECOR
             React.createElement('div', { className: `celestial-sun ${timeOfDay === 'day' ? 'visible' : ''}` },
                 React.createElement('div', { className: 'sun-rays' }),
                 React.createElement('div', { className: 'sun-core' })
@@ -842,42 +842,11 @@ function Game() {
                 )
             )
         ),
-// >>> СЛОЙ ДЛЯ ВСЕХ UI ПАКЕТОВ
-window.GameEvents.emit('ui-mount', { gameState })
+
+        // >>> УНИВЕРСАЛЬНЫЙ СЛОЙ ДЛЯ ВСЕХ UI ПАКЕТОВ
+        React.createElement(AllPacksUI, { gameState })
     );
 }
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
-
-window.__bootGame = function () {
-    if (window.__GAME_STARTED__) return;
-    window.__GAME_STARTED__ = true;
-    root.render(React.createElement(Game));
-    // >>> УНИВЕРСАЛЬНЫЙ КОМПОНЕНТ ДЛЯ ВСЕХ UI ПАКЕТОВ
-function AllPacksUI({ gameState }) {
-    const [uis, setUis] = React.useState([...window.PackUIs]);
-
-    useEffect(() => {
-        // Как только loader.js загрузит пакеты, они добавятся в массив
-        const id = setInterval(() => {
-            if (uis.length !== window.PackUIs.length) {
-                setUis([...window.PackUIs]);
-            }
-        }, 500);
-        return () => clearInterval(id);
-    }, [uis.length]);
-
-    return React.createElement(React.Fragment, null,
-        uis.map((UI, i) => React.createElement(UI, { key: i, gameState }))
-    );
-}
-
-// ...
-// В твоём главном JSX добавь ОДИН элемент:
-// React.createElement(AllPacksUI, { gameState })
-};
-
-// Если loader.js не подключён (например, старый index.html) — запускаем сразу.
-if (!window.__LOADER_ACTIVE__) {
-    window.__bootGame();
-}
+root.render(React.createElement(Game));
