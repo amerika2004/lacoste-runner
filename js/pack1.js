@@ -326,7 +326,6 @@
         return React.createElement('div', {
             key: display.count, 
             className: `combo-indicator combo-x${display.mult}`,
-            style: { color: tierColor, textShadow: `0 0 10px ${tierColor}, 2px 2px 0 #000` }
         }, `COMBO x${display.mult}  [${display.count}]`);
     }
 
