@@ -1431,22 +1431,15 @@ function Game() {
     );
 }
 
-// === ЗАПУСК С ОЖИДАНИЕМ ПЛАГИНОВ ===
 const root = ReactDOM.createRoot(document.getElementById('root'));
 
-function boot() {
-    if (window.__BOOTED__) return;
-    window.__BOOTED__ = true;
-    console.log('%c🎮 Booting React...', 'color:#FF007F;font-weight:bold');
+window.__bootGame = function () {
+    if (window.__GAME_STARTED__) return;
+    window.__GAME_STARTED__ = true;
     root.render(React.createElement(Game));
+};
+
+// Если loader.js не подключён (например, старый index.html) — запускаем сразу.
+if (!window.__LOADER_ACTIVE__) {
+    window.__bootGame();
 }
-
-window.GameBoot.onReady(boot);
-
-// Фоллбэк: если loader.js не подключён — стартуем через 3 секунды
-setTimeout(() => {
-    if (!window.__BOOTED__) {
-        console.warn('⚠️ Loader timeout — booting without plugins');
-        window.GameBoot.trigger();
-    }
-}, 3000);
