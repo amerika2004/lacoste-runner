@@ -1,5 +1,5 @@
 {
   "modules": [
-    "js/plugins/all_in_one.js"
+    "js/pack1.js"
   ]
 }
