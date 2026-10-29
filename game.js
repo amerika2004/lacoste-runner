@@ -982,7 +982,11 @@ function Game() {
             p.velocityY += GRAVITY; if (p.isHoldingJump) p.velocityY -= HOLD_THRUST * p.jumpMult;
             p.y += p.velocityY; p.tilt = p.velocityY * 0.025; p.tilt = Math.max(-0.35, Math.min(0.35, p.tilt)); 
             if (p.y <= 0) { p.y = 0; if (p.velocityY < 0) p.velocityY = 0; }
-            if (p.y >= gy - p.height) { p.y = gy - p.height; p.velocityY = 0; p.isJumping = false; p.tilt = 0; }
+            if (p.y >= gy - p.height) { 
+                p.y = gy - p.height; p.velocityY = 0; p.isJumping = false; p.tilt = 0; 
+                // Отправляем событие приземления для плагина
+                window.GameEvents.emit('land', { x: p.x + p.width / 2, y: p.y + p.height });
+            }
         } else if (!isTrippingRef.current) {
             p.bob = Math.sin(Date.now() / 80) * 2.5; p.tilt = 0;
         }
