@@ -16,7 +16,7 @@
         hasShield: false,
         currentWeather: 'clear',
         lastWeatherChange: 0,
-        weatherParticles: [], // Для дождя
+        weatherParticles: [], 
         lightningTimer: 0,
         lightningActive: false,
         musicAudios: [],
@@ -31,23 +31,19 @@
 
     // === АУДИО ===
     function initAudio() {
-        // Звуки паверапов
         for (const [key, data] of Object.entries(P2_CONFIG.powerups.types)) {
             if (data.sound && !Pack2State.powerupAudios[key]) {
                 const a = new Audio(data.sound); a.preload = 'auto'; Pack2State.powerupAudios[key] = a;
             }
         }
-        // Погода
         if (!Pack2State.rainAudio) { Pack2State.rainAudio = new Audio('source/sounds/rain_loop.mp3'); Pack2State.rainAudio.loop = true; Pack2State.rainAudio.preload = 'auto'; }
         if (!Pack2State.thunderAudio) { Pack2State.thunderAudio = new Audio('source/sounds/thunder.wav'); Pack2State.thunderAudio.preload = 'auto'; }
         
-        // Музыка (слои)
         if (Pack2State.musicAudios.length === 0 && P2_CONFIG.music.layers.length > 0) {
-            P2_CONFIG.music.layers.forEach((layer, index) => {
+            P2_CONFIG.music.layers.forEach((layer) => {
                 const a = new Audio(layer.file);
                 a.loop = true;
                 a.preload = 'auto';
-                // Начинаем играть сразу, но глушим громкость
                 a.volume = 0; 
                 Pack2State.musicAudios.push(a);
             });
@@ -72,14 +68,13 @@
             const types = P2_CONFIG.weather.types;
             newWeather = types[Math.floor(Math.random() * types.length)];
             if (newWeather === 'storm' && Math.random() > P2_CONFIG.weather.stormChance) {
-                newWeather = 'rain'; // Если не прокнула гроза, будет дождь
+                newWeather = 'rain'; 
             }
         }
         
         Pack2State.currentWeather = newWeather;
         window.GameEvents.emit('weather_changed', { weather: newWeather });
 
-        // Управление звуком дождя
         if (Pack2State.rainAudio) {
             if (newWeather === 'rain' || newWeather === 'storm') {
                 Pack2State.rainAudio.play().catch(() => {});
@@ -100,23 +95,19 @@
         Pack2State.weatherParticles = [];
         Pack2State.lightningActive = false;
         
-        changeWeather('clear'); // Всегда начинаем с ясной погоды
+        changeWeather('clear');
 
-        // Сброс музыки
         Pack2State.musicAudios.forEach((a, i) => { a.currentTime = 0; a.volume = i === 0 ? 0.2 : 0; a.play().catch(() => {}); });
     });
 
     window.GameEvents.on('tick', (data) => {
         if (data.settings) Pack2State.settings = data.settings;
 
-        // 1. Проверка времени паверапа
-        if (Pack2State.activePowerup && Pack2State.activePowerup.duration > 0) {
-            if (Date.now() > Pack2State.activePowerup.endTime) {
-                Pack2State.activePowerup = null;
-            }
+        // ИСПРАВЛЕНИЕ: Проверка времени паверапа (убрано ошибочное условие duration > 0)
+        if (Pack2State.activePowerup && Date.now() > Pack2State.activePowerup.endTime) {
+            Pack2State.activePowerup = null;
         }
 
-        // 2. Смена погоды по дистанции
         if (Pack2State.settings?.weatherEnabled && data.distance !== undefined) {
             const nextWeatherDist = Math.floor(data.distance / P2_CONFIG.weather.changeDistance) * P2_CONFIG.weather.changeDistance;
             if (nextWeatherDist > Pack2State.lastWeatherChange && nextWeatherDist > 0) {
@@ -125,7 +116,6 @@
             }
         }
 
-        // 3. Молнии при грозе
         if (Pack2State.currentWeather === 'storm') {
             Pack2State.lightningTimer += data.delta || 16.6;
             if (Pack2State.lightningTimer > 8000 + Math.random() * 7000) {
@@ -137,20 +127,16 @@
             }
         }
 
-        // 4. Динамическая музыка (Слои и темп)
         if (Pack2State.settings?.dynamicMusicEnabled && Pack2State.musicAudios.length > 0) {
             const dist = data.distance || 0;
-            // Темп
             const tempoRate = 1.0 + Math.min(dist / P2_CONFIG.music.tempoDistance, 1.0) * (P2_CONFIG.music.maxTempoRate - 1.0);
             Pack2State.musicAudios.forEach(a => { a.playbackRate = tempoRate; });
 
-            // Слои
             P2_CONFIG.music.layers.forEach((layer, index) => {
                 const audio = Pack2State.musicAudios[index];
                 if (!audio) return;
-                const targetVolume = dist >= layer.minDistance ? 0.2 : 0; // 0.2 - базовая громкость
+                const targetVolume = dist >= layer.minDistance ? 0.2 : 0; 
                 if (audio.volume !== targetVolume) {
-                    // Плавное затухание
                     audio.volume += (targetVolume - audio.volume) * 0.05;
                 }
             });
@@ -165,7 +151,7 @@
 
         if (data.kind === 'shield') {
             Pack2State.hasShield = true;
-            Pack2State.activePowerup = null; // Щит не имеет таймера
+            Pack2State.activePowerup = null; 
         } else {
             Pack2State.activePowerup = { type: data.kind, endTime: Date.now() + pData.duration };
         }
@@ -200,15 +186,11 @@
     // === РЕНДЕР ===
     window.GameEvents.on('render_frame', ({ ctx }) => {
         const W = ctx.canvas.width; const H = ctx.canvas.height;
-        const p = window.Pack1State ? { x: 100, y: 400 } : { x: 100, y: 400 }; // Заглушка, если Pack1State нет
-        // Для точного позиционирования ауры нужны координаты игрока.
-        // В game.js они есть в scene, но плагин их не получает.
-        // Поэтому мы будем рисовать оверлеи на весь экран, а ауру - в фиксированном месте (или ждем обновления).
         
-        // 1. Щит (Аура вокруг игрока) - приблизительно
+        // 1. Щит (Аура вокруг игрока) - оставлен, так как это важный индикатор
         if (Pack2State.hasShield) {
             ctx.save();
-            const auraX = 180; const auraY = H - 150; // Примерная позиция игрока
+            const auraX = 180; const auraY = H - 150; 
             const grad = ctx.createRadialGradient(auraX, auraY, 0, auraX, auraY, 100);
             grad.addColorStop(0, 'rgba(0, 255, 255, 0.1)');
             grad.addColorStop(1, 'rgba(0, 255, 255, 0.6)');
@@ -217,29 +199,20 @@
             ctx.restore();
         }
 
-        // 2. Магнит (Кольца)
-        if (Pack2State.activePowerup?.type === 'magnet') {
-            ctx.save();
-            const auraX = 180; const auraY = H - 150;
-            ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
-            ctx.lineWidth = 3;
-            ctx.beginPath(); ctx.arc(auraX, auraY, 150 + Math.sin(Date.now() / 100) * 20, 0, Math.PI * 2); ctx.stroke();
-            ctx.restore();
-        }
+        // ИСПРАВЛЕНИЕ: Блок отрисовки колец магнита (Пункт 2) полностью удален.
+        // Визуализация возле персонажа больше не появляется.
 
-        // 3. Slow-mo / Sprint (Оверлеи)
+        // 2. Slow-mo / Sprint (Оверлеи)
         if (Pack2State.activePowerup?.type === 'slowmo') {
             ctx.fillStyle = 'rgba(0, 0, 255, 0.2)'; ctx.fillRect(0, 0, W, H);
         } else if (Pack2State.activePowerup?.type === 'sprint') {
-            // Желтые искры за персонажем
             if (window.RenderEngine && Math.random() > 0.5) {
                 window.RenderEngine.spawnParticles(180, H - 100, 1, { colors: ['#FFD700', '#FFFFFF'], speed: 5, life: 20, size: 3, gravity: 0 });
             }
         }
 
-        // 4. Погода
+        // 3. Погода
         if (Pack2State.currentWeather === 'rain' || Pack2State.currentWeather === 'storm') {
-            // Рисуем капли (упрощенно, через линии)
             ctx.strokeStyle = 'rgba(150, 200, 255, 0.4)';
             ctx.lineWidth = 1;
             for (let i = 0; i < 50; i++) {
@@ -252,7 +225,7 @@
         }
     });
 
-    // === UI КОМПОНЕНТ (HUD для паверапов и погоды) ===
+    // === UI КОМПОНЕНТ ===
     function Pack2UI({ gameState }) {
         const [active, setActive] = React.useState(null);
         const [weather, setWeather] = React.useState('clear');
@@ -274,11 +247,9 @@
         const timeLeft = active ? Math.max(0, Math.ceil((active.endTime - Date.now()) / 1000)) : 0;
 
         return React.createElement(React.Fragment, null,
-            // Индикатор погоды в левом верхнем углу
             React.createElement('div', { style: { position: 'absolute', top: '60px', left: '20px', fontSize: '24px', textShadow: '2px 2px 0 #000' } }, 
                 `Погода: ${weatherIcons[weather] || '❓'}`
             ),
-            // Индикатор паверапа справа
             (activeData || hasShield) && React.createElement('div', { style: { position: 'absolute', top: '100px', right: '20px', background: 'rgba(0,0,0,0.6)', padding: '10px', borderRadius: '10px', border: `2px solid ${hasShield ? '#00FFFF' : activeData.color}`, color: 'white', fontWeight: 'bold' } },
                 hasShield ? '🛡️ ЩИТ АКТИВЕН' : `${activeData.emoji} ${timeLeft}s`
             )
