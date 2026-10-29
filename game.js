@@ -1197,9 +1197,13 @@ function Game() {
                     updateLogic();
                     RenderEngine.update();
                     
-                    // Отправляем тик для плагинов, чтобы они знали о времени (для комбо-затухания)
-                    window.GameEvents.emit('tick', { delta: FRAME_TIME, distance: distanceRef.current, settings: settingsRef.current });
-                    
+                    // ОБНОВЛЯЕМ TICK: теперь передаем health каждый кадр
+                    window.GameEvents.emit('tick', { 
+                        delta: FRAME_TIME, 
+                        distance: distanceRef.current, 
+                        health: healthRef.current, // <-- ДОБАВЛЕНО
+                        settings: settingsRef.current 
+                    });                    
                     accumulatorRef.current -= FRAME_TIME;
                     loops++;
                 }
