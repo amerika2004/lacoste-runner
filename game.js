@@ -16,7 +16,7 @@ window.GameBoot = window.GameBoot || {
 // === ЗАЩИТА ОТ ОТСУТСТВИЯ CONFIG.JS ===
 const DEFAULT_CONFIG = {
     physics: { gravity: 0.75, jumpForce: -10.5, holdThrust: 0.45, groundY: 530, baseSpeed: 4.0, speedMultiplier: 0.8 },
-    defaultSettings: { sfxVolume: 0.7, ambientVolume: 0.25, masterVolume: 1.0, soundEnabled: true, graphics: 'high', comboEnabled: true, comboVisualsEnabled: true, weatherEnabled: true, dynamicMusicEnabled: true },
+    defaultSettings: { sfxVolume: 0.7, ambientVolume: 0.25, masterVolume: 1.0, soundEnabled: true, graphics: 'high', comboEnabled: true, comboVisualsEnabled: true, weatherEnabled: true, dynamicMusicEnabled: true, biomesEnabled: true, achievementsEnabled: true, dailyGoalsEnabled: true },
     combo: { decayTimeMs: 3000, tiers: [{ threshold: 3, mult: 2, emoji: '😎', color: '#00FFFF' }], sadEmoji: '😢', sadColor: '#888888' },
     pack2: { powerups: { spawnChance: 0.05, types: {} }, weather: { changeDistance: 1000 }, music: { layers: [], maxTempoRate: 1.15, tempoDistance: 2000 } },
     pack3: { biomes: [], music: { layers: [] }, achievements: [] },
@@ -414,7 +414,7 @@ function Game() {
             if (window.Pack2State.activePowerups.sprint) pack2SpeedMult *= 1.5;
         }
 
-        if (window.Pack3State && window.Pack3State.nextBiome && !biomeTransitionRef.current.active) {
+        if (settingsRef.current.biomesEnabled && window.Pack3State && window.Pack3State.nextBiome && !biomeTransitionRef.current.active) {
             biomeTransitionRef.current = { active: true, nextBiome: window.Pack3State.nextBiome, alpha: 0 };
             window.Pack3State.nextBiome = null;
         }
@@ -619,7 +619,7 @@ function Game() {
         const char = CHARACTERS[character] || CHARACTERS[Object.keys(CHARACTERS)[0]]; const gy = groundYRef.current;
         
         let bgConfig = BACKGROUNDS[backgroundRef.current] || BACKGROUNDS[Object.keys(BACKGROUNDS)[0]];
-        if (window.Pack3State && window.Pack3State.currentBiome) {
+        if (settings.biomesEnabled && window.Pack3State && window.Pack3State.currentBiome) {
             bgConfig = window.Pack3State.currentBiome;
         }
         
@@ -732,8 +732,14 @@ function Game() {
                 ),
                 React.createElement('div', { className: 'settings-section' },
                     React.createElement('div', { className: 'settings-section-title' }, '🌧️ Atmosphere (Pack 2)'),
-                    React.createElement('div', { className: 'setting-row' }, React.createElement('span', { className: 'setting-label' }, 'Weather'), React.createElement('button', { className: `setting-toggle ${settings.weatherEnabled ? 'on' : ''}`, onClick: () => setSettings(s => ({ ...s, weatherEnabled: !s.weatherEnabled })) })),
-                    React.createElement('div', { className: 'setting-row' }, React.createElement('span', { className: 'setting-label' }, 'Dynamic Music'), React.createElement('button', { className: `setting-toggle ${settings.dynamicMusicEnabled ? 'on' : ''}`, onClick: () => setSettings(s => ({ ...s, dynamicMusicEnabled: !s.dynamicMusicEnabled })) }))
+                    React.createElement('div', { className: 'setting-row' }, React.createElement('span', { className: 'setting-label' }, 'Weather'), React.createElement('button', { className: `setting-toggle ${settings.weatherEnabled ? 'on' : ''}`, onClick: () => setSettings(s => ({ ...s, weatherEnabled: !s.weatherEnabled })) }))
+                ),
+                React.createElement('div', { className: 'settings-section' },
+                    React.createElement('div', { className: 'settings-section-title' }, '🌍 Progression (Pack 3)'),
+                    React.createElement('div', { className: 'setting-row' }, React.createElement('span', { className: 'setting-label' }, 'Biomes'), React.createElement('button', { className: `setting-toggle ${settings.biomesEnabled ? 'on' : ''}`, onClick: () => setSettings(s => ({ ...s, biomesEnabled: !s.biomesEnabled })) })),
+                    React.createElement('div', { className: 'setting-row' }, React.createElement('span', { className: 'setting-label' }, 'Dynamic Music'), React.createElement('button', { className: `setting-toggle ${settings.dynamicMusicEnabled ? 'on' : ''}`, onClick: () => setSettings(s => ({ ...s, dynamicMusicEnabled: !s.dynamicMusicEnabled })) })),
+                    React.createElement('div', { className: 'setting-row' }, React.createElement('span', { className: 'setting-label' }, 'Achievements'), React.createElement('button', { className: `setting-toggle ${settings.achievementsEnabled ? 'on' : ''}`, onClick: () => setSettings(s => ({ ...s, achievementsEnabled: !s.achievementsEnabled })) })),
+                    React.createElement('div', { className: 'setting-row' }, React.createElement('span', { className: 'setting-label' }, 'Daily Goals'), React.createElement('button', { className: `setting-toggle ${settings.dailyGoalsEnabled ? 'on' : ''}`, onClick: () => setSettings(s => ({ ...s, dailyGoalsEnabled: !s.dailyGoalsEnabled })) }))
                 ),
                 React.createElement('div', { className: 'settings-section' },
                     React.createElement('div', { className: 'settings-section-title' }, '🔊 Audio'),
