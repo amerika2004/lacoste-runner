@@ -631,7 +631,8 @@ function Game() {
                 }
                 if (gameState !== 'playing') return;
                 const canvas = canvasRef.current; const ctx = canvas.getContext('2d'); const scene = describeScene(); RenderEngine.draw(ctx, canvas, scene);
-                window.GameEvents.emit('render_frame', { ctx }); requestRef.current = requestAnimationFrame(gameLoop);
+                // ВАЖНО: Передаем scene.player в плагины для точной отрисовки ауры
+                window.GameEvents.emit('render_frame', { ctx, player: scene.player }); requestRef.current = requestAnimationFrame(gameLoop);
             };
             requestRef.current = requestAnimationFrame(gameLoop);
         }
