@@ -300,8 +300,7 @@ window.PackUIs = window.PackUIs || [];
     function Pack4HUD({ gameState, score }) {
         if (gameState !== 'playing') return null;
         return React.createElement(React.Fragment, null,
-            React.createElement('div', { className: 'pack4-hud-coins' }, `💰 ${Pack4State.coins}`),
-            Pack4State.cheatInvincible > Date.now() && React.createElement('div', { className: 'pack4-cheat-indicator' }, '🔱 INVINCIBLE')
+            React.createElement('div', { className: 'pack4-hud-coins' }, `💰 ${Pack4State.coins}`)
         );
     }
 
