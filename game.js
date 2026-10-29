@@ -354,9 +354,9 @@ function Game() {
         if (pitAudioRef.current) { pitAudioRef.current.pause(); pitAudioRef.current.currentTime = 0; }
         resetCombo(); RenderEngine.reset(); setScore(0); setSpeedDisplay(1.0); setPowerDisplay(1.0); setGameState('playing');
         
-        // Сброс состояния Pack 2
         if (window.Pack2State) {
             window.Pack2State.activePowerup = null;
+            window.Pack2State.hasShield = false;
             window.Pack2State.weather = 'clear';
             window.Pack2State.lastMilestoneWeather = 0;
             window.GameEvents.emit('weather_change', { weather: 'clear' });
@@ -373,12 +373,11 @@ function Game() {
 
     const handleHit = (index, type) => {
         if (isTrippingRef.current) return;
-        // ПРОВЕРКА НА ЩИТ (PACK 2)
         if (window.Pack2State && window.Pack2State.hasShield) {
             window.Pack2State.hasShield = false;
-            obstaclesRef.current.splice(index, 1); // Уничтожаем препятствие
+            obstaclesRef.current.splice(index, 1); 
             window.GameEvents.emit('shield_break', { x: playerRef.current.x, y: playerRef.current.y });
-            return; // Пропускаем урон
+            return; 
         }
 
         obstaclesRef.current.splice(index, 1);
@@ -411,7 +410,6 @@ function Game() {
         const bgConfig = BACKGROUNDS[backgroundRef.current] || BACKGROUNDS[Object.keys(BACKGROUNDS)[0]];
         const diffMult = SPEED_MULTIPLIER; const gfxQuality = settingsRef.current.graphics;
 
-        // PACK 2: Модификатор скорости (Slow-mo / Sprint)
         let pack2SpeedMult = 1.0;
         if (window.Pack2State && window.Pack2State.activePowerup) {
             if (window.Pack2State.activePowerup.type === 'slowmo') pack2SpeedMult = 0.5;
@@ -483,7 +481,6 @@ function Game() {
 
         const currentPower = calculateJumpMultiplier(p.height, baseSpeedMult, speedPenaltyRef.current); setPowerDisplay(currentPower.toFixed(2));
 
-        // PACK 2: Притягивание еды магнитом
         if (window.Pack2State && window.Pack2State.activePowerup?.type === 'magnet') {
             foodsRef.current.forEach(f => {
                 const dx = (p.x + p.width/2) - (f.x + f.width/2);
@@ -533,7 +530,6 @@ function Game() {
             if (foodTimerRef.current > (100 + Math.random() * 80) * foodMult) { 
                 let isSafeToSpawn = true; for (let obs of obstaclesRef.current) { if (obs.x + obs.width > canvas.width - 300) { isSafeToSpawn = false; break; } }
                 if (isSafeToSpawn) {
-                    // PACK 2: Шанс спавна паверапа
                     const isPowerup = Math.random() < (CONFIG.pack2.powerups.spawnChance || 0.05);
                     if (isPowerup) {
                         const kinds = Object.keys(CONFIG.pack2.powerups.types);
@@ -576,7 +572,6 @@ function Game() {
             const hitboxX = p.x + 20; const hitboxY = p.y + 20; const hitboxWidth = p.width - 40; const hitboxHeight = p.height - 20;
             if (hitboxX < food.x + food.width && hitboxX + hitboxWidth > food.x && hitboxY < food.y + food.height && hitboxY + hitboxHeight > food.y) {
                 
-                // Если это паверап (Pack 2)
                 if (food.isPowerup) {
                     window.GameEvents.emit('powerup_collect', { kind: food.kind, x: food.x, y: food.y });
                     return false;
@@ -596,7 +591,6 @@ function Game() {
             return true;
         });
 
-        // Отправляем настройки в плагин каждый тик
         window.GameEvents.emit('tick', { delta: 16.6, distance: distanceRef.current, health: healthRef.current, settings: settingsRef.current });
     };
 
@@ -693,7 +687,7 @@ function Game() {
                     React.createElement('div', { className: 'setting-row' }, React.createElement('span', { className: 'setting-label' }, 'Quality'), React.createElement('div', { className: 'segmented' }, ['low', 'medium', 'high'].map(q => React.createElement('button', { key: q, className: settings.graphics === q ? 'active' : '', onClick: () => setSettings(s => ({ ...s, graphics: q })) }, q.toUpperCase()))))
                 ),
                 React.createElement('div', { className: 'settings-section' },
-                    React.createElement('div', { className: 'settings-section-title' }, '🔥 Combo System'),
+                    React.createElement('div', { className: 'settings-section-title' }, '🔥 Game Feel (Pack 1)'),
                     React.createElement('div', { className: 'setting-row' }, React.createElement('span', { className: 'setting-label' }, 'Enable Combo'), React.createElement('button', { className: `setting-toggle ${settings.comboEnabled ? 'on' : ''}`, onClick: () => setSettings(s => ({ ...s, comboEnabled: !s.comboEnabled })) })),
                     React.createElement('div', { className: 'setting-row' }, React.createElement('span', { className: 'setting-label' }, 'Visual Effects'), React.createElement('button', { className: `setting-toggle ${settings.comboVisualsEnabled ? 'on' : ''}`, onClick: () => setSettings(s => ({ ...s, comboVisualsEnabled: !s.comboVisualsEnabled })) }))
                 ),
