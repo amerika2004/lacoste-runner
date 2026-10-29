@@ -10,7 +10,10 @@
         defaultSettings: { 
             sfxVolume: 0.7, ambientVolume: 0.25, masterVolume: 1.0, soundEnabled: true, graphics: 'high', 
             comboEnabled: true, comboVisualsEnabled: true, weatherEnabled: true, dynamicMusicEnabled: true,
-            biomesEnabled: true, achievementsEnabled: true, dailyGoalsEnabled: true
+            biomesEnabled: true, achievementsEnabled: true, dailyGoalsEnabled: true,
+            // НОВЫЕ НАСТРОЙКИ HUD
+            hudScale: 1.0,
+            hudOpacity: 0.8
         },
         
         combo: {
@@ -77,11 +80,7 @@
         },
 
         pack4: {
-            economy: {
-                coinsPerMeter: 1,
-                bonusCombo: 5, // Монет за каждые 10 комбо
-                bonusGoldenFood: 50 // Монет за золотую еду (если есть)
-            },
+            economy: { coinsPerMeter: 1, bonusCombo: 5, bonusGoldenFood: 50 },
             shop: {
                 skins: [
                     { id: 'default', name: 'Default', price: 0, color: null, unlocked: true },
