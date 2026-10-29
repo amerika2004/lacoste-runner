@@ -13,7 +13,6 @@ window.GameBoot = window.GameBoot || {
     trigger() { if (this.triggered) return; this.triggered = true; this.callbacks.forEach(cb => { try { cb(); } catch(e){ console.error(e); } }); this.callbacks = []; }
 };
 
-// === ЗАЩИТА ОТ ОТСУТСТВИЯ CONFIG.JS ===
 const DEFAULT_CONFIG = {
     physics: { gravity: 0.75, jumpForce: -10.5, holdThrust: 0.45, groundY: 530, baseSpeed: 4.0, speedMultiplier: 0.8 },
     defaultSettings: { sfxVolume: 0.7, ambientVolume: 0.25, masterVolume: 1.0, soundEnabled: true, graphics: 'high', comboEnabled: true, comboVisualsEnabled: true, weatherEnabled: true, dynamicMusicEnabled: true },
@@ -34,7 +33,6 @@ const BASE_SPEED = CONFIG.physics.baseSpeed ?? 4.0;
 const SPEED_MULTIPLIER = CONFIG.physics.speedMultiplier ?? 0.8;
 const DEFAULT_SETTINGS = CONFIG.defaultSettings;
 
-// === РЕНДЕР ДВИЖОК ===
 const RenderEngine = (function () {
     const QUALITY = {
         low:    { parallax: false, bloom: false, particles: false, shake: false, trail: false, vignette: false, flash: false, maxParticles: 0 },
@@ -591,7 +589,7 @@ function Game() {
             return true;
         });
 
-        window.GameEvents.emit('tick', { delta: 16.6, distance: distanceRef.current, health: healthRef.current, settings: settingsRef.current });
+        window.GameEvents.emit('tick', { delta: 16.6, distance: distanceRef.current, health: healthRef.current, settings: settingsRef.current, timeOfDay: timeOfDayRef.current });
     };
 
     const describeScene = () => {
@@ -626,13 +624,12 @@ function Game() {
                 const FRAME_TIME = 1000 / 60; let loops = 0;
                 while (accumulatorRef.current >= FRAME_TIME && loops < 5) {
                     updateLogic(); RenderEngine.update();
-                    window.GameEvents.emit('tick', { delta: FRAME_TIME, distance: distanceRef.current, health: healthRef.current, settings: settingsRef.current });
+                    window.GameEvents.emit('tick', { delta: FRAME_TIME, distance: distanceRef.current, health: healthRef.current, settings: settingsRef.current, timeOfDay: timeOfDayRef.current });
                     accumulatorRef.current -= FRAME_TIME; loops++;
                 }
                 if (gameState !== 'playing') return;
                 const canvas = canvasRef.current; const ctx = canvas.getContext('2d'); const scene = describeScene(); RenderEngine.draw(ctx, canvas, scene);
-                // ВАЖНО: Передаем scene.player в плагины для точной отрисовки ауры
-                window.GameEvents.emit('render_frame', { ctx, player: scene.player }); requestRef.current = requestAnimationFrame(gameLoop);
+                window.GameEvents.emit('render_frame', { ctx, player: scene.player, obstacles: scene.obstacles }); requestRef.current = requestAnimationFrame(gameLoop);
             };
             requestRef.current = requestAnimationFrame(gameLoop);
         }
@@ -641,15 +638,23 @@ function Game() {
 
     const startGame = () => resetGame();
     const formatScore = (num) => num.toString().padStart(5, '0');
-    const getHearts = () => { let h = []; for (let i = 0; i < 3; i++) { if (health >= (i + 1) * 2) h.push('❤️'); else if (health === i * 2 + 1) h.push('💔'); else h.push('🖤'); } return h.join(' '); };
+    const getHearts = () => { let h = []; for (let i = 0; i < 3; i++) { if (health >= (i + 1) * 2) h.push('❤️'); else if (health === i * 2 + 1) h.push('💔'); else h.push('🖤'); } return h.join(''); };
 
     const renderCharacterPanel = () => React.createElement('div', { className: 'char-panel' }, React.createElement('div', { className: 'char-panel-title' }, 'Hero'), Object.values(CHARACTERS).map(char => React.createElement('button', { key: char.id, className: `char-btn ${character === char.id ? 'active' : ''}`, onClick: () => setCharacter(char.id), title: char.name }, React.createElement('span', { className: 'char-emoji' }, char.emoji || '❓'), React.createElement('span', { className: 'char-name' }, char.name))));
     const renderBackgroundPanel = () => React.createElement('div', { className: 'settings', style: { marginTop: '-5px' } }, Object.values(BACKGROUNDS).map(bg => React.createElement('button', { key: bg.id, className: `btn ${background === bg.id ? 'active' : ''}`, onClick: () => setBackground(bg.id) }, `${bg.emoji} ${bg.name}`)));
 
     return React.createElement('div', { id: 'game-container' },
         (gameState === 'playing' || gameState === 'paused') ? React.createElement(React.Fragment, null,
-            React.createElement('div', { className: 'hud-left' }, React.createElement('span', null, `FOOD: ${playerRef.current.foodEaten} / ${playerRef.current.foodTarget}`), React.createElement('span', { style: { fontSize: 'clamp(14px, 2.5vmin, 24px)', letterSpacing: '2px' } }, getHearts())),
-            React.createElement('div', { className: 'hud-right' }, React.createElement('span', { style: {color: '#FFD700'} }, `PWR x${powerDisplay}`), React.createElement('span', { style: {color: '#FF00FF'} }, `${speedDisplay === 'REVERSE' ? '◄◄ REV' : `SPD x${speedDisplay}`}`), React.createElement('span', null, `HI ${formatScore(highScore)}  ${formatScore(score)}m`))
+            // МИНИМАЛИСТИЧНЫЙ HUD С ЭМОДЗИ
+            React.createElement('div', { className: 'hud-left' }, 
+                React.createElement('span', { title: 'Health', style: { fontSize: 'clamp(18px, 3vmin, 28px)', letterSpacing: '0px' } }, getHearts()),
+                React.createElement('span', { title: 'Food' }, `🍗 ${playerRef.current.foodEaten}/${playerRef.current.foodTarget}`)
+            ),
+            React.createElement('div', { className: 'hud-right' }, 
+                React.createElement('span', { title: 'Speed' }, `⚡ ${speedDisplay === 'REVERSE' ? '◄◄' : speedDisplay}`),
+                React.createElement('span', { title: 'Distance' }, `🏁 ${formatScore(score)}`),
+                React.createElement('span', { title: 'High Score' }, `🏆 ${formatScore(highScore)}`)
+            )
         ) : null,
         React.createElement('canvas', { ref: canvasRef, width: 1200, height: 600 }),
         gameState === 'playing' ? React.createElement(React.Fragment, null,
