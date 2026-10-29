@@ -41,7 +41,7 @@
         // === PACK 2: АТМОСФЕРА И ТАКТИКА ===
         pack2: {
             powerups: {
-                spawnChance: 0.05, // 5% шанс спавна вместо еды
+                spawnChance: 0.30, // 5% шанс спавна вместо еды
                 types: {
                     shield: { emoji: '🛡️', duration: 0, color: '#00FFFF', sound: 'source/sounds/powerup_shield.wav' },
                     magnet: { emoji: '🧲', duration: 5000, color: '#FF0000', sound: 'source/sounds/powerup_magnet.wav' },
@@ -51,8 +51,8 @@
             },
             weather: {
                 types: ['clear', 'rain', 'fog', 'storm'],
-                changeDistance: 1000, // Смена погоды каждые 1000м
-                stormChance: 0.1 // 10% шанс грозы
+                changeDistance: 200, // Смена погоды каждые 1000м
+                stormChance: 0.3 // 10% шанс грозы
             },
             music: {
                 layers: [
@@ -63,10 +63,10 @@
                 maxTempoRate: 1.15,
                 tempoDistance: 2000
             }
-        },
+        }
 
         characters: {
-            crocodile: { id: 'crocodile', name: 'Crocodile', emoji: '🐊', folder: 'source/characters/crocodile', frameCount: 12, baseWidth: 165.4, baseHeight: 110.3, foodEmojis: ['🍗', '🍔', '🍕', '🥩'], eatEmoji: null, eatFolder: null, eatFrameCount: 0, eatDuration: 0 },
+            crocodile: { id: 'crocodile', name: 'Crocodile', emoji: '🐊', folder: 'source/characters/crocodile', frameCount: 12, baseWidth: 165.4, baseHeight: 110.3, foodEmojis: ['🍗', '🍔', '🍕', '🥩'], eatEmoji: null, eatFolder: null, eatFrameCount: 0, eaDuration: 0 },
             panda: { id: 'panda', name: 'Panda', emoji: '🐼', folder: 'source/characters/panda', frameCount: 20, baseWidth: 160, baseHeight: 120, foodEmojis: ['🎋'], eatEmoji: '🎋', eatFolder: 'source/characters/panda/eating', eatFrameCount: 8, eatDuration: 4.0 }
         },
 
