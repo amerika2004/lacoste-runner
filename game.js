@@ -355,9 +355,8 @@ function Game() {
         if (window.Pack2State) {
             window.Pack2State.activePowerup = null;
             window.Pack2State.hasShield = false;
-            window.Pack2State.weather = 'clear';
-            window.Pack2State.lastMilestoneWeather = 0;
-            window.GameEvents.emit('weather_change', { weather: 'clear' });
+            // Убираем старую строку window.Pack2State.weather = 'clear'; 
+            // Так как pack2.js теперь сам сбрасывает погоду по событию 'start'
         }
 
         window.GameEvents.emit('start', { character, background, timeOfDay, settings: settingsRef.current });
