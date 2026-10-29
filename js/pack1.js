@@ -154,6 +154,11 @@
         Pack1State.isFalling = true; // Персонаж в воздухе
     });
 
+       window.GameEvents.on('land', () => {
+        // Проигрываем звук приземления (если он есть)
+        playSound('land');
+    });
+
     window.GameEvents.on('hit', (data) => {
         resetCombo(true, data.playerX || 100, data.playerY || 400);
         playSound('hit');
