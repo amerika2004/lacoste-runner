@@ -1,6 +1,6 @@
 const { useState, useEffect, useRef, useCallback } = React;
 
-// === ПЛАГИННАЯ ИНФРАСТРУКТУРА (Инициализация) ===
+// === ПЛАГИННАЯ ИНФРАСТРУКТУРА ===
 window.GameEvents = window.GameEvents || {
     listeners: {},
     on(event, cb) { if (!this.listeners[event]) this.listeners[event] = []; this.listeners[event].push(cb); },
@@ -20,6 +20,7 @@ const DEFAULT_CONFIG = {
     combo: { decayTimeMs: 3000, tiers: [{ threshold: 3, mult: 2, emoji: '😎', color: '#00FFFF' }], sadEmoji: '😢', sadColor: '#888888' },
     pack2: { powerups: { spawnChance: 0.05, types: {} }, weather: { changeDistance: 1000 }, music: { layers: [], maxTempoRate: 1.15, tempoDistance: 2000 } },
     pack3: { biomes: [], music: { layers: [] }, achievements: [] },
+    pack4: { economy: {}, shop: {}, missions: [], secrets: {} },
     characters: {
         crocodile: { id: 'crocodile', name: 'Crocodile', emoji: '🐊', folder: 'source/characters/crocodile', frameCount: 12, baseWidth: 165.4, baseHeight: 110.3, foodEmojis: ['🍗', '🍔', '🍕', '🥩'], eatEmoji: null, eatFolder: null, eatFrameCount: 0, eatDuration: 0 },
         panda: { id: 'panda', name: 'Panda', emoji: '🐼', folder: 'source/characters/panda', frameCount: 20, baseWidth: 160, baseHeight: 120, foodEmojis: ['🎋'], eatEmoji: '🎋', eatFolder: 'source/characters/panda/eating', eatFrameCount: 8, eatDuration: 4.0 }
@@ -72,8 +73,7 @@ const RenderEngine = (function () {
             };
 
             if (transitionAlpha > 0 && bgNext) {
-                drawBg(bg.img, 1 - transitionAlpha);
-                drawBg(bgNext.img, transitionAlpha);
+                drawBg(bg.img, 1 - transitionAlpha); drawBg(bgNext.img, transitionAlpha);
             } else {
                 if (bg.img && bg.img.complete && bg.img.naturalWidth > 0) {
                     const scale = H / bg.img.naturalHeight; const exactWidth = Math.ceil(bg.img.naturalWidth * scale);
@@ -297,7 +297,20 @@ function Game() {
     const resetCombo = () => { comboRef.current = 0; comboMultRef.current = 1; window.GameEvents.emit('combo_changed', { mult: 0, count: 0 }); };
     const addCombo = () => { comboRef.current++; let mult = 1; if (comboRef.current >= 8) mult = 5; else if (comboRef.current >= 5) mult = 3; else if (comboRef.current >= 3) mult = 2; comboMultRef.current = mult; window.GameEvents.emit('combo_changed', { mult: comboRef.current, count: comboRef.current }); };
 
+    // === KONAMI CODE ===
+    const konamiRef = useRef([]);
     const handleKeyDown = useCallback((e) => {
+        // Отслеживание Konami
+        konamiRef.current.push(e.code);
+        if (konamiRef.current.length > 10) konamiRef.current.shift();
+        if (JSON.stringify(konamiRef.current) === JSON.stringify(CONFIG.pack4.secrets.konami.code)) {
+            if (window.Pack4State) {
+                window.Pack4State.cheatInvincible = Date.now() + CONFIG.pack4.secrets.konami.duration;
+                window.GameEvents.emit('pack4_toast', { text: '🔱 CHEAT ACTIVATED! 10s INVINCIBILITY', type: 'danger' });
+                konamiRef.current = [];
+            }
+        }
+
         if (e.code === 'Escape') { e.preventDefault(); if (showSettings) { setShowSettings(false); return; } if (isFallingIntoPitRef.current || isPitDeathDelayRef.current) return; if (gameState === 'playing') setGameState('paused'); else if (gameState === 'paused') setGameState('playing'); return; }
         if (e.code === 'KeyN') { e.preventDefault(); setTimeOfDay(prev => prev === 'day' ? 'night' : 'day'); return; }
         if (e.code === 'Space' || e.code === 'ArrowUp') {
@@ -335,9 +348,15 @@ function Game() {
 
     const resetGame = () => {
         const char = CHARACTERS[character] || CHARACTERS[Object.keys(CHARACTERS)[0]]; const gy = groundYRef.current;
+        
+        // Применяем стартовые бонусы
+        let startHp = 6;
+        if (window.Pack4State && window.Pack4State.boughtBuffs?.includes('start_hp')) startHp = 8;
+        
         playerRef.current = { x: 100, y: gy - char.baseHeight, width: char.baseWidth, height: char.baseHeight, velocityY: 0, isJumping: false, isHoldingJump: false, jumpMult: 1.0, tilt: 0, bob: 0, foodEaten: 0, foodTarget: 1 };
         obstaclesRef.current = []; foodsRef.current = []; explosionsRef.current = []; distanceRef.current = 0; spawnTimerRef.current = 0; foodTimerRef.current = 0; bgOffsetRef.current = 0; currentFrameRef.current = 0; spawnCooldownRef.current = 0;
-        healthRef.current = 6; setHealth(6); isTrippingRef.current = false; tripTimerRef.current = 0; speedPenaltyRef.current = 1.0; isBarrelTripRef.current = false; pendingBarrelDamageRef.current = false; isBarrelFlyingRef.current = false; barrelFlyVelocityYRef.current = 0; isFallingIntoPitRef.current = false; pitTargetRef.current = null; pitFallTimerRef.current = 0; pitVelocityRef.current = 0; isPitDeathDelayRef.current = false; pitDeathDelayTimerRef.current = 0;
+        healthRef.current = startHp; setHealth(startHp);
+        isTrippingRef.current = false; tripTimerRef.current = 0; speedPenaltyRef.current = 1.0; isBarrelTripRef.current = false; pendingBarrelDamageRef.current = false; isBarrelFlyingRef.current = false; barrelFlyVelocityYRef.current = 0; isFallingIntoPitRef.current = false; pitTargetRef.current = null; pitFallTimerRef.current = 0; pitVelocityRef.current = 0; isPitDeathDelayRef.current = false; pitDeathDelayTimerRef.current = 0;
         isEatingRef.current = false; eatTimerRef.current = 0; eatFrameIdxRef.current = 0; eatSpeedFactorRef.current = 1.0; pitAudioEndedRef.current = false;
         if (pitAudioRef.current) { pitAudioRef.current.pause(); pitAudioRef.current.currentTime = 0; }
         
@@ -345,6 +364,11 @@ function Game() {
         
         resetCombo(); RenderEngine.reset(); setScore(0); setSpeedDisplay(1.0); setPowerDisplay(1.0); setGameState('playing');
         
+        if (window.Pack4State && window.Pack4State.boughtBuffs?.includes('start_shield')) {
+            window.Pack2State.inventory.shield++;
+            window.Pack2State.uiListeners.forEach(fn => fn());
+        }
+
         window.GameEvents.emit('start', { character, background, timeOfDay, settings: settingsRef.current });
     };
 
@@ -356,6 +380,14 @@ function Game() {
 
     const handleHit = (index, type) => {
         if (isTrippingRef.current) return;
+        
+        // Чит-код (Неуязвимость)
+        if (window.Pack4State && window.Pack4State.cheatInvincible > Date.now()) {
+            obstaclesRef.current.splice(index, 1);
+            RenderEngine.flash('0,255,255', 0.3);
+            return;
+        }
+
         if (window.Pack2State && window.Pack2State.hasShield) {
             window.Pack2State.hasShield = false;
             obstaclesRef.current.splice(index, 1); 
@@ -378,6 +410,13 @@ function Game() {
 
     const handleBarrelHit = (index) => {
         if (isTrippingRef.current || isBarrelFlyingRef.current) return;
+        
+        if (window.Pack4State && window.Pack4State.cheatInvincible > Date.now()) {
+            obstaclesRef.current.splice(index, 1);
+            RenderEngine.flash('0,255,255', 0.3);
+            return;
+        }
+
         const obs = obstaclesRef.current[index]; if (!obs) return; const canvas = canvasRef.current; const p = playerRef.current;
         
         explosionsRef.current.push({ x: obs.x + obs.width / 2, y: obs.y + obs.height / 2, size: obs.height * 6, timer: 0, maxTimer: 30 });
@@ -413,6 +452,9 @@ function Game() {
             if (window.Pack2State.activePowerups.slowmo) pack2SpeedMult *= 0.5;
             if (window.Pack2State.activePowerups.sprint) pack2SpeedMult *= 1.5;
         }
+        
+        let pack4SpeedMult = 1.0;
+        if (window.Pack4State && window.Pack4State.boughtBuffs?.includes('start_speed')) pack4SpeedMult = 1.05;
 
         if (settingsRef.current.biomesEnabled && window.Pack3State && window.Pack3State.nextBiome && !biomeTransitionRef.current.active) {
             biomeTransitionRef.current = { active: true, nextBiome: window.Pack3State.nextBiome, alpha: 0 };
@@ -437,8 +479,8 @@ function Game() {
             if (eatTimerRef.current < 12) eatSpeedFactorRef.current = 1 - eatTimerRef.current / 12; else eatSpeedFactorRef.current = 0;
             const eatSpeedFactor = eatSpeedFactorRef.current;
             const baseSpeedMultEat = 1.0 + Math.floor(distanceRef.current / 100) * 0.04; const effectiveSpeedMultEat = Math.max(1.0, baseSpeedMultEat * speedPenaltyRef.current);
-            const currentSpeedEat = BASE_SPEED * effectiveSpeedMultEat * diffMult * eatSpeedFactor * pack2SpeedMult;
-            distanceRef.current += currentSpeedEat * 0.03; setScore(Math.floor(distanceRef.current)); setSpeedDisplay(eatSpeedFactor > 0.01 ? (effectiveSpeedMultEat * diffMult * eatSpeedFactor * pack2SpeedMult).toFixed(2) : "0.00"); bgOffsetRef.current -= currentSpeedEat;
+            const currentSpeedEat = BASE_SPEED * effectiveSpeedMultEat * diffMult * eatSpeedFactor * pack2SpeedMult * pack4SpeedMult;
+            distanceRef.current += currentSpeedEat * 0.03; setScore(Math.floor(distanceRef.current)); setSpeedDisplay(eatSpeedFactor > 0.01 ? (effectiveSpeedMultEat * diffMult * eatSpeedFactor * pack2SpeedMult * pack4SpeedMult).toFixed(2) : "0.00"); bgOffsetRef.current -= currentSpeedEat;
             obstaclesRef.current.forEach(o => { o.x -= currentSpeedEat; }); obstaclesRef.current = obstaclesRef.current.filter(o => o.x + o.width > 0); foodsRef.current.forEach(f => { f.x -= currentSpeedEat; }); foodsRef.current = foodsRef.current.filter(f => f.x + f.width > 0);
             explosionsRef.current.forEach(e => e.timer++); explosionsRef.current = explosionsRef.current.filter(e => e.timer < e.maxTimer);
             p.isJumping = false; p.velocityY = 0; p.y = gy - p.height; p.tilt = 0; p.bob = Math.sin(Date.now() / 150) * 3;
@@ -489,8 +531,8 @@ function Game() {
         
         let currentSpeed = 0;
         if (!isTrippingRef.current) {
-            currentSpeed = BASE_SPEED * effectiveSpeedMult * diffMult * eatSpeedFactorRef.current * pack2SpeedMult;
-            setSpeedDisplay((effectiveSpeedMult * diffMult * eatSpeedFactorRef.current * pack2SpeedMult).toFixed(2));
+            currentSpeed = BASE_SPEED * effectiveSpeedMult * diffMult * eatSpeedFactorRef.current * pack2SpeedMult * pack4SpeedMult;
+            setSpeedDisplay((effectiveSpeedMult * diffMult * eatSpeedFactorRef.current * pack2SpeedMult * pack4SpeedMult).toFixed(2));
             distanceRef.current += (currentSpeed * 0.03); setScore(Math.floor(distanceRef.current)); bgOffsetRef.current -= currentSpeed;
         } else { setSpeedDisplay("0.00"); }
 
@@ -573,6 +615,7 @@ function Game() {
 
                 if (hitboxX < obsHitboxX + obsHitboxWidth && hitboxX + hitboxWidth > obsHitboxX && hitboxY < obsHitboxY + obsHitboxHeight && hitboxY + hitboxHeight > obsHitboxY) {
                     if (obs.type === 'pit') {
+                        if (window.Pack4State && window.Pack4State.cheatInvincible > Date.now()) { obstaclesRef.current.splice(i, 1); RenderEngine.flash('0,255,255', 0.3); break; }
                         if (window.Pack2State && window.Pack2State.hasShield) {
                             window.Pack2State.hasShield = false;
                             window.GameEvents.emit('shield_break', { x: p.x, y: p.y });
@@ -677,9 +720,18 @@ function Game() {
         return () => cancelAnimationFrame(requestRef.current);
     }, [gameState, character, background]);
 
+    // Парсинг URL для QR кода (Пакет 4)
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const rec = params.get('record');
+        if (rec) {
+            alert(`🎉 Ваш друг поделился рекордом: ${rec}м! Побейте его!`);
+        }
+    }, []);
+
     const startGame = () => resetGame();
     const formatScore = (num) => num.toString().padStart(5, '0');
-    const getHearts = () => { let h = []; for (let i = 0; i < 3; i++) { if (health >= (i + 1) * 2) h.push('❤️'); else if (health === i * 2 + 1) h.push('💔'); else h.push('🖤'); } return h.join(''); };
+    const getHearts = () => { let h = []; for (let i = 0; i < 4; i++) { if (health >= (i + 1) * 2) h.push('❤️'); else if (health === i * 2 + 1) h.push('💔'); else h.push('🖤'); } return h.join(''); };
 
     const renderCharacterPanel = () => React.createElement('div', { className: 'char-panel' }, React.createElement('div', { className: 'char-panel-title' }, 'Hero'), Object.values(CHARACTERS).map(char => React.createElement('button', { key: char.id, className: `char-btn ${character === char.id ? 'active' : ''}`, onClick: () => setCharacter(char.id), title: char.name }, React.createElement('span', { className: 'char-emoji' }, char.emoji || '❓'), React.createElement('span', { className: 'char-name' }, char.name))));
     const renderBackgroundPanel = () => React.createElement('div', { className: 'settings', style: { marginTop: '-5px' } }, Object.values(BACKGROUNDS).map(bg => React.createElement('button', { key: bg.id, className: `btn ${background === bg.id ? 'active' : ''}`, onClick: () => setBackground(bg.id) }, `${bg.emoji} ${bg.name}`)));
@@ -699,7 +751,12 @@ function Game() {
             React.createElement('div', { className: 'subtitle' }, 'VICE CITY EDITION'),
             renderCharacterPanel(), renderBackgroundPanel(),
             React.createElement('div', { className: 'settings', style: { marginTop: '-10px' } }, React.createElement('button', { className: `btn ${timeOfDay === 'day' ? 'active' : ''}`, onClick: () => setTimeOfDay('day') }, '☀️ Day'), React.createElement('button', { className: `btn ${timeOfDay === 'night' ? 'active' : ''}`, onClick: () => setTimeOfDay('night') }, '🌙 Night')),
-            React.createElement('div', { style: { display: 'flex', gap: '10px', marginBottom: '15px', flexWrap: 'wrap', justifyContent: 'center' } }, React.createElement('button', { className: 'btn', onClick: toggleFullscreen }, '⛶ На весь экран'), React.createElement('button', { className: 'btn', onClick: () => window.GameEvents.emit('show_achievements') }, '🏆 Achievements')),
+            React.createElement('div', { style: { display: 'flex', gap: '10px', marginBottom: '15px', flexWrap: 'wrap', justifyContent: 'center' } }, 
+                React.createElement('button', { className: 'btn', onClick: toggleFullscreen }, '⛶ На весь экран'), 
+                React.createElement('button', { className: 'btn', onClick: () => window.GameEvents.emit('show_achievements') }, '🏆 Achievements'),
+                React.createElement('button', { className: 'btn', onClick: () => window.GameEvents.emit('show_shop') }, '🛒 Shop'),
+                React.createElement('button', { className: 'btn', onClick: () => window.GameEvents.emit('show_leaderboard') }, '🏅 Leaderboard')
+            ),
             React.createElement('button', { className: 'btn btn-start', onClick: startGame }, 'Start Escape'),
             React.createElement('button', { className: 'settings-open-btn', onClick: () => setShowSettings(true), style: { marginTop: '15px' } }, '⚙ SETTINGS'),
             React.createElement('div', { style: { marginTop: '10px' } }, React.createElement('p', { style: {color: '#888', fontSize: '12px'} }, 'Tap / Space — jump, HOLD — high jump!'), React.createElement('p', { style: {color: '#FFD700', fontSize: '12px'} }, 'Eat food to grow stronger!'), React.createElement('p', { style: {color: '#FF007F', fontSize: '12px'} }, 'Avoid pits — instant death!'))
@@ -715,7 +772,12 @@ function Game() {
             React.createElement('div', { className: 'subtitle', style: {color: 'white', marginBottom: '10px'} }, 'The employees caught you!'),
             React.createElement('div', { className: 'subtitle' }, 'DIST: ', Math.floor(score), 'm | HI: ', highScore, 'm'),
             renderCharacterPanel(),
-            React.createElement('div', { className: 'settings' }, React.createElement('button', { className: 'btn', onClick: toggleFullscreen }, '⛶ Fullscreen'), React.createElement('button', { className: 'btn', onClick: () => setGameState('menu') }, 'Menu'), React.createElement('button', { className: 'btn btn-start', onClick: startGame }, 'Try Again')),
+            React.createElement('div', { className: 'settings' }, 
+                React.createElement('button', { className: 'btn', onClick: toggleFullscreen }, '⛶ Fullscreen'), 
+                React.createElement('button', { className: 'btn', onClick: () => window.GameEvents.emit('show_share') }, '📸 Share'), // Кнопка шаринга
+                React.createElement('button', { className: 'btn', onClick: () => setGameState('menu') }, 'Menu'), 
+                React.createElement('button', { className: 'btn btn-start', onClick: startGame }, 'Try Again')
+            ),
             React.createElement('button', { className: 'settings-open-btn', onClick: () => setShowSettings(true), style: { marginTop: '15px' } }, '⚙ SETTINGS')
         ) : null,
         showSettings && React.createElement('div', { className: 'settings-overlay' },
@@ -751,7 +813,7 @@ function Game() {
                 React.createElement('div', { className: 'settings-footer' }, React.createElement('span', { className: 'settings-hint' }, 'Changes are saved automatically'), React.createElement('button', { className: 'settings-reset', onClick: () => setSettings({ ...DEFAULT_SETTINGS }) }, 'RESET'))
             )
         ),
-        ...(window.PackUIs || []).map((UI, i) => React.createElement(UI, { key: 'plugin-' + i, gameState, setGameState }))
+        ...(window.PackUIs || []).map((UI, i) => React.createElement(UI, { key: 'plugin-' + i, gameState, setGameState, score }))
     );
 }
 
