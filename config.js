@@ -1,6 +1,5 @@
 /* ==================================================================
    config.js — Глобальная конфигурация игры
-   Здесь настраиваются физика, персонажи, биомы и дефолтные настройки.
    ================================================================== */
 (function () {
     'use strict';
@@ -8,12 +7,12 @@
     window.GAME_CONFIG = {
         // === ФИЗИКА И ИГРОВОЙ ПРОЦЕСС ===
         physics: {
-            gravity: 0.75,          // Сила притяжения
-            jumpForce: -10.5,       // Начальная сила прыжка
-            holdThrust: 0.45,       // Сила удержания кнопки прыжка (для высокого прыжка)
-            groundY: 530,           // Базовая линия земли (Y координата)
-            baseSpeed: 4.0,         // Базовая скорость игры
-            speedMultiplier: 0.8    // Множитель сложности
+            gravity: 0.75,
+            jumpForce: -10.5,
+            holdThrust: 0.45,
+            groundY: 530,
+            baseSpeed: 4.0,
+            speedMultiplier: 0.8
         },
 
         // === НАСТРОЙКИ ПО УМОЛЧАНИЮ ===
@@ -22,24 +21,37 @@
             ambientVolume: 0.25,
             masterVolume: 1.0,
             soundEnabled: true,
-            graphics: 'high',       // 'low', 'medium', 'high'
-            comboEnabled: true      // Для плагина Pack1 (Combo System)
+            graphics: 'high', // 'low', 'medium', 'high'
+            comboEnabled: true,
+            comboVisualsEnabled: true
+        },
+
+        // === НАСТРОЙКИ КОМБО-СИСТЕМЫ (PACK 1) ===
+        combo: {
+            decayTimeMs: 3000, // Через сколько миллисекунд без прыжка комбо сбрасывается
+            tiers: [
+                { threshold: 3,  mult: 2, emoji: '😎', color: '#00FFFF' },
+                { threshold: 5,  mult: 3, emoji: '🔥', color: '#FFD700' },
+                { threshold: 10, mult: 5, emoji: '👑', color: '#FF007F' },
+                { threshold: 20, mult: 10, emoji: '🌈', color: '#FFFFFF' }
+            ],
+            sadEmoji: '😢',
+            sadColor: '#888888'
         },
 
         // === РЕЕСТР ПЕРСОНАЖЕЙ ===
-        // Чтобы добавить нового героя, просто скопируйте блок и измените параметры.
         characters: {
             crocodile: {
                 id: 'crocodile',
                 name: 'Crocodile',
                 emoji: '🐊',
                 folder: 'source/characters/crocodile',
-                frameCount: 12,              // Количество кадров анимации бега
+                frameCount: 12,
                 baseWidth: 165.4,
                 baseHeight: 110.3,
                 foodEmojis: ['🍗', '🍔', '🍕', '🥩'],
-                eatEmoji: null,              // Если null, персонаж не будет останавливаться на еду
-                eatFolder: null,             // Папка с анимацией поедания
+                eatEmoji: null,
+                eatFolder: null,
                 eatFrameCount: 0,
                 eatDuration: 0
             },
@@ -52,23 +64,14 @@
                 baseWidth: 160,
                 baseHeight: 120,
                 foodEmojis: ['🎋'],
-                eatEmoji: '🎋',              // При поедании этого эмодзи, запустится анимация
+                eatEmoji: '🎋',
                 eatFolder: 'source/characters/panda/eating',
                 eatFrameCount: 8,
-                eatDuration: 4.0             // Длительность анимации в секундах
+                eatDuration: 4.0
             }
-            // Пример добавления нового персонажа:
-            // ninja: {
-            //     id: 'ninja', name: 'Ninja', emoji: '🥷',
-            //     folder: 'source/characters/ninja', frameCount: 10,
-            //     baseWidth: 150, baseHeight: 100,
-            //     foodEmojis: ['🍣'], eatEmoji: '🍣',
-            //     eatFolder: 'source/characters/ninja/eating', eatFrameCount: 6, eatDuration: 3.0
-            // }
         },
 
         // === РЕЕСТР БИОМОВ (УРОВНЕЙ) ===
-        // Каждый биом имеет свой фон, список препятствий и доступную еду.
         biomes: {
             default: {
                 id: 'default',
@@ -76,9 +79,9 @@
                 emoji: '🌳',
                 dayImg: 'source/landscape.jpg',
                 nightImg: 'source/landscape_n.jpg',
-                groundOffset: 0,     // Смещение земли (если картинка ниже/выше)
+                groundOffset: 0,
                 obstacleTypes: ['barrel', 'rock', 'cactus', 'puddle', 'pit'],
-                foodEmojis: null     // Если null, берется еда из настроек персонажа
+                foodEmojis: null
             },
             cartoon: {
                 id: 'cartoon',
@@ -90,14 +93,6 @@
                 obstacleTypes: ['rock', 'puddle', 'pit'],
                 foodEmojis: ['🎋']
             }
-            // Пример добавления пустыни:
-            // desert: {
-            //     id: 'desert', name: 'Desert', emoji: '🏜️',
-            //     dayImg: 'source/desert.png', nightImg: 'source/desert_n.png',
-            //     groundOffset: 10,
-            //     obstacleTypes: ['cactus', 'pit', 'rock'],
-            //     foodEmojis: ['🌵', '🍉']
-            // }
         }
     };
 })();
