@@ -14,21 +14,22 @@ window.GameBoot = window.GameBoot || {
     trigger() { if (this.triggered) return; this.triggered = true; this.callbacks.forEach(cb => { try { cb(); } catch(e){ console.error(e); } }); this.callbacks = []; }
 };
 
+// Загружаем конфигурацию с фоллбэком
+const CONFIG = window.GAME_CONFIG || { physics: {}, defaultSettings: {}, characters: {}, biomes: {} };
+
 const FLIP_CROC = false; 
 
-const GRAVITY = 0.75;        
-const JUMP_FORCE = -10.5;    
-const HOLD_THRUST = 0.45;    
+const GRAVITY = CONFIG.physics.gravity ?? 0.75;        
+const JUMP_FORCE = CONFIG.physics.jumpForce ?? -10.5;    
+const HOLD_THRUST = CONFIG.physics.holdThrust ?? 0.45;    
 
-const GROUND_Y = 530; 
-const BASE_SPEED = 4.0; 
-const SPEED_MULTIPLIER = 0.8;
+const GROUND_Y = CONFIG.physics.groundY ?? 530; 
+const BASE_SPEED = CONFIG.physics.baseSpeed ?? 4.0; 
+const SPEED_MULTIPLIER = CONFIG.physics.speedMultiplier ?? 0.8;
 
-const DEFAULT_SETTINGS = {
-    sfxVolume: 0.7, ambientVolume: 0.25, masterVolume: 1.0,
-    soundEnabled: true, graphics: 'high',
-};
+const DEFAULT_SETTINGS = CONFIG.defaultSettings;
 
+// === РЕНДЕР ДВИЖОК ===
 const RenderEngine = (function () {
     const QUALITY = {
         low:    { parallax: false, bloom: false, particles: false, shake: false, trail: false, vignette: false, flash: false, maxParticles: 0 },
@@ -327,50 +328,23 @@ const RenderEngine = (function () {
     };
 })();
 
-const BACKGROUNDS = {
-    default: {
-        id: 'default', name: 'Forest', emoji: '🌳',
-        dayImg: 'source/landscape.jpg', nightImg: 'source/landscape_n.jpg',
-        groundOffset: 0,
-        obstacleTypes: ['barrel', 'rock', 'cactus', 'puddle', 'pit'],
-        foodEmojis: null,
-    },
-    cartoon: {
-        id: 'cartoon', name: 'Cartoon', emoji: '🌲',
-        dayImg: 'source/cartoon_forest.png', nightImg: 'source/cartoon_forest_n.png',
-        groundOffset: 30,
-        obstacleTypes: ['rock', 'puddle', 'pit'],
-        foodEmojis: ['🎋'],
-    },
-};
+// ЭКСПОРТИРУЕМ ДВИЖОК ДЛЯ ПЛАГИНОВ
+window.RenderEngine = RenderEngine;
 
-const CHARACTERS = {
-    crocodile: {
-        id: 'crocodile', name: 'Crocodile', emoji: '🐊',
-        folder: 'source/characters/crocodile', frameCount: 12,
-        baseWidth: 165.4, baseHeight: 110.3,
-        foodEmojis: ['🍗', '🍔', '🍕', '🥩'],
-    },
-    panda: {
-        id: 'panda', name: 'Panda', emoji: '🐼',
-        folder: 'source/characters/panda', frameCount: 20,
-        baseWidth: 160, baseHeight: 120,
-        foodEmojis: ['🎋'],
-        eatEmoji: '🎋', eatFolder: 'source/characters/panda/eating',
-        eatFrameCount: 8, eatDuration: 4.0,
-    },
-};
+// Получаем персонажей и биомы из конфига
+const CHARACTERS = CONFIG.characters;
+const BACKGROUNDS = CONFIG.biomes;
 
 function Game() {
     const [gameState, setGameState] = useState('menu');
     const [timeOfDay, setTimeOfDay] = useState(() => localStorage.getItem('lacosteTimeOfDay') || 'day');
     const [background, setBackground] = useState(() => {
         const saved = localStorage.getItem('lacosteBackground');
-        return (saved && BACKGROUNDS[saved]) ? saved : 'default';
+        return (saved && BACKGROUNDS[saved]) ? saved : Object.keys(BACKGROUNDS)[0];
     });
     const [character, setCharacter] = useState(() => {
         const saved = localStorage.getItem('lacosteCharacter');
-        return (saved && CHARACTERS[saved]) ? saved : 'crocodile';
+        return (saved && CHARACTERS[saved]) ? saved : Object.keys(CHARACTERS)[0];
     });
     
     const [score, setScore] = useState(0);
@@ -414,7 +388,7 @@ function Game() {
     useEffect(() => {
         backgroundRef.current = background;
         localStorage.setItem('lacosteBackground', background);
-        const bg = BACKGROUNDS[background] || BACKGROUNDS.default;
+        const bg = BACKGROUNDS[background] || BACKGROUNDS[Object.keys(BACKGROUNDS)[0]];
         groundYRef.current = GROUND_Y + (bg.groundOffset || 0);
     }, [background]);
 
@@ -438,7 +412,7 @@ function Game() {
         eatTimerRef.current = 0;
         eatSpeedFactorRef.current = 1.0;
 
-        const char = CHARACTERS[character] || CHARACTERS.crocodile;
+        const char = CHARACTERS[character] || CHARACTERS[Object.keys(CHARACTERS)[0]];
         for (let i = 1; i <= char.frameCount; i++) {
             const img = new Image();
             img.src = `${char.folder}/${i}.png`;
@@ -563,7 +537,7 @@ function Game() {
         };
     }, []);
     
-    const initChar = CHARACTERS[character] || CHARACTERS.crocodile;
+    const initChar = CHARACTERS[character] || CHARACTERS[Object.keys(CHARACTERS)[0]];
     const initGroundY = GROUND_Y + (BACKGROUNDS[background]?.groundOffset || 0);
     const playerRef = useRef({
         x: 100, y: initGroundY - initChar.baseHeight, 
@@ -635,7 +609,7 @@ function Game() {
     }, []);
 
     const calculateJumpMultiplier = (playerHeight, gameSpeed, penalty = 1.0) => {
-        const char = CHARACTERS[character] || CHARACTERS.crocodile;
+        const char = CHARACTERS[character] || CHARACTERS[Object.keys(CHARACTERS)[0]];
         const sizeFactor = Math.sqrt(playerHeight / char.baseHeight);
         const speedFactor = 1 + (gameSpeed - 1) * 0.10;
         return Math.max(1.0, sizeFactor * speedFactor * penalty);
@@ -652,7 +626,6 @@ function Game() {
         }
     };
 
-    // === COMBO: эмит для плагина ===
     const resetCombo = () => {
         comboRef.current = 0;
         comboMultRef.current = 1;
@@ -758,7 +731,7 @@ function Game() {
     }, [gameState, character]);
 
     const resetGame = () => {
-        const char = CHARACTERS[character] || CHARACTERS.crocodile;
+        const char = CHARACTERS[character] || CHARACTERS[Object.keys(CHARACTERS)[0]];
         const gy = groundYRef.current;
         playerRef.current = {
             x: 100, y: gy - char.baseHeight, 
@@ -790,7 +763,9 @@ function Game() {
         resetCombo();
         RenderEngine.reset();
         setScore(0); setSpeedDisplay(1.0); setPowerDisplay(1.0); setGameState('playing');
-        window.GameEvents.emit('game_start', { character, background, timeOfDay, settings: settingsRef.current });
+        
+        // Исправлено название события для совместимости с плагином Pack1
+        window.GameEvents.emit('start', { character, background, timeOfDay, settings: settingsRef.current });
     };
 
     const handleGameOver = () => {
@@ -821,7 +796,14 @@ function Game() {
             colors: ['#FF007F', '#FFFFFF'], speed: 4, life: 25, size: 3, gravity: 0.15
         });
         resetCombo();
-        window.GameEvents.emit('hit', { health: healthRef.current, type });
+        
+        // Передаем координаты игрока для плагина
+        window.GameEvents.emit('hit', { 
+            health: healthRef.current, 
+            type,
+            playerX: playerRef.current.x + playerRef.current.width / 2,
+            playerY: playerRef.current.y + playerRef.current.height / 2
+        });
 
         if (healthRef.current <= 0) { handleGameOver(); return; }
         
@@ -864,9 +846,9 @@ function Game() {
     const updateLogic = () => {
         const canvas = canvasRef.current;
         const p = playerRef.current;
-        const char = CHARACTERS[character] || CHARACTERS.crocodile;
+        const char = CHARACTERS[character] || CHARACTERS[Object.keys(CHARACTERS)[0]];
         const gy = groundYRef.current;
-        const bgConfig = BACKGROUNDS[backgroundRef.current] || BACKGROUNDS.default;
+        const bgConfig = BACKGROUNDS[backgroundRef.current] || BACKGROUNDS[Object.keys(BACKGROUNDS)[0]];
 
         const diffMult = SPEED_MULTIPLIER;
         const gfxQuality = settingsRef.current.graphics;
@@ -1125,15 +1107,20 @@ function Game() {
             return true;
         });
 
+        // Отправляем настройки в плагин каждый тик
         if (Math.floor(distanceRef.current) % 5 === 0) {
-            window.GameEvents.emit('world_tick', { distance: distanceRef.current, health: healthRef.current });
+            window.GameEvents.emit('tick', { 
+                distance: distanceRef.current, 
+                health: healthRef.current,
+                settings: settingsRef.current 
+            });
         }
     };
 
     const describeScene = () => {
-        const char = CHARACTERS[character] || CHARACTERS.crocodile;
+        const char = CHARACTERS[character] || CHARACTERS[Object.keys(CHARACTERS)[0]];
         const gy = groundYRef.current;
-        const bgConfig = BACKGROUNDS[backgroundRef.current] || BACKGROUNDS.default;
+        const bgConfig = BACKGROUNDS[backgroundRef.current] || BACKGROUNDS[Object.keys(BACKGROUNDS)[0]];
         const bgImages = backgroundImagesRef.current[bgConfig.id] || { day: new Image(), night: new Image() };
 
         let charImg;
@@ -1201,7 +1188,6 @@ function Game() {
                 while (accumulatorRef.current >= FRAME_TIME && loops < 5) {
                     updateLogic();
                     RenderEngine.update();
-                    window.GameEvents.emit('tick');
                     accumulatorRef.current -= FRAME_TIME;
                     loops++;
                 }
@@ -1424,7 +1410,7 @@ function Game() {
             )
         ),
 
-        // === РЕНДЕР ПЛАГИНОВ (UI из all_in_one.js) ===
+        // === РЕНДЕР ПЛАГИНОВ (UI из pack1.js и др.) ===
         ...(window.PackUIs || []).map((UI, i) =>
             React.createElement(UI, { key: 'plugin-' + i, gameState, setGameState })
         )
