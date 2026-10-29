@@ -1,23 +1,27 @@
 /* ==================================================================
-   PACK 2 — Atmosphere, Power-ups, Combined Weather
+   PACK 2 — Atmosphere, Power-ups, Combined Weather, Inventory
    ================================================================== */
 (function () {
     'use strict';
 
     const P2_CONFIG = (window.GAME_CONFIG && window.GAME_CONFIG.pack2) || {
-        powerups: { spawnChance: 0.05, types: { shield: { emoji: '🛡️', duration: 0 }, magnet: { emoji: '🧲', duration: 5000 }, slowmo: { emoji: '⏳', duration: 3000 }, sprint: { emoji: '⚡', duration: 3000 } } },
+        powerups: { spawnChance: 0.05, types: { shield: { emoji: '🛡️', duration: 0, color: '#00FFFF' }, magnet: { emoji: '🧲', duration: 5000, color: '#FF0000' }, sprint: { emoji: '⚡', duration: 3000, color: '#FFD700' } } },
         weather: { combinations: [{ id: 'clear', label: '☀️', rain: false, fog: false, storm: false, tint: 'rgba(0,0,0,0)' }] },
         music: { layers: [], maxTempoRate: 1.15, tempoDistance: 2000 }
     };
 
     const Pack2State = {
-        activePowerup: null, 
-        hasShield: false,
-        currentWeather: P2_CONFIG.weather.combinations[0], // Объект текущей погоды
+        // Инвентарь (накопительные)
+        inventory: { shield: 0, magnet: 0, sprint: 0 },
+        
+        // Активные эффекты (могут работать одновременно)
+        activePowerups: { magnet: 0, sprint: 0 }, 
+        hasShield: false, // Щит работает отдельно как одноразовая защита
+
+        currentWeather: P2_CONFIG.weather.combinations[0],
         lastWeatherChange: 0,
         timeOfDay: 'day',
         
-        // Погодные системы
         rainParticles: [],
         splashParticles: [],
         lightningTimer: 0,
@@ -28,6 +32,7 @@
         thunderAudio: null,
         powerupAudios: {},
         settings: null,
+        uiListeners: [],
     };
 
     window.Pack2State = Pack2State;
@@ -59,6 +64,10 @@
         }
     }
 
+    function updateUI() {
+        Pack2State.uiListeners.forEach(fn => fn());
+    }
+
     // === ПОГОДА ===
     function changeWeather(forceId = null) {
         if (!Pack2State.settings?.weatherEnabled) return;
@@ -67,14 +76,11 @@
         if (forceId) {
             newWeather = P2_CONFIG.weather.combinations.find(w => w.id === forceId) || P2_CONFIG.weather.combinations[0];
         } else {
-            // Выбираем случайную комбинацию
             const combos = P2_CONFIG.weather.combinations;
             newWeather = combos[Math.floor(Math.random() * combos.length)];
         }
         
         Pack2State.currentWeather = newWeather;
-        
-        // Сброс частиц при смене погоды
         Pack2State.rainParticles = [];
         Pack2State.splashParticles = [];
 
@@ -88,27 +94,66 @@
         }
     }
 
+    // === АКТИВАЦИЯ БУСТОВ ===
+    function usePowerup(type) {
+        if (!Pack2State.inventory[type] || Pack2State.inventory[type] <= 0) return;
+        
+        // Проверяем, не активен ли уже (для щита всегда можно)
+        if (type !== 'shield' && Pack2State.activePowerups[type] > Date.now()) return;
+
+        Pack2State.inventory[type]--;
+        
+        if (type === 'shield') {
+            Pack2State.hasShield = true;
+        } else {
+            const pData = P2_CONFIG.powerups.types[type];
+            Pack2State.activePowerups[type] = Date.now() + pData.duration;
+        }
+        
+        playSound(Pack2State.powerupAudios[type]);
+        updateUI();
+    }
+
+    // Обработка клавиш 1, 2, 3
+    window.addEventListener('keydown', (e) => {
+        if (e.code === 'Digit1') usePowerup('shield');
+        if (e.code === 'Digit2') usePowerup('magnet');
+        if (e.code === 'Digit3') usePowerup('sprint');
+    });
+
     // === ПОДПИСКА НА СОБЫТИЯ ===
     window.GameEvents.on('start', (data) => {
         initAudio();
         Pack2State.settings = data.settings;
-        Pack2State.activePowerup = null;
+        
+        // Сброс инвентаря
+        Pack2State.inventory = { shield: 0, magnet: 0, sprint: 0 };
+        Pack2State.activePowerups = { magnet: 0, sprint: 0 };
         Pack2State.hasShield = false;
+
         Pack2State.lastWeatherChange = 0;
         Pack2State.lightningActive = false;
         
         changeWeather('clear');
         Pack2State.musicAudios.forEach((a, i) => { a.currentTime = 0; a.volume = i === 0 ? 0.2 : 0; a.play().catch(() => {}); });
+        updateUI();
     });
 
     window.GameEvents.on('tick', (data) => {
         if (data.settings) Pack2State.settings = data.settings;
         if (data.timeOfDay) Pack2State.timeOfDay = data.timeOfDay;
 
-        if (Pack2State.activePowerup && Date.now() > Pack2State.activePowerup.endTime) {
-            Pack2State.activePowerup = null;
+        // Очистка просроченных эффектов
+        let uiChanged = false;
+        if (Pack2State.activePowerups.magnet && Date.now() > Pack2State.activePowerups.magnet) {
+            Pack2State.activePowerups.magnet = 0; uiChanged = true;
         }
+        if (Pack2State.activePowerups.sprint && Date.now() > Pack2State.activePowerups.sprint) {
+            Pack2State.activePowerups.sprint = 0; uiChanged = true;
+        }
+        if (uiChanged) updateUI();
 
+        // Погода
         if (Pack2State.settings?.weatherEnabled && data.distance !== undefined) {
             const nextWeatherDist = Math.floor(data.distance / P2_CONFIG.weather.changeDistance) * P2_CONFIG.weather.changeDistance;
             if (nextWeatherDist > Pack2State.lastWeatherChange && nextWeatherDist > 0) {
@@ -128,6 +173,7 @@
             }
         }
 
+        // Музыка
         if (Pack2State.settings?.dynamicMusicEnabled && Pack2State.musicAudios.length > 0) {
             const dist = data.distance || 0;
             const tempoRate = 1.0 + Math.min(dist / P2_CONFIG.music.tempoDistance, 1.0) * (P2_CONFIG.music.maxTempoRate - 1.0);
@@ -142,22 +188,14 @@
         }
     });
 
+    // Сбор буста в инвентарь
     window.GameEvents.on('powerup_collect', (data) => {
-        const pData = P2_CONFIG.powerups.types[data.kind];
-        if (!pData) return;
-
-        playSound(Pack2State.powerupAudios[data.kind]);
-
-        if (data.kind === 'shield') {
-            Pack2State.hasShield = true;
-            Pack2State.activePowerup = null; 
-        } else {
-            Pack2State.activePowerup = { type: data.kind, endTime: Date.now() + pData.duration };
-        }
-
-        if (window.RenderEngine) {
-            window.RenderEngine.spawnParticles(data.x, data.y, 30, { colors: [pData.color, '#FFFFFF'], speed: 5, life: 40, size: 4, gravity: 0.1 });
-            window.RenderEngine.flash(pData.color.replace('#', ''), 0.3);
+        if (Pack2State.inventory[data.kind] !== undefined) {
+            Pack2State.inventory[data.kind]++;
+            if (window.RenderEngine) {
+                window.RenderEngine.spawnParticles(data.x, data.y, 20, { colors: [P2_CONFIG.powerups.types[data.kind].color, '#FFFFFF'], speed: 5, life: 30, size: 3, gravity: 0.1 });
+            }
+            updateUI();
         }
     });
 
@@ -167,21 +205,24 @@
             window.RenderEngine.spawnParticles(data.x + 50, data.y + 50, 40, { colors: ['#00FFFF', '#FFFFFF'], speed: 8, life: 30, size: 4, gravity: 0.1 });
             window.RenderEngine.shake(8, 15); window.RenderEngine.flash('0,255,255', 0.4);
         }
+        updateUI();
     });
 
     window.GameEvents.on('gameover', () => {
-        Pack2State.activePowerup = null; Pack2State.hasShield = false;
+        Pack2State.activePowerups = { magnet: 0, sprint: 0 };
+        Pack2State.hasShield = false;
         Pack2State.musicAudios.forEach(a => a.pause());
         if (Pack2State.rainAudio) Pack2State.rainAudio.pause();
+        updateUI();
     });
 
-    // === РЕНДЕР ===
-    window.GameEvents.on('render_frame', ({ ctx, player, obstacles }) => {
+    // === РЕНДЕР (ОПТИМИЗИРОВАННЫЙ) ===
+    window.GameEvents.on('render_frame', ({ ctx, player }) => {
         const W = ctx.canvas.width; const H = ctx.canvas.height;
         const weather = Pack2State.currentWeather;
         
-        // 1. Щит
-        if (Pack2State.hasShield && player) {
+        // 1. Щит (Не рисуем, если персонаж падает в яму)
+        if (Pack2State.hasShield && player && !player.isFallingIntoPit) {
             ctx.save();
             const pCenterX = player.x + player.w / 2;
             const pCenterY = player.y + player.h / 2;
@@ -202,45 +243,51 @@
         }
 
         // 2. Slow-mo / Sprint
-        if (Pack2State.activePowerup?.type === 'slowmo') {
-            ctx.fillStyle = 'rgba(0, 0, 255, 0.2)'; ctx.fillRect(0, 0, W, H);
-        } else if (Pack2State.activePowerup?.type === 'sprint' && window.RenderEngine && Math.random() > 0.5) {
-            const sparkX = player ? player.x : 180;
-            const sparkY = player ? player.y + player.h / 2 : H - 100;
-            window.RenderEngine.spawnParticles(sparkX, sparkY, 1, { colors: ['#FFD700', '#FFFFFF'], speed: 5, life: 20, size: 3, gravity: 0 });
+        if (Pack2State.activePowerups.sprint) {
+            ctx.fillStyle = 'rgba(255, 215, 0, 0.05)'; ctx.fillRect(0, 0, W, H);
+            if (window.RenderEngine && Math.random() > 0.5 && player) {
+                window.RenderEngine.spawnParticles(player.x, player.y + player.h / 2, 1, { colors: ['#FFD700', '#FFFFFF'], speed: 5, life: 20, size: 3, gravity: 0 });
+            }
+        }
+        if (Pack2State.activePowerups.magnet && player) {
+            // Визуал магнита
+            ctx.save();
+            const pCenterX = player.x + player.w / 2;
+            const pCenterY = player.y + player.h / 2;
+            ctx.beginPath(); ctx.arc(pCenterX, pCenterY, 150 + Math.sin(Date.now()/100)*20, 0, Math.PI*2);
+            ctx.strokeStyle = 'rgba(255, 0, 0, 0.4)'; ctx.lineWidth = 2; ctx.stroke();
+            ctx.restore();
         }
 
-        // 3. ДОЖДЬ (Яркий, со свечением)
+        // 3. ДОЖДЬ (БЕЗ SHADOWBLUR ДЛЯ FPS)
         if (weather.rain) {
             const groundY = H * 0.8;
 
-            if (Pack2State.rainParticles.length < 200) {
-                for(let i=0; i<4; i++) {
+            if (Pack2State.rainParticles.length < 150) { // Уменьшили количество для FPS
+                for(let i=0; i<3; i++) {
                     Pack2State.rainParticles.push({
-                        x: Math.random() * W,
-                        y: -20 - Math.random() * 100,
-                        speed: 20 + Math.random() * 15,
-                        length: 20 + Math.random() * 25,
-                        alpha: 0.7 + Math.random() * 0.3
+                        x: Math.random() * W, y: -20 - Math.random() * 100,
+                        speed: 22 + Math.random() * 10, length: 20 + Math.random() * 20,
+                        alpha: 0.8 + Math.random() * 0.2
                     });
                 }
             }
 
             ctx.save();
-            ctx.globalCompositeOperation = 'screen'; // Свечение
+            ctx.globalCompositeOperation = 'screen'; // Свечение без потери FPS
             ctx.lineCap = 'round';
             
-            // Добавляем небольшое свечение самим каплям для видимости днем
-            ctx.shadowBlur = 4;
-            ctx.shadowColor = 'rgba(200, 240, 255, 0.8)';
+            // Яркие, плотные капли (без shadowBlur)
+            ctx.strokeStyle = 'rgba(200, 240, 255, 0.9)';
+            ctx.lineWidth = 2.5;
 
             for (let i = Pack2State.rainParticles.length - 1; i >= 0; i--) {
                 const p = Pack2State.rainParticles[i];
                 p.y += p.speed;
                 p.x -= p.speed * 0.15;
 
-                if (p.y > groundY + (Math.random() * 50)) {
-                    for(let j=0; j<3; j++) {
+                if (p.y > groundY + (Math.random() * 30)) {
+                    for(let j=0; j<2; j++) { // Меньше брызг для FPS
                         Pack2State.splashParticles.push({
                             x: p.x, y: groundY + Math.random() * 20,
                             vx: (Math.random() - 0.5) * 6, vy: -Math.random() * 4,
@@ -250,15 +297,15 @@
                     p.y = -20 - Math.random() * 100; p.x = Math.random() * W + 50; 
                 }
 
+                // Рисуем группами для оптимизации (можно и по одной, но без теней это быстро)
                 ctx.beginPath();
                 ctx.moveTo(p.x, p.y);
                 ctx.lineTo(p.x + p.speed * 0.2, p.y + p.length);
-                ctx.strokeStyle = `rgba(255, 255, 255, ${p.alpha})`;
-                ctx.lineWidth = 2.5;
                 ctx.stroke();
             }
 
             // Брызги
+            ctx.fillStyle = 'rgba(200, 240, 255, 0.7)';
             for (let i = Pack2State.splashParticles.length - 1; i >= 0; i--) {
                 const s = Pack2State.splashParticles[i];
                 s.x += s.vx; s.y += s.vy; s.vy += 0.6; s.life--;
@@ -267,7 +314,6 @@
 
                 ctx.beginPath();
                 ctx.arc(s.x, s.y, s.size * (s.life / s.maxLife), 0, Math.PI * 2);
-                ctx.fillStyle = `rgba(255, 255, 255, ${(s.life / s.maxLife) * 0.8})`;
                 ctx.fill();
             }
             ctx.restore();
@@ -278,7 +324,6 @@
 
         // 4. ТУМАН
         if (weather.fog) {
-            // Градиент слева направо (справа гуще, скрывает препятствия)
             const fogGrad = ctx.createLinearGradient(W * 0.1, 0, W, 0);
             fogGrad.addColorStop(0, 'rgba(200, 210, 220, 0.0)');
             fogGrad.addColorStop(0.6, 'rgba(200, 210, 220, 0.5)');
@@ -290,49 +335,75 @@
             ctx.fillStyle = vigGrad; ctx.fillRect(0, 0, W, H);
         }
 
-        // 5. ЦВЕТОВОЙ ФИЛЬТР (Tint) для всего экрана
+        // 5. ЦВЕТОВОЙ ФИЛЬТР (Tint)
         if (weather.tint && weather.tint !== 'rgba(0,0,0,0)') {
-            ctx.fillStyle = weather.tint;
-            ctx.fillRect(0, 0, W, H);
+            ctx.fillStyle = weather.tint; ctx.fillRect(0, 0, W, H);
         }
     });
 
-    // === UI КОМПОНЕНТ ===
+    // === UI КОМПОНЕНТ (ИНВЕНТАРЬ) ===
     function Pack2UI({ gameState }) {
-        const [active, setActive] = React.useState(null);
-        const [weather, setWeather] = React.useState(P2_CONFIG.weather.combinations[0]);
-        const [hasShield, setHasShield] = React.useState(false);
+        const [, forceUpdate] = React.useReducer(x => x + 1, 0);
         const [timeOfDay, setTimeOfDay] = React.useState('day');
+        const [weather, setWeather] = React.useState(P2_CONFIG.weather.combinations[0]);
 
         React.useEffect(() => {
+            const listener = () => forceUpdate();
+            Pack2State.uiListeners.push(listener);
             const interval = setInterval(() => {
-                setActive(Pack2State.activePowerup);
-                setHasShield(Pack2State.hasShield);
                 setWeather(Pack2State.currentWeather);
                 setTimeOfDay(Pack2State.timeOfDay);
-            }, 100);
-            return () => clearInterval(interval);
+            }, 500); // Обновляем погоду реже
+            return () => {
+                Pack2State.uiListeners = Pack2State.uiListeners.filter(l => l !== listener);
+                clearInterval(interval);
+            };
         }, []);
 
         if (gameState !== 'playing') return null;
 
         const timeIcon = timeOfDay === 'night' ? '🌙' : '☀️';
-        const activeData = active ? P2_CONFIG.powerups.types[active.type] : null;
-        const timeLeft = active ? Math.max(0, Math.ceil((active.endTime - Date.now()) / 1000)) : 0;
+        
+        // Проверка активных бустов для отображения таймера
+        const magnetActive = Pack2State.activePowerups.magnet > Date.now();
+        const sprintActive = Pack2State.activePowerups.sprint > Date.now();
 
         return React.createElement(React.Fragment, null,
+            // Погода и Время
             React.createElement('div', { className: 'hud-right', style: { top: '50px', right: '20px', display: 'flex', gap: '10px', fontSize: '24px' } }, 
                 React.createElement('span', { title: 'Time' }, timeIcon),
-                // Выводим label из объекта погоды
                 React.createElement('span', { title: 'Weather', style: {fontSize: '20px'} }, weather.label || '❓')
             ),
-            (activeData || hasShield) && React.createElement('div', { className: 'pack2-powerup-badge' },
-                hasShield ? '🛡️' : `${activeData.emoji} ${timeLeft}s`
+            
+            // Активные эффекты (сверху по центру)
+            (Pack2State.hasShield || magnetActive || sprintActive) && React.createElement('div', { style: { position: 'absolute', top: '100px', left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: '10px' } },
+                Pack2State.hasShield && React.createElement('div', { className: 'pack2-powerup-badge', style: { borderColor: '#00FFFF', color: '#00FFFF' } }, '🛡️'),
+                magnetActive && React.createElement('div', { className: 'pack2-powerup-badge', style: { borderColor: '#FF0000', color: '#FF0000' } }, `🧲 ${Math.ceil((Pack2State.activePowerups.magnet - Date.now())/1000)}s`),
+                sprintActive && React.createElement('div', { className: 'pack2-powerup-badge', style: { borderColor: '#FFD700', color: '#FFD700' } }, `⚡ ${Math.ceil((Pack2State.activePowerups.sprint - Date.now())/1000)}s`)
+            ),
+
+            // Инвентарь (внизу)
+            React.createElement('div', { className: 'pack2-inventory' },
+                React.createElement('button', { className: `inv-btn ${Pack2State.inventory.shield > 0 ? 'active' : ''}`, onClick: () => usePowerup('shield') },
+                    React.createElement('span', { className: 'inv-icon' }, '🛡️'),
+                    React.createElement('span', { className: 'inv-count' }, Pack2State.inventory.shield),
+                    React.createElement('span', { className: 'inv-key' }, '1')
+                ),
+                React.createElement('button', { className: `inv-btn ${Pack2State.inventory.magnet > 0 ? 'active' : ''}`, onClick: () => usePowerup('magnet') },
+                    React.createElement('span', { className: 'inv-icon' }, '🧲'),
+                    React.createElement('span', { className: 'inv-count' }, Pack2State.inventory.magnet),
+                    React.createElement('span', { className: 'inv-key' }, '2')
+                ),
+                React.createElement('button', { className: `inv-btn ${Pack2State.inventory.sprint > 0 ? 'active' : ''}`, onClick: () => usePowerup('sprint') },
+                    React.createElement('span', { className: 'inv-icon' }, '⚡'),
+                    React.createElement('span', { className: 'inv-count' }, Pack2State.inventory.sprint),
+                    React.createElement('span', { className: 'inv-key' }, '3')
+                )
             )
         );
     }
 
     if (window.PackUIs) { window.PackUIs.push(Pack2UI); } else { window.PackUIs = [Pack2UI]; }
 
-    console.log('%c🌪️ PACK 2 (Combined Weather System) loaded', 'color:#00FFFF;font-weight:bold;font-size:14px');
+    console.log('%c🌪️ PACK 2 (Inventory & Optimized Weather) loaded', 'color:#00FFFF;font-weight:bold;font-size:14px');
 })();
