@@ -13,13 +13,20 @@ window.GameBoot = window.GameBoot || {
     trigger() { if (this.triggered) return; this.triggered = true; this.callbacks.forEach(cb => { try { cb(); } catch(e){ console.error(e); } }); this.callbacks = []; }
 };
 
+// === ЗАЩИТА ОТ ОТСУТСТВИЯ CONFIG.JS ===
 const DEFAULT_CONFIG = {
     physics: { gravity: 0.75, jumpForce: -10.5, holdThrust: 0.45, groundY: 530, baseSpeed: 4.0, speedMultiplier: 0.8 },
     defaultSettings: { sfxVolume: 0.7, ambientVolume: 0.25, masterVolume: 1.0, soundEnabled: true, graphics: 'high', comboEnabled: true, comboVisualsEnabled: true, weatherEnabled: true, dynamicMusicEnabled: true },
     combo: { decayTimeMs: 3000, tiers: [{ threshold: 3, mult: 2, emoji: '😎', color: '#00FFFF' }], sadEmoji: '😢', sadColor: '#888888' },
     pack2: { powerups: { spawnChance: 0.05, types: {} }, weather: { changeDistance: 1000 }, music: { layers: [], maxTempoRate: 1.15, tempoDistance: 2000 } },
-    characters: { crocodile: { id: 'crocodile', name: 'Crocodile', emoji: '🐊', folder: 'source/characters/crocodile', frameCount: 12, baseWidth: 165.4, baseHeight: 110.3, foodEmojis: ['🍗', '🍔', '🍕', '🥩'], eatEmoji: null, eatFolder: null, eatFrameCount: 0, eatDuration: 0 } },
-    biomes: { default: { id: 'default', name: 'Forest', emoji: '🌳', dayImg: 'source/landscape.jpg', nightImg: 'source/landscape_n.jpg', groundOffset: 0, obstacleTypes: ['barrel', 'rock', 'cactus', 'puddle', 'pit'], foodEmojis: null } }
+    characters: {
+        crocodile: { id: 'crocodile', name: 'Crocodile', emoji: '🐊', folder: 'source/characters/crocodile', frameCount: 12, baseWidth: 165.4, baseHeight: 110.3, foodEmojis: ['🍗', '🍔', '🍕', '🥩'], eatEmoji: null, eatFolder: null, eatFrameCount: 0, eatDuration: 0 },
+        panda: { id: 'panda', name: 'Panda', emoji: '🐼', folder: 'source/characters/panda', frameCount: 20, baseWidth: 160, baseHeight: 120, foodEmojis: ['🎋'], eatEmoji: '🎋', eatFolder: 'source/characters/panda/eating', eatFrameCount: 8, eatDuration: 4.0 }
+    },
+    biomes: {
+        default: { id: 'default', name: 'Forest', emoji: '🌳', dayImg: 'source/landscape.jpg', nightImg: 'source/landscape_n.jpg', groundOffset: 0, obstacleTypes: ['barrel', 'rock', 'cactus', 'puddle', 'pit'], foodEmojis: null },
+        cartoon: { id: 'cartoon', name: 'Cartoon', emoji: '🌲', dayImg: 'source/cartoon_forest.png', nightImg: 'source/cartoon_forest_n.png', groundOffset: 30, obstacleTypes: ['rock', 'puddle', 'pit'], foodEmojis: ['🎋'] }
+    }
 };
 
 const CONFIG = (window.GAME_CONFIG && window.GAME_CONFIG.physics) ? window.GAME_CONFIG : DEFAULT_CONFIG;
@@ -39,13 +46,11 @@ const RenderEngine = (function () {
         medium: { parallax: true,  bloom: false, particles: true,  shake: true,  trail: false, vignette: false, flash: true,  maxParticles: 200 },
         high:   { parallax: true,  bloom: true,  particles: true,  shake: true,  trail: true,  vignette: true,  flash: true,  maxParticles: 500 },
     };
-
     const state = {
         quality: 'high', config: QUALITY.high, particles: [],
         shakeTime: 0, shakeIntensity: 0, flashAlpha: 0, flashColor: '255,0,0',
         time: 0, trail: [], cache: { vignetteCanvas: null, particleSprite: null },
     };
-
     function makeVignette(width, height) {
         const c = document.createElement('canvas'); c.width = width; c.height = height;
         const ctx = c.getContext('2d');
@@ -54,7 +59,6 @@ const RenderEngine = (function () {
         ctx.fillStyle = g; ctx.fillRect(0, 0, width, height);
         return c;
     }
-
     function makeParticleSprite() {
         const c = document.createElement('canvas'); c.width = c.height = 16;
         const ctx = c.getContext('2d');
@@ -63,7 +67,6 @@ const RenderEngine = (function () {
         ctx.fillStyle = g; ctx.fillRect(0, 0, 16, 16);
         return c;
     }
-
     return {
         setQuality(q) { state.quality = q; state.config = QUALITY[q] || QUALITY.high; if (!state.config.particles) state.particles = []; },
         reset() { state.particles = []; state.shakeTime = 0; state.shakeIntensity = 0; state.flashAlpha = 0; state.trail = []; },
@@ -330,7 +333,7 @@ function Game() {
     useEffect(() => {
         const canvas = canvasRef.current; if (!canvas) return;
         const handleTouchStart = (e) => {
-            if (e.target.closest('.game-btn') || e.target.closest('.btn') || e.target.closest('.char-btn') || e.target.closest('.settings-panel') || e.target.closest('.settings-open-btn')) return;
+            if (e.target.closest('.game-btn') || e.target.closest('.btn') || e.target.closest('.char-btn') || e.target.closest('.settings-panel') || e.target.closest('.settings-open-btn') || e.target.closest('.pack2-inventory')) return;
             e.preventDefault(); if (gameState !== 'playing') return;
             if (playerRef.current.isJumping || isTrippingRef.current || isFallingIntoPitRef.current || isPitDeathDelayRef.current || isBarrelFlyingRef.current || isEatingRef.current) return;
             const p = playerRef.current; const baseMult = 1.0 + Math.floor(distanceRef.current / 100) * 0.04;
@@ -338,7 +341,7 @@ function Game() {
             window.GameEvents.emit('jump', { x: p.x + p.width / 2, y: p.y });
             RenderEngine.spawnParticles(p.x + p.width / 2, p.y + p.height, 6, { colors: ['#FFFFFF', '#AAAAAA'], speed: 2, life: 20, size: 2, gravity: 0.1 });
         };
-        const handleTouchEnd = (e) => { if (e.target.closest('.game-btn') || e.target.closest('.btn') || e.target.closest('.char-btn') || e.target.closest('.settings-panel') || e.target.closest('.settings-open-btn')) return; if (gameState !== 'playing') return; e.preventDefault(); playerRef.current.isHoldingJump = false; };
+        const handleTouchEnd = (e) => { if (e.target.closest('.game-btn') || e.target.closest('.btn') || e.target.closest('.char-btn') || e.target.closest('.settings-panel') || e.target.closest('.settings-open-btn') || e.target.closest('.pack2-inventory')) return; if (gameState !== 'playing') return; e.preventDefault(); playerRef.current.isHoldingJump = false; };
         canvas.addEventListener('touchstart', handleTouchStart, { passive: false }); canvas.addEventListener('touchend', handleTouchEnd, { passive: false }); canvas.addEventListener('touchcancel', handleTouchEnd, { passive: false });
         return () => { canvas.removeEventListener('touchstart', handleTouchStart); canvas.removeEventListener('touchend', handleTouchEnd); canvas.removeEventListener('touchcancel', handleTouchEnd); };
     }, [gameState, character]);
@@ -352,13 +355,6 @@ function Game() {
         if (pitAudioRef.current) { pitAudioRef.current.pause(); pitAudioRef.current.currentTime = 0; }
         resetCombo(); RenderEngine.reset(); setScore(0); setSpeedDisplay(1.0); setPowerDisplay(1.0); setGameState('playing');
         
-        if (window.Pack2State) {
-            window.Pack2State.activePowerup = null;
-            window.Pack2State.hasShield = false;
-            // Убираем старую строку window.Pack2State.weather = 'clear'; 
-            // Так как pack2.js теперь сам сбрасывает погоду по событию 'start'
-        }
-
         window.GameEvents.emit('start', { character, background, timeOfDay, settings: settingsRef.current });
     };
 
@@ -370,6 +366,8 @@ function Game() {
 
     const handleHit = (index, type) => {
         if (isTrippingRef.current) return;
+        
+        // СПАСЕНИЕ ЩИТОМ
         if (window.Pack2State && window.Pack2State.hasShield) {
             window.Pack2State.hasShield = false;
             obstaclesRef.current.splice(index, 1); 
@@ -393,11 +391,22 @@ function Game() {
     const handleBarrelHit = (index) => {
         if (isTrippingRef.current || isBarrelFlyingRef.current) return;
         const obs = obstaclesRef.current[index]; if (!obs) return; const canvas = canvasRef.current; const p = playerRef.current;
+        
         explosionsRef.current.push({ x: obs.x + obs.width / 2, y: obs.y + obs.height / 2, size: obs.height * 6, timer: 0, maxTimer: 30 });
         if (barrelAudioRef.current && settingsRef.current.soundEnabled) { barrelAudioRef.current.currentTime = 0; barrelAudioRef.current.play().catch(e => console.warn("Audio blocked", e)); }
         RenderEngine.spawnParticles(obs.x + obs.width / 2, obs.y + obs.height / 2, 30, { colors: ['#FF007F', '#FFD700', '#FFAA00', '#FFFFFF'], speed: 8, life: 40, size: 5, gravity: 0.2, shape: 'circle' });
         RenderEngine.shake(12, 20); RenderEngine.flash('255,150,0', 0.3); resetCombo(); window.GameEvents.emit('barrel_hit', { x: obs.x, y: obs.y });
+        
         obstaclesRef.current.splice(index, 1); obstaclesRef.current = obstaclesRef.current.filter(o => (o.x + o.width) > p.x && o.x < canvas.width); foodsRef.current = foodsRef.current.filter(f => f.x < canvas.width);
+
+        // СПАСЕНИЕ ЩИТОМ ОТ БОЧКИ
+        if (window.Pack2State && window.Pack2State.hasShield) {
+            window.Pack2State.hasShield = false;
+            window.GameEvents.emit('shield_break', { x: p.x, y: p.y });
+            spawnCooldownRef.current = 90; spawnTimerRef.current = 0;
+            return; // Прерываем, чтобы не было откидывания
+        }
+
         spawnCooldownRef.current = 90; spawnTimerRef.current = 0; isBarrelFlyingRef.current = true; isBarrelTripRef.current = true; barrelFlyVelocityYRef.current = -20; p.velocityY = 0; p.isJumping = false; p.isHoldingJump = false; p.tilt = 0;
     };
 
@@ -407,10 +416,11 @@ function Game() {
         const bgConfig = BACKGROUNDS[backgroundRef.current] || BACKGROUNDS[Object.keys(BACKGROUNDS)[0]];
         const diffMult = SPEED_MULTIPLIER; const gfxQuality = settingsRef.current.graphics;
 
+        // ОБНОВЛЕННАЯ ЛОГИКА СКОРОСТИ (несколько эффектов)
         let pack2SpeedMult = 1.0;
-        if (window.Pack2State && window.Pack2State.activePowerup) {
-            if (window.Pack2State.activePowerup.type === 'slowmo') pack2SpeedMult = 0.5;
-            if (window.Pack2State.activePowerup.type === 'sprint') pack2SpeedMult = 1.5;
+        if (window.Pack2State && window.Pack2State.activePowerups) {
+            if (window.Pack2State.activePowerups.slowmo) pack2SpeedMult *= 0.5;
+            if (window.Pack2State.activePowerups.sprint) pack2SpeedMult *= 1.5;
         }
 
         if (isEatingRef.current) {
@@ -478,7 +488,8 @@ function Game() {
 
         const currentPower = calculateJumpMultiplier(p.height, baseSpeedMult, speedPenaltyRef.current); setPowerDisplay(currentPower.toFixed(2));
 
-        if (window.Pack2State && window.Pack2State.activePowerup?.type === 'magnet') {
+        // ПРИТЯЖЕНИЕ МАГНИТОМ
+        if (window.Pack2State && window.Pack2State.activePowerups && window.Pack2State.activePowerups.magnet) {
             foodsRef.current.forEach(f => {
                 const dx = (p.x + p.width/2) - (f.x + f.width/2);
                 const dy = (p.y + p.height/2) - (f.y + f.height/2);
@@ -557,6 +568,15 @@ function Game() {
 
                 if (hitboxX < obsHitboxX + obsHitboxWidth && hitboxX + hitboxWidth > obsHitboxX && hitboxY < obsHitboxY + obsHitboxHeight && hitboxY + hitboxHeight > obsHitboxY) {
                     if (obs.type === 'pit') {
+                        // СПАСЕНИЕ ИЗ ЯМЫ ЩИТОМ
+                        if (window.Pack2State && window.Pack2State.hasShield) {
+                            window.Pack2State.hasShield = false;
+                            window.GameEvents.emit('shield_break', { x: p.x, y: p.y });
+                            p.isJumping = true; p.velocityY = JUMP_FORCE * 1.2; // Выпрыгиваем
+                            obstaclesRef.current.splice(i, 1); // Удаляем яму
+                            RenderEngine.shake(8, 15);
+                            break;
+                        }
                         isFallingIntoPitRef.current = true; pitTargetRef.current = obs; pitFallTimerRef.current = 0; pitVelocityRef.current = 0; p.velocityY = 0; p.isJumping = false; p.isHoldingJump = false;
                         RenderEngine.spawnParticles(obs.x + obs.width / 2, gy, 20, { colors: ['#FF007F', '#FFD700', '#888888'], speed: 4, life: 30, size: 3, gravity: 0.2 }); RenderEngine.shake(10, 15); return;
                     } else if (obs.type === 'barrel') { handleBarrelHit(i); break; } 
@@ -628,7 +648,8 @@ function Game() {
                 }
                 if (gameState !== 'playing') return;
                 const canvas = canvasRef.current; const ctx = canvas.getContext('2d'); const scene = describeScene(); RenderEngine.draw(ctx, canvas, scene);
-                window.GameEvents.emit('render_frame', { ctx, player: scene.player, obstacles: scene.obstacles }); requestRef.current = requestAnimationFrame(gameLoop);
+                window.GameEvents.emit('render_frame', { ctx, player: scene.player });
+                requestRef.current = requestAnimationFrame(gameLoop);
             };
             requestRef.current = requestAnimationFrame(gameLoop);
         }
@@ -644,7 +665,6 @@ function Game() {
 
     return React.createElement('div', { id: 'game-container' },
         (gameState === 'playing' || gameState === 'paused') ? React.createElement(React.Fragment, null,
-            // МИНИМАЛИСТИЧНЫЙ HUD С ЭМОДЗИ
             React.createElement('div', { className: 'hud-left' }, 
                 React.createElement('span', { title: 'Health', style: { fontSize: 'clamp(18px, 3vmin, 28px)', letterSpacing: '0px' } }, getHearts()),
                 React.createElement('span', { title: 'Food' }, `🍗 ${playerRef.current.foodEaten}/${playerRef.current.foodTarget}`)
