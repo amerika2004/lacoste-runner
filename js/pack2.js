@@ -12,7 +12,7 @@
     };
 
     const Pack2State = {
-        activePowerup: null, // { type, endTime }
+        activePowerup: null, 
         hasShield: false,
         currentWeather: 'clear',
         lastWeatherChange: 0,
@@ -103,7 +103,6 @@
     window.GameEvents.on('tick', (data) => {
         if (data.settings) Pack2State.settings = data.settings;
 
-        // ИСПРАВЛЕНИЕ: Проверка времени паверапа (убрано ошибочное условие duration > 0)
         if (Pack2State.activePowerup && Date.now() > Pack2State.activePowerup.endTime) {
             Pack2State.activePowerup = null;
         }
@@ -184,30 +183,57 @@
     });
 
     // === РЕНДЕР ===
-    window.GameEvents.on('render_frame', ({ ctx }) => {
+    window.GameEvents.on('render_frame', ({ ctx, player }) => {
         const W = ctx.canvas.width; const H = ctx.canvas.height;
         
-        // 1. Щит (Аура вокруг игрока) - оставлен, так как это важный индикатор
-        if (Pack2State.hasShield) {
+        // 1. Щит (Динамическая аура, следующая за игроком)
+        if (Pack2State.hasShield && player) {
             ctx.save();
-            const auraX = 180; const auraY = H - 150; 
-            const grad = ctx.createRadialGradient(auraX, auraY, 0, auraX, auraY, 100);
-            grad.addColorStop(0, 'rgba(0, 255, 255, 0.1)');
-            grad.addColorStop(1, 'rgba(0, 255, 255, 0.6)');
+            
+            // Вычисляем центр игрока
+            const pCenterX = player.x + player.w / 2;
+            const pCenterY = player.y + player.h / 2;
+            
+            // Радиус зависит от размера персонажа + пульсация для "жизни"
+            const baseRadius = Math.max(player.w, player.h) * 0.65;
+            const pulse = Math.sin(Date.now() / 150) * 8;
+            const radius = baseRadius + pulse;
+            
+            // Создаем сферический градиент (прозрачный в центре, яркий по краям)
+            const grad = ctx.createRadialGradient(pCenterX, pCenterY, radius * 0.2, pCenterX, pCenterY, radius);
+            grad.addColorStop(0, 'rgba(0, 255, 255, 0.0)'); // Полностью прозрачный центр, чтобы видеть персонажа
+            grad.addColorStop(0.6, 'rgba(0, 255, 255, 0.2)');
+            grad.addColorStop(0.9, 'rgba(0, 255, 255, 0.6)');
+            grad.addColorStop(1, 'rgba(0, 255, 255, 0.9)');
+            
+            ctx.beginPath();
+            ctx.arc(pCenterX, pCenterY, radius, 0, Math.PI * 2);
             ctx.fillStyle = grad;
-            ctx.beginPath(); ctx.arc(auraX, auraY, 80 + Math.sin(Date.now() / 200) * 10, 0, Math.PI * 2); ctx.fill();
+            ctx.fill();
+            
+            // Четкий контур щита
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = 'rgba(0, 255, 255, 0.9)';
+            ctx.stroke();
+            
+            // Добавляем блик для объема
+            ctx.beginPath();
+            ctx.arc(pCenterX - radius * 0.3, pCenterY - radius * 0.3, radius * 0.15, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+            ctx.fill();
+            
             ctx.restore();
         }
-
-        // ИСПРАВЛЕНИЕ: Блок отрисовки колец магнита (Пункт 2) полностью удален.
-        // Визуализация возле персонажа больше не появляется.
 
         // 2. Slow-mo / Sprint (Оверлеи)
         if (Pack2State.activePowerup?.type === 'slowmo') {
             ctx.fillStyle = 'rgba(0, 0, 255, 0.2)'; ctx.fillRect(0, 0, W, H);
         } else if (Pack2State.activePowerup?.type === 'sprint') {
             if (window.RenderEngine && Math.random() > 0.5) {
-                window.RenderEngine.spawnParticles(180, H - 100, 1, { colors: ['#FFD700', '#FFFFFF'], speed: 5, life: 20, size: 3, gravity: 0 });
+                // Искры летят за игроком (примерная позиция для искр)
+                const sparkX = player ? player.x : 180;
+                const sparkY = player ? player.y + player.h / 2 : H - 100;
+                window.RenderEngine.spawnParticles(sparkX, sparkY, 1, { colors: ['#FFD700', '#FFFFFF'], speed: 5, life: 20, size: 3, gravity: 0 });
             }
         }
 
