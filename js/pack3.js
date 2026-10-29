@@ -161,7 +161,9 @@ window.PackUIs = window.PackUIs || [];
             window.GameEvents.on('pack3_toast', listener);
             return () => { if (window.GameEvents.listeners['pack3_toast']) window.GameEvents.listeners['pack3_toast'] = window.GameEvents.listeners['pack3_toast'].filter(cb => cb !== listener); };
         }, []);
-        return React.createElement('div', { className: 'pack3-toast-container' }, toasts.map(t => React.createElement('div', { key: t.id, className: `pack3-toast ${t.type}` }, t.text)));
+        return React.createElement('div', { className: 'pack3-toast-container' }, 
+            toasts.map(t => React.createElement('div', { key: t.id, className: `pack3-toast ${t.type}` }, t.text))
+        );
     }
 
     function Pack3AchievementsMenu() {
