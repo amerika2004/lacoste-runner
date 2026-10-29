@@ -921,3 +921,52 @@ canvas { display: block; width: 100%; height: 100%; object-fit: contain; touch-a
     color: black;
     box-shadow: 0 0 15px var(--gta-cyan);
 }
+/* === PACK 4 STYLES === */
+.pack4-overlay {
+    position: absolute; inset: 0; background: rgba(0, 0, 0, 0.9);
+    z-index: 100; display: flex; justify-content: center; align-items: center; backdrop-filter: blur(5px);
+}
+.pack4-panel {
+    background: rgba(10, 8, 20, 0.95); border: 2px solid var(--gta-cyan);
+    border-radius: 16px; padding: 30px; width: 90%; max-width: 600px;
+    box-shadow: 0 0 30px var(--gta-cyan); display: flex; flex-direction: column; gap: 15px;
+    max-height: 90vh; overflow-y: auto;
+}
+.pack4-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid rgba(255,255,255,0.1); padding-bottom: 10px; }
+.pack4-title { color: var(--gta-cyan); font-family: 'Bebas Neue', sans-serif; font-size: 32px; letter-spacing: 4px; text-shadow: 2px 2px 0 var(--gta-pink); }
+.pack4-coins { color: var(--gta-gold); font-family: 'Courier New', monospace; font-size: 24px; font-weight: bold; }
+.pack4-section { display: flex; flex-direction: column; gap: 10px; }
+.pack4-section h3 { color: var(--gta-green); font-family: 'Bebas Neue', sans-serif; font-size: 20px; margin: 0; letter-spacing: 2px; }
+.pack4-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.pack4-item {
+    background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 5px; align-items: center; text-align: center;
+}
+.pack4-item.owned { border-color: var(--gta-green); background: rgba(0, 255, 65, 0.1); }
+.pack4-item-icon { font-size: 32px; }
+.pack4-item-name { color: white; font-family: 'Bebas Neue', sans-serif; font-size: 16px; letter-spacing: 1px; }
+.pack4-item-desc { color: #aaa; font-size: 10px; font-family: 'Courier New', monospace; }
+.pack4-buy-btn {
+    background: var(--gta-gold); color: black; border: none; padding: 5px 15px;
+    border-radius: 5px; font-family: 'Bebas Neue', sans-serif; font-size: 14px; cursor: pointer; transition: all 0.2s;
+}
+.pack4-buy-btn:hover { box-shadow: 0 0 10px var(--gta-gold); transform: scale(1.05); }
+.pack4-owned-label { color: var(--gta-green); font-family: 'Bebas Neue', sans-serif; font-size: 14px; margin-top: 5px; }
+
+.pack4-leaderboard-list { display: flex; flex-direction: column; gap: 5px; }
+.pack4-lb-row { display: flex; justify-content: space-between; padding: 8px; background: rgba(255,255,255,0.05); border-radius: 5px; font-family: 'Courier New', monospace; color: white; }
+.pack4-lb-rank { color: var(--gta-cyan); width: 40px; }
+.pack4-lb-score { color: var(--gta-gold); flex: 1; text-align: left; }
+.pack4-lb-date { color: #888; font-size: 12px; }
+
+.pack4-hud-coins {
+    position: absolute; top: 50px; left: 20px; z-index: 5;
+    font-family: 'Courier New', monospace; font-size: 20px; color: var(--gta-gold);
+    text-shadow: 1px 1px 0 #000; font-weight: bold;
+}
+.pack4-cheat-indicator {
+    position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
+    color: var(--gta-cyan); font-family: 'Bebas Neue', sans-serif; font-size: 24px; letter-spacing: 2px;
+    text-shadow: 0 0 10px var(--gta-cyan); animation: pulse 1s infinite alternate;
+}
+@keyframes pulse { from { opacity: 0.5; } to { opacity: 1; } }
