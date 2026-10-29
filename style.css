@@ -687,3 +687,98 @@ canvas { display: block; width: 100%; height: 100%; object-fit: contain; touch-a
     box-shadow: 0 0 15px rgba(0, 255, 255, 0.5); pointer-events: none;
     animation: pack2BadgePop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
+/* === PACK 2 INVENTORY UI === */
+.pack2-inventory {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 15px;
+    z-index: 10;
+    pointer-events: auto; /* Чтобы можно было кликать */
+}
+
+.inv-btn {
+    position: relative;
+    width: 60px;
+    height: 60px;
+    background: rgba(0, 0, 0, 0.6);
+    border: 2px solid #555;
+    border-radius: 12px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    padding: 0;
+}
+
+.inv-btn.active {
+    border-color: var(--gta-cyan);
+    box-shadow: 0 0 15px var(--gta-cyan);
+    background: rgba(0, 255, 255, 0.1);
+}
+
+.inv-btn.active:hover {
+    transform: scale(1.1);
+    background: rgba(0, 255, 255, 0.2);
+}
+
+.inv-icon {
+    font-size: 32px;
+    filter: drop-shadow(0 0 5px rgba(0,0,0,0.8));
+}
+
+.inv-count {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    background: var(--gta-pink);
+    color: white;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 16px;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border: 2px solid #000;
+    box-shadow: 0 0 10px var(--gta-pink);
+}
+
+.inv-key {
+    position: absolute;
+    bottom: 2px;
+    right: 4px;
+    font-family: 'Courier New', monospace;
+    font-size: 10px;
+    color: rgba(255, 255, 255, 0.5);
+}
+
+/* На мобильных устройствах (скрываем клавиши, увеличиваем кнопки) */
+@media (pointer: coarse) {
+    .inv-key { display: none; }
+    .inv-btn { width: 70px; height: 70px; }
+    .inv-icon { font-size: 38px; }
+    .inv-count { font-size: 18px; width: 28px; height: 28px; }
+}
+
+/* Стили для бейджей активных эффектов */
+.pack2-powerup-badge {
+    background: rgba(0, 0, 0, 0.7);
+    padding: 5px 15px;
+    border-radius: 20px;
+    font-family: 'Bebas Neue', sans-serif;
+    font-size: 18px;
+    letter-spacing: 1px;
+    border: 2px solid currentColor;
+    box-shadow: 0 0 10px currentColor;
+    animation: badgePop 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes badgePop {
+    0% { transform: scale(0.5); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
+}
