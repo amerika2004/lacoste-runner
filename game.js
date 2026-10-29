@@ -8,25 +8,40 @@ window.GameEvents = window.GameEvents || {
 };
 window.PackUIs = window.PackUIs || [];
 window.GameBoot = window.GameBoot || {
-    triggered: false,
-    callbacks: [],
+    triggered: false, callbacks: [],
     onReady(cb) { if (this.triggered) { try { cb(); } catch(e){ console.error(e); } return; } this.callbacks.push(cb); },
     trigger() { if (this.triggered) return; this.triggered = true; this.callbacks.forEach(cb => { try { cb(); } catch(e){ console.error(e); } }); this.callbacks = []; }
 };
 
-// Загружаем конфигурацию с фоллбэком
-const CONFIG = window.GAME_CONFIG || { physics: {}, defaultSettings: {}, characters: {}, biomes: {} };
+// === ЗАЩИТА ОТ ОТСУТСТВИЯ CONFIG.JS ===
+const DEFAULT_CONFIG = {
+    physics: { gravity: 0.75, jumpForce: -10.5, holdThrust: 0.45, groundY: 530, baseSpeed: 4.0, speedMultiplier: 0.8 },
+    defaultSettings: { sfxVolume: 0.7, ambientVolume: 0.25, masterVolume: 1.0, soundEnabled: true, graphics: 'high', comboEnabled: true, comboVisualsEnabled: true },
+    combo: { decayTimeMs: 3000, tiers: [{ threshold: 3, mult: 2, emoji: '😎', color: '#00FFFF' }], sadEmoji: '😢', sadColor: '#888888' },
+    characters: {
+        crocodile: {
+            id: 'crocodile', name: 'Crocodile', emoji: '🐊', folder: 'source/characters/crocodile',
+            frameCount: 12, baseWidth: 165.4, baseHeight: 110.3,
+            foodEmojis: ['🍗', '🍔', '🍕', '🥩'], eatEmoji: null, eatFolder: null, eatFrameCount: 0, eatDuration: 0
+        }
+    },
+    biomes: {
+        default: {
+            id: 'default', name: 'Forest', emoji: '🌳', dayImg: 'source/landscape.jpg', nightImg: 'source/landscape_n.jpg',
+            groundOffset: 0, obstacleTypes: ['barrel', 'rock', 'cactus', 'puddle', 'pit'], foodEmojis: null
+        }
+    }
+};
+
+const CONFIG = (window.GAME_CONFIG && window.GAME_CONFIG.physics) ? window.GAME_CONFIG : DEFAULT_CONFIG;
 
 const FLIP_CROC = false; 
-
 const GRAVITY = CONFIG.physics.gravity ?? 0.75;        
 const JUMP_FORCE = CONFIG.physics.jumpForce ?? -10.5;    
 const HOLD_THRUST = CONFIG.physics.holdThrust ?? 0.45;    
-
 const GROUND_Y = CONFIG.physics.groundY ?? 530; 
 const BASE_SPEED = CONFIG.physics.baseSpeed ?? 4.0; 
 const SPEED_MULTIPLIER = CONFIG.physics.speedMultiplier ?? 0.8;
-
 const DEFAULT_SETTINGS = CONFIG.defaultSettings;
 
 // === РЕНДЕР ДВИЖОК ===
@@ -328,10 +343,7 @@ const RenderEngine = (function () {
     };
 })();
 
-// ЭКСПОРТИРУЕМ ДВИЖОК ДЛЯ ПЛАГИНОВ
 window.RenderEngine = RenderEngine;
-
-// Получаем персонажей и биомы из конфига
 const CHARACTERS = CONFIG.characters;
 const BACKGROUNDS = CONFIG.biomes;
 
@@ -361,7 +373,6 @@ function Game() {
     });
     const [showSettings, setShowSettings] = useState(false);
 
-    // === COMBO REFS (для плагина) ===
     const comboRef = useRef(0);
     const comboMultRef = useRef(1);
 
@@ -668,7 +679,7 @@ function Game() {
                 p.isJumping = true;
                 p.isHoldingJump = true;
                 addCombo();
-                window.GameEvents.emit('jump', { x: p.x, y: p.y });
+                window.GameEvents.emit('jump', { x: p.x + p.width / 2, y: p.y });
                 RenderEngine.spawnParticles(p.x + p.width / 2, p.y + p.height, 6, {
                     colors: ['#FFFFFF', '#AAAAAA'], speed: 2, life: 20, size: 2, gravity: 0.1
                 });
@@ -706,7 +717,7 @@ function Game() {
             p.isJumping = true;
             p.isHoldingJump = true;
             addCombo();
-            window.GameEvents.emit('jump', { x: p.x, y: p.y });
+            window.GameEvents.emit('jump', { x: p.x + p.width / 2, y: p.y });
             RenderEngine.spawnParticles(p.x + p.width / 2, p.y + p.height, 6, {
                 colors: ['#FFFFFF', '#AAAAAA'], speed: 2, life: 20, size: 2, gravity: 0.1
             });
@@ -764,7 +775,6 @@ function Game() {
         RenderEngine.reset();
         setScore(0); setSpeedDisplay(1.0); setPowerDisplay(1.0); setGameState('playing');
         
-        // Исправлено название события для совместимости с плагином Pack1
         window.GameEvents.emit('start', { character, background, timeOfDay, settings: settingsRef.current });
     };
 
@@ -797,7 +807,6 @@ function Game() {
         });
         resetCombo();
         
-        // Передаем координаты игрока для плагина
         window.GameEvents.emit('hit', { 
             health: healthRef.current, 
             type,
@@ -855,13 +864,11 @@ function Game() {
 
         if (isEatingRef.current) {
             eatTimerRef.current++;
-
             if (eatFramesRef.current.length > 0) {
                 const totalFrames = (char.eatDuration || 4) * 60;
                 const framesPerStep = totalFrames / eatFramesRef.current.length;
                 eatFrameIdxRef.current = Math.min(eatFramesRef.current.length - 1, Math.floor(eatTimerRef.current / framesPerStep));
             }
-
             if (eatTimerRef.current < 12) eatSpeedFactorRef.current = 1 - eatTimerRef.current / 12;
             else eatSpeedFactorRef.current = 0;
             const eatSpeedFactor = eatSpeedFactorRef.current;
@@ -998,10 +1005,8 @@ function Game() {
             if (spawnCooldownRef.current > 0) { spawnCooldownRef.current--; spawnTimerRef.current = 0; } 
             else {
                 spawnTimerRef.current += (currentSpeed / BASE_SPEED);
-                
                 let gapOk = true;
                 for (let obs of obstaclesRef.current) { if (obs.x + obs.width > canvas.width - 350) { gapOk = false; break; } }
-                
                 if (gapOk && spawnTimerRef.current > Math.max(70, 140 - currentSpeed * 3) + Math.random() * 40) {
                     const types = bgConfig.obstacleTypes || ['barrel', 'rock', 'cactus', 'puddle', 'pit']; 
                     const randomType = types[Math.floor(Math.random() * types.length)];
@@ -1107,7 +1112,6 @@ function Game() {
             return true;
         });
 
-        // Отправляем настройки в плагин каждый тик
         if (Math.floor(distanceRef.current) % 5 === 0) {
             window.GameEvents.emit('tick', { 
                 distance: distanceRef.current, 
@@ -1188,6 +1192,10 @@ function Game() {
                 while (accumulatorRef.current >= FRAME_TIME && loops < 5) {
                     updateLogic();
                     RenderEngine.update();
+                    
+                    // Отправляем тик для плагинов, чтобы они знали о времени (для комбо-затухания)
+                    window.GameEvents.emit('tick', { delta: FRAME_TIME, distance: distanceRef.current, settings: settingsRef.current });
+                    
                     accumulatorRef.current -= FRAME_TIME;
                     loops++;
                 }
@@ -1356,6 +1364,26 @@ function Game() {
                 ),
 
                 React.createElement('div', { className: 'settings-section' },
+                    React.createElement('div', { className: 'settings-section-title' }, '🔥 Combo System'),
+                    React.createElement('div', { className: 'setting-row' },
+                        React.createElement('span', { className: 'setting-label' }, 'Enable Combo'),
+                        React.createElement('button', {
+                            className: `setting-toggle ${settings.comboEnabled ? 'on' : ''}`,
+                            onClick: () => setSettings(s => ({ ...s, comboEnabled: !s.comboEnabled })),
+                            'aria-label': 'Toggle combo'
+                        })
+                    ),
+                    React.createElement('div', { className: 'setting-row' },
+                        React.createElement('span', { className: 'setting-label' }, 'Visual Effects'),
+                        React.createElement('button', {
+                            className: `setting-toggle ${settings.comboVisualsEnabled ? 'on' : ''}`,
+                            onClick: () => setSettings(s => ({ ...s, comboVisualsEnabled: !s.comboVisualsEnabled })),
+                            'aria-label': 'Toggle combo visuals'
+                        })
+                    )
+                ),
+
+                React.createElement('div', { className: 'settings-section' },
                     React.createElement('div', { className: 'settings-section-title' }, '🔊 Audio'),
                     React.createElement('div', { className: 'setting-row' },
                         React.createElement('span', { className: 'setting-label' }, 'Sound'),
@@ -1410,7 +1438,7 @@ function Game() {
             )
         ),
 
-        // === РЕНДЕР ПЛАГИНОВ (UI из pack1.js и др.) ===
+        // === РЕНДЕР ПЛАГИНОВ ===
         ...(window.PackUIs || []).map((UI, i) =>
             React.createElement(UI, { key: 'plugin-' + i, gameState, setGameState })
         )
@@ -1425,7 +1453,6 @@ window.__bootGame = function () {
     root.render(React.createElement(Game));
 };
 
-// Если loader.js не подключён (например, старый index.html) — запускаем сразу.
 if (!window.__LOADER_ACTIVE__) {
     window.__bootGame();
 }
