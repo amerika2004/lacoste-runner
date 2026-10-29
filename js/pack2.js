@@ -1,6 +1,5 @@
 /* ==================================================================
-   PACK 2 — Atmosphere & Tactical Depth
-   Power-ups, Weather, Dynamic Music
+   PACK 2 — Atmosphere, Power-ups, Weather (Visual Overhaul)
    ================================================================== */
 (function () {
     'use strict';
@@ -16,11 +15,15 @@
         hasShield: false,
         currentWeather: 'clear',
         lastWeatherChange: 0,
-        weatherParticles: [], 
+        timeOfDay: 'day',
+        
+        // Погодные системы
+        rainParticles: [],
+        splashParticles: [],
         lightningTimer: 0,
         lightningActive: false,
+        
         musicAudios: [],
-        currentMusicLayer: 0,
         rainAudio: null,
         thunderAudio: null,
         powerupAudios: {},
@@ -73,7 +76,10 @@
         }
         
         Pack2State.currentWeather = newWeather;
-        window.GameEvents.emit('weather_changed', { weather: newWeather });
+        
+        // Сброс частиц при смене погоды
+        Pack2State.rainParticles = [];
+        Pack2State.splashParticles = [];
 
         if (Pack2State.rainAudio) {
             if (newWeather === 'rain' || newWeather === 'storm') {
@@ -92,16 +98,15 @@
         Pack2State.activePowerup = null;
         Pack2State.hasShield = false;
         Pack2State.lastWeatherChange = 0;
-        Pack2State.weatherParticles = [];
         Pack2State.lightningActive = false;
         
         changeWeather('clear');
-
         Pack2State.musicAudios.forEach((a, i) => { a.currentTime = 0; a.volume = i === 0 ? 0.2 : 0; a.play().catch(() => {}); });
     });
 
     window.GameEvents.on('tick', (data) => {
         if (data.settings) Pack2State.settings = data.settings;
+        if (data.timeOfDay) Pack2State.timeOfDay = data.timeOfDay;
 
         if (Pack2State.activePowerup && Date.now() > Pack2State.activePowerup.endTime) {
             Pack2State.activePowerup = null;
@@ -177,91 +182,150 @@
         if (Pack2State.rainAudio) Pack2State.rainAudio.pause();
     });
 
-    window.GameEvents.on('paused', () => {
-        Pack2State.musicAudios.forEach(a => a.pause());
-        if (Pack2State.rainAudio) Pack2State.rainAudio.pause();
-    });
-
-    // === РЕНДЕР ===
-    window.GameEvents.on('render_frame', ({ ctx, player }) => {
+    // === РЕНДЕР (ВИЗУАЛЬНЫЕ ЭФФЕКТЫ) ===
+    window.GameEvents.on('render_frame', ({ ctx, player, obstacles }) => {
         const W = ctx.canvas.width; const H = ctx.canvas.height;
         
-        // 1. Щит (Динамическая аура, следующая за игроком)
+        // 1. Щит
         if (Pack2State.hasShield && player) {
             ctx.save();
-            
-            // Вычисляем центр игрока
             const pCenterX = player.x + player.w / 2;
             const pCenterY = player.y + player.h / 2;
-            
-            // Радиус зависит от размера персонажа + пульсация для "жизни"
             const baseRadius = Math.max(player.w, player.h) * 0.65;
             const pulse = Math.sin(Date.now() / 150) * 8;
             const radius = baseRadius + pulse;
             
-            // Создаем сферический градиент (прозрачный в центре, яркий по краям)
             const grad = ctx.createRadialGradient(pCenterX, pCenterY, radius * 0.2, pCenterX, pCenterY, radius);
-            grad.addColorStop(0, 'rgba(0, 255, 255, 0.0)'); // Полностью прозрачный центр, чтобы видеть персонажа
+            grad.addColorStop(0, 'rgba(0, 255, 255, 0.0)');
             grad.addColorStop(0.6, 'rgba(0, 255, 255, 0.2)');
             grad.addColorStop(0.9, 'rgba(0, 255, 255, 0.6)');
             grad.addColorStop(1, 'rgba(0, 255, 255, 0.9)');
             
-            ctx.beginPath();
-            ctx.arc(pCenterX, pCenterY, radius, 0, Math.PI * 2);
-            ctx.fillStyle = grad;
-            ctx.fill();
+            ctx.beginPath(); ctx.arc(pCenterX, pCenterY, radius, 0, Math.PI * 2);
+            ctx.fillStyle = grad; ctx.fill();
+            ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0, 255, 255, 0.9)'; ctx.stroke();
             
-            // Четкий контур щита
-            ctx.lineWidth = 3;
-            ctx.strokeStyle = 'rgba(0, 255, 255, 0.9)';
-            ctx.stroke();
-            
-            // Добавляем блик для объема
-            ctx.beginPath();
-            ctx.arc(pCenterX - radius * 0.3, pCenterY - radius * 0.3, radius * 0.15, 0, Math.PI * 2);
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-            ctx.fill();
-            
+            // Блик
+            ctx.beginPath(); ctx.arc(pCenterX - radius * 0.3, pCenterY - radius * 0.3, radius * 0.15, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.6)'; ctx.fill();
             ctx.restore();
         }
 
         // 2. Slow-mo / Sprint (Оверлеи)
         if (Pack2State.activePowerup?.type === 'slowmo') {
             ctx.fillStyle = 'rgba(0, 0, 255, 0.2)'; ctx.fillRect(0, 0, W, H);
-        } else if (Pack2State.activePowerup?.type === 'sprint') {
-            if (window.RenderEngine && Math.random() > 0.5) {
-                // Искры летят за игроком (примерная позиция для искр)
-                const sparkX = player ? player.x : 180;
-                const sparkY = player ? player.y + player.h / 2 : H - 100;
-                window.RenderEngine.spawnParticles(sparkX, sparkY, 1, { colors: ['#FFD700', '#FFFFFF'], speed: 5, life: 20, size: 3, gravity: 0 });
-            }
+        } else if (Pack2State.activePowerup?.type === 'sprint' && window.RenderEngine && Math.random() > 0.5) {
+            const sparkX = player ? player.x : 180;
+            const sparkY = player ? player.y + player.h / 2 : H - 100;
+            window.RenderEngine.spawnParticles(sparkX, sparkY, 1, { colors: ['#FFD700', '#FFFFFF'], speed: 5, life: 20, size: 3, gravity: 0 });
         }
 
-        // 3. Погода
+        // 3. ДОЖДЬ И БРЫЗГИ
         if (Pack2State.currentWeather === 'rain' || Pack2State.currentWeather === 'storm') {
-            ctx.strokeStyle = 'rgba(150, 200, 255, 0.4)';
-            ctx.lineWidth = 1;
-            for (let i = 0; i < 50; i++) {
-                const rx = Math.random() * W; const ry = Math.random() * H;
-                ctx.beginPath(); ctx.moveTo(rx, ry); ctx.lineTo(rx - 5, ry + 20); ctx.stroke();
+            const groundY = H * 0.8; // Условная линия земли (нижняя часть экрана)
+
+            // Спавн капель (если их мало)
+            if (Pack2State.rainParticles.length < 150) {
+                for(let i=0; i<3; i++) {
+                    Pack2State.rainParticles.push({
+                        x: Math.random() * W,
+                        y: -20 - Math.random() * 100,
+                        speed: 15 + Math.random() * 10,
+                        length: 15 + Math.random() * 20,
+                        alpha: 0.3 + Math.random() * 0.4
+                    });
+                }
             }
-        } else if (Pack2State.currentWeather === 'fog') {
-            ctx.fillStyle = 'rgba(150, 150, 150, 0.3)';
+
+            // Движение и отрисовка капель
+            ctx.lineCap = 'round';
+            for (let i = Pack2State.rainParticles.length - 1; i >= 0; i--) {
+                const p = Pack2State.rainParticles[i];
+                p.y += p.speed;
+                p.x -= p.speed * 0.15; // Ветер
+
+                // Если капля упала на землю
+                if (p.y > groundY + (Math.random() * 50)) {
+                    // Создаем брызги (разлетаются в стороны)
+                    for(let j=0; j<3; j++) {
+                        Pack2State.splashParticles.push({
+                            x: p.x, y: groundY + Math.random() * 20,
+                            vx: (Math.random() - 0.5) * 6,
+                            vy: -Math.random() * 3,
+                            life: 15 + Math.random() * 10,
+                            maxLife: 25,
+                            size: 1 + Math.random() * 2
+                        });
+                    }
+                    // Респавн капли наверху
+                    p.y = -20 - Math.random() * 100;
+                    p.x = Math.random() * W + 50; 
+                }
+
+                // Отрисовка капли
+                ctx.beginPath();
+                ctx.moveTo(p.x, p.y);
+                ctx.lineTo(p.x + p.speed * 0.2, p.y + p.length);
+                ctx.strokeStyle = `rgba(180, 220, 255, ${p.alpha})`;
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+            }
+
+            // Отрисовка брызг
+            for (let i = Pack2State.splashParticles.length - 1; i >= 0; i--) {
+                const s = Pack2State.splashParticles[i];
+                s.x += s.vx;
+                s.y += s.vy;
+                s.vy += 0.5; // Гравитация для брызг
+                s.life--;
+
+                if (s.life <= 0) {
+                    Pack2State.splashParticles.splice(i, 1);
+                    continue;
+                }
+
+                ctx.beginPath();
+                ctx.arc(s.x, s.y, s.size * (s.life / s.maxLife), 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(180, 220, 255, ${(s.life / s.maxLife) * 0.6})`;
+                ctx.fill();
+            }
+        } else {
+            Pack2State.rainParticles = [];
+            Pack2State.splashParticles = [];
+        }
+
+        // 4. ТУМАН (Скрывает обзор)
+        if (Pack2State.currentWeather === 'fog') {
+            // Градиент слева направо: слева прозрачно, справа густой туман
+            const fogGrad = ctx.createLinearGradient(W * 0.2, 0, W, 0);
+            fogGrad.addColorStop(0, 'rgba(200, 210, 220, 0.0)');
+            fogGrad.addColorStop(0.6, 'rgba(200, 210, 220, 0.4)');
+            fogGrad.addColorStop(1, 'rgba(200, 210, 220, 0.9)');
+            ctx.fillStyle = fogGrad;
+            ctx.fillRect(0, 0, W, H);
+            
+            // Легкая дымка по краям
+            const vignetteGrad = ctx.createRadialGradient(W/2, H/2, H*0.4, W/2, H/2, H*0.8);
+            vignetteGrad.addColorStop(0, 'rgba(0,0,0,0)');
+            vignetteGrad.addColorStop(1, 'rgba(180, 190, 200, 0.4)');
+            ctx.fillStyle = vignetteGrad;
             ctx.fillRect(0, 0, W, H);
         }
     });
 
-    // === UI КОМПОНЕНТ ===
+    // === UI КОМПОНЕНТ (Иконки погоды и паверапов) ===
     function Pack2UI({ gameState }) {
         const [active, setActive] = React.useState(null);
         const [weather, setWeather] = React.useState('clear');
         const [hasShield, setHasShield] = React.useState(false);
+        const [timeOfDay, setTimeOfDay] = React.useState('day');
 
         React.useEffect(() => {
             const interval = setInterval(() => {
                 setActive(Pack2State.activePowerup);
                 setHasShield(Pack2State.hasShield);
                 setWeather(Pack2State.currentWeather);
+                setTimeOfDay(Pack2State.timeOfDay);
             }, 100);
             return () => clearInterval(interval);
         }, []);
@@ -269,15 +333,19 @@
         if (gameState !== 'playing') return null;
 
         const weatherIcons = { clear: '☀️', rain: '🌧️', fog: '🌫️', storm: '⛈️' };
+        const timeIcon = timeOfDay === 'night' ? '🌙' : '☀️';
         const activeData = active ? P2_CONFIG.powerups.types[active.type] : null;
         const timeLeft = active ? Math.max(0, Math.ceil((active.endTime - Date.now()) / 1000)) : 0;
 
         return React.createElement(React.Fragment, null,
-            React.createElement('div', { style: { position: 'absolute', top: '60px', left: '20px', fontSize: '24px', textShadow: '2px 2px 0 #000' } }, 
-                `Погода: ${weatherIcons[weather] || '❓'}`
+            // Верхний правый угол (Погода и Время)
+            React.createElement('div', { className: 'hud-right', style: { top: '50px', right: '20px', display: 'flex', gap: '10px', fontSize: '24px' } }, 
+                React.createElement('span', { title: 'Time' }, timeIcon),
+                React.createElement('span', { title: 'Weather' }, weatherIcons[weather] || '❓')
             ),
-            (activeData || hasShield) && React.createElement('div', { style: { position: 'absolute', top: '100px', right: '20px', background: 'rgba(0,0,0,0.6)', padding: '10px', borderRadius: '10px', border: `2px solid ${hasShield ? '#00FFFF' : activeData.color}`, color: 'white', fontWeight: 'bold' } },
-                hasShield ? '🛡️ ЩИТ АКТИВЕН' : `${activeData.emoji} ${timeLeft}s`
+            // Центр (Активный паверап)
+            (activeData || hasShield) && React.createElement('div', { className: 'pack2-powerup-badge' },
+                hasShield ? '🛡️' : `${activeData.emoji} ${timeLeft}s`
             )
         );
     }
