@@ -1,19 +1,19 @@
 /* ==================================================================
-   PACK 2 — Atmosphere, Power-ups, Weather (Visual Overhaul)
+   PACK 2 — Atmosphere, Power-ups, Combined Weather
    ================================================================== */
 (function () {
     'use strict';
 
     const P2_CONFIG = (window.GAME_CONFIG && window.GAME_CONFIG.pack2) || {
         powerups: { spawnChance: 0.05, types: { shield: { emoji: '🛡️', duration: 0 }, magnet: { emoji: '🧲', duration: 5000 }, slowmo: { emoji: '⏳', duration: 3000 }, sprint: { emoji: '⚡', duration: 3000 } } },
-        weather: { types: ['clear', 'rain', 'fog', 'storm'], changeDistance: 1000, stormChance: 0.1 },
+        weather: { combinations: [{ id: 'clear', label: '☀️', rain: false, fog: false, storm: false, tint: 'rgba(0,0,0,0)' }] },
         music: { layers: [], maxTempoRate: 1.15, tempoDistance: 2000 }
     };
 
     const Pack2State = {
         activePowerup: null, 
         hasShield: false,
-        currentWeather: 'clear',
+        currentWeather: P2_CONFIG.weather.combinations[0], // Объект текущей погоды
         lastWeatherChange: 0,
         timeOfDay: 'day',
         
@@ -45,9 +45,7 @@
         if (Pack2State.musicAudios.length === 0 && P2_CONFIG.music.layers.length > 0) {
             P2_CONFIG.music.layers.forEach((layer) => {
                 const a = new Audio(layer.file);
-                a.loop = true;
-                a.preload = 'auto';
-                a.volume = 0; 
+                a.loop = true; a.preload = 'auto'; a.volume = 0; 
                 Pack2State.musicAudios.push(a);
             });
         }
@@ -55,24 +53,23 @@
 
     function playSound(audio, rate = 1.0) {
         if (audio && Pack2State.settings?.soundEnabled) {
-            audio.currentTime = 0;
-            audio.playbackRate = rate;
+            audio.currentTime = 0; audio.playbackRate = rate;
             audio.volume = (Pack2State.settings.sfxVolume || 0.7) * (Pack2State.settings.masterVolume || 1.0);
             audio.play().catch(() => {});
         }
     }
 
     // === ПОГОДА ===
-    function changeWeather(forceWeather = null) {
+    function changeWeather(forceId = null) {
         if (!Pack2State.settings?.weatherEnabled) return;
         
-        let newWeather = forceWeather;
-        if (!newWeather) {
-            const types = P2_CONFIG.weather.types;
-            newWeather = types[Math.floor(Math.random() * types.length)];
-            if (newWeather === 'storm' && Math.random() > P2_CONFIG.weather.stormChance) {
-                newWeather = 'rain'; 
-            }
+        let newWeather;
+        if (forceId) {
+            newWeather = P2_CONFIG.weather.combinations.find(w => w.id === forceId) || P2_CONFIG.weather.combinations[0];
+        } else {
+            // Выбираем случайную комбинацию
+            const combos = P2_CONFIG.weather.combinations;
+            newWeather = combos[Math.floor(Math.random() * combos.length)];
         }
         
         Pack2State.currentWeather = newWeather;
@@ -82,7 +79,7 @@
         Pack2State.splashParticles = [];
 
         if (Pack2State.rainAudio) {
-            if (newWeather === 'rain' || newWeather === 'storm') {
+            if (newWeather.rain) {
                 Pack2State.rainAudio.play().catch(() => {});
                 Pack2State.rainAudio.volume = (Pack2State.settings.ambientVolume || 0.25) * (Pack2State.settings.masterVolume || 1.0) * 0.5;
             } else {
@@ -120,7 +117,7 @@
             }
         }
 
-        if (Pack2State.currentWeather === 'storm') {
+        if (Pack2State.currentWeather.storm) {
             Pack2State.lightningTimer += data.delta || 16.6;
             if (Pack2State.lightningTimer > 8000 + Math.random() * 7000) {
                 Pack2State.lightningTimer = 0;
@@ -140,9 +137,7 @@
                 const audio = Pack2State.musicAudios[index];
                 if (!audio) return;
                 const targetVolume = dist >= layer.minDistance ? 0.2 : 0; 
-                if (audio.volume !== targetVolume) {
-                    audio.volume += (targetVolume - audio.volume) * 0.05;
-                }
+                if (audio.volume !== targetVolume) audio.volume += (targetVolume - audio.volume) * 0.05;
             });
         }
     });
@@ -170,21 +165,20 @@
         Pack2State.hasShield = false;
         if (window.RenderEngine) {
             window.RenderEngine.spawnParticles(data.x + 50, data.y + 50, 40, { colors: ['#00FFFF', '#FFFFFF'], speed: 8, life: 30, size: 4, gravity: 0.1 });
-            window.RenderEngine.shake(8, 15);
-            window.RenderEngine.flash('0,255,255', 0.4);
+            window.RenderEngine.shake(8, 15); window.RenderEngine.flash('0,255,255', 0.4);
         }
     });
 
     window.GameEvents.on('gameover', () => {
-        Pack2State.activePowerup = null;
-        Pack2State.hasShield = false;
+        Pack2State.activePowerup = null; Pack2State.hasShield = false;
         Pack2State.musicAudios.forEach(a => a.pause());
         if (Pack2State.rainAudio) Pack2State.rainAudio.pause();
     });
 
-    // === РЕНДЕР (ВИЗУАЛЬНЫЕ ЭФФЕКТЫ) ===
+    // === РЕНДЕР ===
     window.GameEvents.on('render_frame', ({ ctx, player, obstacles }) => {
         const W = ctx.canvas.width; const H = ctx.canvas.height;
+        const weather = Pack2State.currentWeather;
         
         // 1. Щит
         if (Pack2State.hasShield && player) {
@@ -192,26 +186,22 @@
             const pCenterX = player.x + player.w / 2;
             const pCenterY = player.y + player.h / 2;
             const baseRadius = Math.max(player.w, player.h) * 0.65;
-            const pulse = Math.sin(Date.now() / 150) * 8;
-            const radius = baseRadius + pulse;
+            const radius = baseRadius + Math.sin(Date.now() / 150) * 8;
             
             const grad = ctx.createRadialGradient(pCenterX, pCenterY, radius * 0.2, pCenterX, pCenterY, radius);
             grad.addColorStop(0, 'rgba(0, 255, 255, 0.0)');
             grad.addColorStop(0.6, 'rgba(0, 255, 255, 0.2)');
-            grad.addColorStop(0.9, 'rgba(0, 255, 255, 0.6)');
             grad.addColorStop(1, 'rgba(0, 255, 255, 0.9)');
             
             ctx.beginPath(); ctx.arc(pCenterX, pCenterY, radius, 0, Math.PI * 2);
             ctx.fillStyle = grad; ctx.fill();
             ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0, 255, 255, 0.9)'; ctx.stroke();
-            
-            // Блик
             ctx.beginPath(); ctx.arc(pCenterX - radius * 0.3, pCenterY - radius * 0.3, radius * 0.15, 0, Math.PI * 2);
             ctx.fillStyle = 'rgba(255, 255, 255, 0.6)'; ctx.fill();
             ctx.restore();
         }
 
-        // 2. Slow-mo / Sprint (Оверлеи)
+        // 2. Slow-mo / Sprint
         if (Pack2State.activePowerup?.type === 'slowmo') {
             ctx.fillStyle = 'rgba(0, 0, 255, 0.2)'; ctx.fillRect(0, 0, W, H);
         } else if (Pack2State.activePowerup?.type === 'sprint' && window.RenderEngine && Math.random() > 0.5) {
@@ -220,103 +210,97 @@
             window.RenderEngine.spawnParticles(sparkX, sparkY, 1, { colors: ['#FFD700', '#FFFFFF'], speed: 5, life: 20, size: 3, gravity: 0 });
         }
 
-        // 3. ДОЖДЬ И БРЫЗГИ
-        if (Pack2State.currentWeather === 'rain' || Pack2State.currentWeather === 'storm') {
-            const groundY = H * 0.8; // Условная линия земли (нижняя часть экрана)
+        // 3. ДОЖДЬ (Яркий, со свечением)
+        if (weather.rain) {
+            const groundY = H * 0.8;
 
-            // Спавн капель (если их мало)
-            if (Pack2State.rainParticles.length < 150) {
-                for(let i=0; i<3; i++) {
+            if (Pack2State.rainParticles.length < 200) {
+                for(let i=0; i<4; i++) {
                     Pack2State.rainParticles.push({
                         x: Math.random() * W,
                         y: -20 - Math.random() * 100,
-                        speed: 15 + Math.random() * 10,
-                        length: 15 + Math.random() * 20,
-                        alpha: 0.3 + Math.random() * 0.4
+                        speed: 20 + Math.random() * 15,
+                        length: 20 + Math.random() * 25,
+                        alpha: 0.7 + Math.random() * 0.3
                     });
                 }
             }
 
-            // Движение и отрисовка капель
+            ctx.save();
+            ctx.globalCompositeOperation = 'screen'; // Свечение
             ctx.lineCap = 'round';
+            
+            // Добавляем небольшое свечение самим каплям для видимости днем
+            ctx.shadowBlur = 4;
+            ctx.shadowColor = 'rgba(200, 240, 255, 0.8)';
+
             for (let i = Pack2State.rainParticles.length - 1; i >= 0; i--) {
                 const p = Pack2State.rainParticles[i];
                 p.y += p.speed;
-                p.x -= p.speed * 0.15; // Ветер
+                p.x -= p.speed * 0.15;
 
-                // Если капля упала на землю
                 if (p.y > groundY + (Math.random() * 50)) {
-                    // Создаем брызги (разлетаются в стороны)
                     for(let j=0; j<3; j++) {
                         Pack2State.splashParticles.push({
                             x: p.x, y: groundY + Math.random() * 20,
-                            vx: (Math.random() - 0.5) * 6,
-                            vy: -Math.random() * 3,
-                            life: 15 + Math.random() * 10,
-                            maxLife: 25,
-                            size: 1 + Math.random() * 2
+                            vx: (Math.random() - 0.5) * 6, vy: -Math.random() * 4,
+                            life: 20 + Math.random() * 10, maxLife: 30, size: 2 + Math.random() * 2
                         });
                     }
-                    // Респавн капли наверху
-                    p.y = -20 - Math.random() * 100;
-                    p.x = Math.random() * W + 50; 
+                    p.y = -20 - Math.random() * 100; p.x = Math.random() * W + 50; 
                 }
 
-                // Отрисовка капли
                 ctx.beginPath();
                 ctx.moveTo(p.x, p.y);
                 ctx.lineTo(p.x + p.speed * 0.2, p.y + p.length);
-                ctx.strokeStyle = `rgba(180, 220, 255, ${p.alpha})`;
-                ctx.lineWidth = 1.5;
+                ctx.strokeStyle = `rgba(255, 255, 255, ${p.alpha})`;
+                ctx.lineWidth = 2.5;
                 ctx.stroke();
             }
 
-            // Отрисовка брызг
+            // Брызги
             for (let i = Pack2State.splashParticles.length - 1; i >= 0; i--) {
                 const s = Pack2State.splashParticles[i];
-                s.x += s.vx;
-                s.y += s.vy;
-                s.vy += 0.5; // Гравитация для брызг
-                s.life--;
+                s.x += s.vx; s.y += s.vy; s.vy += 0.6; s.life--;
 
-                if (s.life <= 0) {
-                    Pack2State.splashParticles.splice(i, 1);
-                    continue;
-                }
+                if (s.life <= 0) { Pack2State.splashParticles.splice(i, 1); continue; }
 
                 ctx.beginPath();
                 ctx.arc(s.x, s.y, s.size * (s.life / s.maxLife), 0, Math.PI * 2);
-                ctx.fillStyle = `rgba(180, 220, 255, ${(s.life / s.maxLife) * 0.6})`;
+                ctx.fillStyle = `rgba(255, 255, 255, ${(s.life / s.maxLife) * 0.8})`;
                 ctx.fill();
             }
+            ctx.restore();
         } else {
             Pack2State.rainParticles = [];
             Pack2State.splashParticles = [];
         }
 
-        // 4. ТУМАН (Скрывает обзор)
-        if (Pack2State.currentWeather === 'fog') {
-            // Градиент слева направо: слева прозрачно, справа густой туман
-            const fogGrad = ctx.createLinearGradient(W * 0.2, 0, W, 0);
+        // 4. ТУМАН
+        if (weather.fog) {
+            // Градиент слева направо (справа гуще, скрывает препятствия)
+            const fogGrad = ctx.createLinearGradient(W * 0.1, 0, W, 0);
             fogGrad.addColorStop(0, 'rgba(200, 210, 220, 0.0)');
-            fogGrad.addColorStop(0.6, 'rgba(200, 210, 220, 0.4)');
-            fogGrad.addColorStop(1, 'rgba(200, 210, 220, 0.9)');
-            ctx.fillStyle = fogGrad;
-            ctx.fillRect(0, 0, W, H);
+            fogGrad.addColorStop(0.6, 'rgba(200, 210, 220, 0.5)');
+            fogGrad.addColorStop(1, 'rgba(200, 210, 220, 0.95)');
+            ctx.fillStyle = fogGrad; ctx.fillRect(0, 0, W, H);
             
-            // Легкая дымка по краям
-            const vignetteGrad = ctx.createRadialGradient(W/2, H/2, H*0.4, W/2, H/2, H*0.8);
-            vignetteGrad.addColorStop(0, 'rgba(0,0,0,0)');
-            vignetteGrad.addColorStop(1, 'rgba(180, 190, 200, 0.4)');
-            ctx.fillStyle = vignetteGrad;
+            const vigGrad = ctx.createRadialGradient(W/2, H/2, H*0.4, W/2, H/2, H*0.8);
+            vigGrad.addColorStop(0, 'rgba(0,0,0,0)'); vigGrad.addColorStop(1, 'rgba(180, 190, 200, 0.4)');
+            ctx.fillStyle = vigGrad; ctx.fillRect(0, 0, W, H);
+        }
+
+        // 5. ЦВЕТОВОЙ ФИЛЬТР (Tint) для всего экрана
+        if (weather.tint && weather.tint !== 'rgba(0,0,0,0)') {
+            ctx.fillStyle = weather.tint;
             ctx.fillRect(0, 0, W, H);
         }
     });
 
-    // === UI КОМПОНЕНТ (Иконки погоды и паверапов) ===
+    // === UI КОМПОНЕНТ ===
     function Pack2UI({ gameState }) {
         const [active, setActive] = React.useState(null);
-        const [weather, setWeather] = React.useState('clear');
+        const [weather, setWeather] = React.useState(P2_CONFIG.weather.combinations[0]);
         const [hasShield, setHasShield] = React.useState(false);
         const [timeOfDay, setTimeOfDay] = React.useState('day');
 
@@ -332,18 +316,16 @@
 
         if (gameState !== 'playing') return null;
 
-        const weatherIcons = { clear: '☀️', rain: '🌧️', fog: '🌫️', storm: '⛈️' };
         const timeIcon = timeOfDay === 'night' ? '🌙' : '☀️';
         const activeData = active ? P2_CONFIG.powerups.types[active.type] : null;
         const timeLeft = active ? Math.max(0, Math.ceil((active.endTime - Date.now()) / 1000)) : 0;
 
         return React.createElement(React.Fragment, null,
-            // Верхний правый угол (Погода и Время)
             React.createElement('div', { className: 'hud-right', style: { top: '50px', right: '20px', display: 'flex', gap: '10px', fontSize: '24px' } }, 
                 React.createElement('span', { title: 'Time' }, timeIcon),
-                React.createElement('span', { title: 'Weather' }, weatherIcons[weather] || '❓')
+                // Выводим label из объекта погоды
+                React.createElement('span', { title: 'Weather', style: {fontSize: '20px'} }, weather.label || '❓')
             ),
-            // Центр (Активный паверап)
             (activeData || hasShield) && React.createElement('div', { className: 'pack2-powerup-badge' },
                 hasShield ? '🛡️' : `${activeData.emoji} ${timeLeft}s`
             )
@@ -352,5 +334,5 @@
 
     if (window.PackUIs) { window.PackUIs.push(Pack2UI); } else { window.PackUIs = [Pack2UI]; }
 
-    console.log('%c🌪️ PACK 2 (Atmosphere & Power-ups) loaded', 'color:#00FFFF;font-weight:bold;font-size:14px');
+    console.log('%c🌪️ PACK 2 (Combined Weather System) loaded', 'color:#00FFFF;font-weight:bold;font-size:14px');
 })();
