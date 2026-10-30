@@ -13,7 +13,7 @@ window.PackUIs = window.PackUIs || [];
 
     const P4_CONFIG = (window.GAME_CONFIG && window.GAME_CONFIG.pack4) || {
         economy: { coinsPerMeter: 1, bonusCombo: 5, bonusGoldenFood: 50 },
-        shop: { skins: [], buffs: [], backgrounds: [] },
+        shop: { skins: [], buffs: [], consumables: [] },
         missions: [],
         secrets: { goldenCrocDistance: 5000, konami: { code: [], duration: 10000 }, ufoChance: 0.05, ufoCoins: 100 }
     };
@@ -49,7 +49,7 @@ window.PackUIs = window.PackUIs || [];
     // Инициализация миссий при первом запуске
     function initMissions() {
         if (Pack4State.missions.length === 0) {
-            Pack4State.missions = P4_CONFIG.missions.map(m => ({ ...m, progress: 0 }));
+            Pack4State.missions = P4_CONFIG.missions.map(m => ({ ...m, progress: 0, completed: false }));
             saveState();
         }
     }
@@ -69,6 +69,24 @@ window.PackUIs = window.PackUIs || [];
         }
         
         window.GameEvents.emit('pack4_toast', { text: '✅ Purchased!', type: 'success' });
+        saveState(); updateUI();
+    }
+
+    // Покупка расходника — кладёт в инвентарь Pack2 (если он есть) и в свой inventory
+    function buyConsumable(id, price) {
+        if (Pack4State.coins < price) {
+            window.GameEvents.emit('pack4_toast', { text: '❌ Not enough coins!', type: 'danger' });
+            return;
+        }
+        Pack4State.coins -= price;
+        Pack4State.inventory[id] = (Pack4State.inventory[id] || 0) + 1;
+
+        if (window.Pack2State && window.Pack2State.inventory && window.Pack2State.inventory[id] !== undefined) {
+            window.Pack2State.inventory[id]++;
+            if (window.Pack2State.uiListeners) window.Pack2State.uiListeners.forEach(fn => fn());
+        }
+
+        window.GameEvents.emit('pack4_toast', { text: `✅ Bought ${id.toUpperCase()}!`, type: 'success' });
         saveState(); updateUI();
     }
 
@@ -93,7 +111,7 @@ window.PackUIs = window.PackUIs || [];
             Pack4State.activeUFO.y = 100 + Math.sin(Date.now() / 500) * 30; // Легкое покачивание
             
             // Проверка коллизии с игроком
-            const pX = 100; const pY = 530 - 100; // Примерная позиция игрока
+            const pX = 100; const pY = 530 - 100;
             if (Math.abs(Pack4State.activeUFO.x - pX) < 100 && Math.abs(Pack4State.activeUFO.y - pY) < 150) {
                 Pack4State.activeUFO.collected = true;
                 Pack4State.coins += P4_CONFIG.secrets.ufoCoins;
@@ -105,12 +123,12 @@ window.PackUIs = window.PackUIs || [];
             if (Pack4State.activeUFO.x < -100) Pack4State.activeUFO = null;
         }
 
-        // Обновление миссий
+        // Обновление миссий (distance)
         if (data.distance) {
             Pack4State.missions.forEach(m => {
-                if (m.type === 'distance' && m.progress < m.target) {
+                if (m.type === 'distance' && m.progress < m.target && !m.completed) {
                     m.progress = Math.min(m.target, Math.floor(data.distance));
-                    if (m.progress >= m.target && !m.completed) {
+                    if (m.progress >= m.target) {
                         m.completed = true;
                         Pack4State.coins += m.reward;
                         window.GameEvents.emit('pack4_toast', { text: `🎯 MISSION COMPLETE: +${m.reward} COINS`, type: 'success' });
@@ -123,9 +141,9 @@ window.PackUIs = window.PackUIs || [];
 
     window.GameEvents.on('eat', () => {
         Pack4State.missions.forEach(m => {
-            if (m.type === 'food' && m.progress < m.target) {
+            if (m.type === 'food' && m.progress < m.target && !m.completed) {
                 m.progress++;
-                if (m.progress >= m.target && !m.completed) {
+                if (m.progress >= m.target) {
                     m.completed = true; Pack4State.coins += m.reward;
                     window.GameEvents.emit('pack4_toast', { text: `🎯 MISSION COMPLETE: +${m.reward} COINS`, type: 'success' });
                     saveState(); updateUI();
@@ -136,9 +154,9 @@ window.PackUIs = window.PackUIs || [];
 
     window.GameEvents.on('jump', () => {
         Pack4State.missions.forEach(m => {
-            if (m.type === 'jumps' && m.progress < m.target) {
+            if (m.type === 'jumps' && m.progress < m.target && !m.completed) {
                 m.progress++;
-                if (m.progress >= m.target && !m.completed) {
+                if (m.progress >= m.target) {
                     m.completed = true; Pack4State.coins += m.reward;
                     window.GameEvents.emit('pack4_toast', { text: `🎯 MISSION COMPLETE: +${m.reward} COINS`, type: 'success' });
                     saveState(); updateUI();
@@ -156,7 +174,7 @@ window.PackUIs = window.PackUIs || [];
         // Лидерборд
         Pack4State.leaderboard.push({ score: data.distance, date: new Date().toISOString() });
         Pack4State.leaderboard.sort((a, b) => b.score - a.score);
-        Pack4State.leaderboard = Pack4State.leaderboard.slice(0, 10); // Топ-10
+        Pack4State.leaderboard = Pack4State.leaderboard.slice(0, 10);
 
         // Секретный персонаж
         if (data.distance >= P4_CONFIG.secrets.goldenCrocDistance && !Pack4State.unlockedSkins.includes('gold')) {
@@ -172,7 +190,7 @@ window.PackUIs = window.PackUIs || [];
         const [toasts, setToasts] = React.useState([]);
         React.useEffect(() => {
             const listener = (data) => {
-                const id = Date.now(); setToasts(prev => [...prev, { id, ...data }]);
+                const id = Date.now() + Math.random(); setToasts(prev => [...prev, { id, ...data }]);
                 setTimeout(() => { setToasts(prev => prev.filter(t => t.id !== id)); }, 4000);
             };
             window.GameEvents.on('pack4_toast', listener);
@@ -198,7 +216,7 @@ window.PackUIs = window.PackUIs || [];
         if (!visible) return null;
 
         return React.createElement('div', { className: 'pack4-overlay' },
-            React.createElement('div', { className: 'pack4-panel' },
+            React.createElement('div', { className: 'pack4-panel shop-panel' },
                 React.createElement('div', { className: 'pack4-header' },
                     React.createElement('div', { className: 'pack4-title' }, '🛒 SHOP'),
                     React.createElement('div', { className: 'pack4-coins' }, `💰 ${Pack4State.coins}`)
@@ -223,10 +241,25 @@ window.PackUIs = window.PackUIs || [];
                         P4_CONFIG.shop.buffs.map(buff => {
                             const owned = Pack4State.boughtBuffs.includes(buff.id);
                             return React.createElement('div', { key: buff.id, className: `pack4-item ${owned ? 'owned' : ''}` },
+                                React.createElement('div', { className: 'pack4-item-icon' }, buff.icon || '✨'),
                                 React.createElement('div', { className: 'pack4-item-name' }, buff.name),
                                 React.createElement('div', { className: 'pack4-item-desc' }, buff.description),
                                 !owned && React.createElement('button', { className: 'pack4-buy-btn', onClick: () => buyItem('buff', buff.id, buff.price) }, `💰 ${buff.price}`),
                                 owned && React.createElement('div', { className: 'pack4-owned-label' }, 'ACTIVE')
+                            );
+                        })
+                    )
+                ),
+                React.createElement('div', { className: 'pack4-section' },
+                    React.createElement('h3', null, 'Consumables'),
+                    React.createElement('div', { className: 'pack4-grid' },
+                        P4_CONFIG.shop.consumables.map(item => {
+                            const qty = Pack4State.inventory[item.id] || 0;
+                            return React.createElement('div', { key: item.id, className: 'pack4-item consumable' },
+                                qty > 0 && React.createElement('div', { className: 'pack4-item-qty' }, `×${qty}`),
+                                React.createElement('div', { className: 'pack4-item-icon', style: { filter: `drop-shadow(0 0 20px ${item.color})` } }, item.icon),
+                                React.createElement('div', { className: 'pack4-item-name' }, item.name),
+                                React.createElement('button', { className: 'pack4-buy-btn', onClick: () => buyConsumable(item.id, item.price) }, `💰 ${item.price}`)
                             );
                         })
                     )
@@ -249,11 +282,13 @@ window.PackUIs = window.PackUIs || [];
             React.createElement('div', { className: 'pack4-panel' },
                 React.createElement('div', { className: 'pack4-title' }, '🏅 LEADERBOARD'),
                 React.createElement('div', { className: 'pack4-leaderboard-list' },
-                    Pack4State.leaderboard.map((entry, i) => React.createElement('div', { key: i, className: 'pack4-lb-row' },
-                        React.createElement('span', { className: 'pack4-lb-rank' }, `#${i + 1}`),
-                        React.createElement('span', { className: 'pack4-lb-score' }, `${entry.score}m`),
-                        React.createElement('span', { className: 'pack4-lb-date' }, new Date(entry.date).toLocaleDateString())
-                    ))
+                    Pack4State.leaderboard.length === 0
+                        ? React.createElement('div', { style: { textAlign: 'center', color: 'var(--fh-text-muted)', padding: '30px' } }, 'No runs yet. Go play!')
+                        : Pack4State.leaderboard.map((entry, i) => React.createElement('div', { key: i, className: 'pack4-lb-row' },
+                            React.createElement('span', { className: 'pack4-lb-rank' }, `#${i + 1}`),
+                            React.createElement('span', { className: 'pack4-lb-score' }, `${entry.score}m`),
+                            React.createElement('span', { className: 'pack4-lb-date' }, new Date(entry.date).toLocaleDateString())
+                        ))
                 ),
                 React.createElement('button', { className: 'pack3-close-btn', onClick: () => setVisible(false) }, 'CLOSE')
             )
@@ -278,8 +313,8 @@ window.PackUIs = window.PackUIs || [];
             if (navigator.share) {
                 navigator.share({ title: 'Lacoste Runner', text: `I just scored ${Math.floor(score)}m in Lacoste Runner!`, url: gameUrl });
             } else {
-                alert("Ссылка скопирована в буфер обмена!");
                 navigator.clipboard.writeText(gameUrl);
+                alert("Ссылка скопирована в буфер обмена!");
             }
         };
 
