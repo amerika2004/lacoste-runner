@@ -139,6 +139,10 @@
             crocodile: {
                 id: 'crocodile', name: 'Crocodile', emoji: '🐊', folder: 'source/characters/crocodile',
                 frameCount: 12, baseWidth: 165.4, baseHeight: 110.3,
+                model3d: { 
+                 obj: 'source/characters/3D/model.obj', 
+                 mtl: 'source/characters/3D/model.mtl' 
+                  },
                 foodEmojis: ['🍗', '🍔', '🍕', '🥩'], eatEmoji: null, eatFolder: null, eatFrameCount: 0, eatDuration: 0,
                 stats: { speed: 1.0, jump: 1.0, luck: 1.0 },
                 skins: [
