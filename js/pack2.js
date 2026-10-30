@@ -17,22 +17,16 @@ window.PackUIs = window.PackUIs || [];
     };
 
     const Pack2State = {
-        // Инвентарь (накопительные)
-        inventory: { shield: 0, magnet: 0, sprint: 0, slowmo: 0 },
-        
-        // Активные эффекты (могут работать одновременно)
+        inventory: { shield: 0, magnet: 0, sprint: 0, slowmo: 0 }, 
         activePowerups: { magnet: 0, sprint: 0, slowmo: 0 }, 
-        hasShield: false, // Щит работает отдельно как одноразовая защита
-
+        hasShield: false,
         currentWeather: P2_CONFIG.weather.combinations[0],
         lastWeatherChange: 0,
         timeOfDay: 'day',
-        
         rainParticles: [],
         splashParticles: [],
         lightningTimer: 0,
         lightningActive: false,
-        
         rainAudio: null,
         thunderAudio: null,
         powerupAudios: {},
@@ -42,7 +36,6 @@ window.PackUIs = window.PackUIs || [];
 
     window.Pack2State = Pack2State;
 
-    // === АУДИО ===
     function initAudio() {
         for (const [key, data] of Object.entries(P2_CONFIG.powerups.types)) {
             if (data.sound && !Pack2State.powerupAudios[key]) {
@@ -63,10 +56,8 @@ window.PackUIs = window.PackUIs || [];
 
     function updateUI() { Pack2State.uiListeners.forEach(fn => fn()); }
 
-    // === ПОГОДА ===
     function changeWeather(forceId = null) {
         if (!Pack2State.settings?.weatherEnabled) return;
-        
         let newWeather;
         if (forceId) {
             newWeather = P2_CONFIG.weather.combinations.find(w => w.id === forceId) || P2_CONFIG.weather.combinations[0];
@@ -74,7 +65,6 @@ window.PackUIs = window.PackUIs || [];
             const combos = P2_CONFIG.weather.combinations;
             newWeather = combos[Math.floor(Math.random() * combos.length)];
         }
-        
         Pack2State.currentWeather = newWeather;
         Pack2State.rainParticles = []; Pack2State.splashParticles = [];
 
@@ -88,43 +78,58 @@ window.PackUIs = window.PackUIs || [];
         }
     }
 
-    // === АКТИВАЦИЯ БУСТОВ ===
     function usePowerup(type) {
         if (!Pack2State.inventory[type] || Pack2State.inventory[type] <= 0) return;
-        
-        // Проверяем, не активен ли уже (для щита всегда можно)
         if (type !== 'shield' && Pack2State.activePowerups[type] > Date.now()) return;
 
         Pack2State.inventory[type]--;
         
+        // Синхронизация с базой данных магазина
+        if (window.Pack4State && window.Pack4State.inventory) {
+            window.Pack4State.inventory[type]--;
+            if (window.Pack4State.inventory[type] < 0) window.Pack4State.inventory[type] = 0;
+            localStorage.setItem('lacosteInventory', JSON.stringify(window.Pack4State.inventory));
+        }
+
         if (type === 'shield') {
             Pack2State.hasShield = true;
         } else {
             const pData = P2_CONFIG.powerups.types[type];
             Pack2State.activePowerups[type] = Date.now() + pData.duration;
         }
-        
         playSound(Pack2State.powerupAudios[type]);
         updateUI();
     }
 
-    // Обработка клавиш 1, 2, 3, 4
     window.addEventListener('keydown', (e) => {
         if (e.code === 'Digit1') usePowerup('shield');
         if (e.code === 'Digit2') usePowerup('magnet');
         if (e.code === 'Digit3') usePowerup('sprint');
     });
 
-    // === ПОДПИСКА НА СОБЫТИЯ ===
     window.GameEvents.on('start', (data) => {
         initAudio();
         Pack2State.settings = data.settings;
         
-        // Сброс инвентаря
-        Pack2State.inventory = { shield: 0, magnet: 0, sprint: 0, slowmo: 0 };
+        // ИНИЦИАЛИЗАЦИЯ ИНВЕНТАРЯ ИЗ МАГАЗИНА
+        if (window.Pack4State && window.Pack4State.inventory) {
+            Pack2State.inventory = { 
+                shield: window.Pack4State.inventory.shield || 0,
+                magnet: window.Pack4State.inventory.magnet || 0,
+                sprint: window.Pack4State.inventory.sprint || 0,
+                slowmo: window.Pack4State.inventory.slowmo || 0
+            };
+        } else {
+            Pack2State.inventory = { shield: 0, magnet: 0, sprint: 0, slowmo: 0 };
+        }
+
+        // Стартовый щит от купленного бафа
+        if (window.Pack4State && window.Pack4State.boughtBuffs?.includes('start_shield')) {
+            Pack2State.inventory.shield++;
+        }
+
         Pack2State.activePowerups = { magnet: 0, sprint: 0, slowmo: 0 };
         Pack2State.hasShield = false;
-
         Pack2State.lastWeatherChange = 0;
         Pack2State.lightningActive = false;
         
@@ -136,14 +141,12 @@ window.PackUIs = window.PackUIs || [];
         if (data.settings) Pack2State.settings = data.settings;
         if (data.timeOfDay) Pack2State.timeOfDay = data.timeOfDay;
 
-        // Очистка просроченных эффектов
         let uiChanged = false;
         if (Pack2State.activePowerups.magnet && Date.now() > Pack2State.activePowerups.magnet) { Pack2State.activePowerups.magnet = 0; uiChanged = true; }
         if (Pack2State.activePowerups.sprint && Date.now() > Pack2State.activePowerups.sprint) { Pack2State.activePowerups.sprint = 0; uiChanged = true; }
         if (Pack2State.activePowerups.slowmo && Date.now() > Pack2State.activePowerups.slowmo) { Pack2State.activePowerups.slowmo = 0; uiChanged = true; }
         if (uiChanged) updateUI();
 
-        // Погода
         if (Pack2State.settings?.weatherEnabled && data.distance !== undefined) {
             const nextWeatherDist = Math.floor(data.distance / P2_CONFIG.weather.changeDistance) * P2_CONFIG.weather.changeDistance;
             if (nextWeatherDist > Pack2State.lastWeatherChange && nextWeatherDist > 0) {
@@ -164,38 +167,26 @@ window.PackUIs = window.PackUIs || [];
         }
     });
 
-    // Сбор буста в инвентарь
     window.GameEvents.on('powerup_collect', (data) => {
         const pData = P2_CONFIG.powerups.types[data.kind];
         if (!pData) return;
-    
-        // ⏳ SLOW-MO — работает независимо от инвентаря, активируется сразу при касании
+
+        // SLOW-MO АКТИВИРУЕТСЯ СРАЗУ
         if (data.kind === 'slowmo') {
-            // Если уже активен — обновляем таймер на полный duration (не стакается бесконечно)
             Pack2State.activePowerups.slowmo = Date.now() + pData.duration;
-    
             playSound(Pack2State.powerupAudios['slowmo']);
-    
             if (window.RenderEngine) {
-                window.RenderEngine.spawnParticles(data.x, data.y, 25, {
-                    colors: [pData.color, '#FFFFFF', '#00FFFF'],
-                    speed: 6, life: 35, size: 3, gravity: 0.1
-                });
-                window.RenderEngine.flash('0,128,255', 0.25);
+                window.RenderEngine.spawnParticles(data.x, data.y, 25, { colors: [pData.color, '#FFFFFF'], speed: 6, life: 35, size: 3, gravity: 0.1 });
+                window.RenderEngine.flash('0,128,255', 0.2);
             }
-            window.GameEvents.emit('pack3_toast', { text: '⏳ SLOW-MO!', type: 'info' });
+            window.GameEvents.emit('pack3_toast', { text: '⏳ SLOW-MO ACTIVATED', type: 'info' });
             updateUI();
             return;
         }
-    
-        // Остальные бафы (shield / magnet / sprint) — по-прежнему в инвентарь
+
         if (Pack2State.inventory[data.kind] !== undefined) {
             Pack2State.inventory[data.kind]++;
-            if (window.RenderEngine) {
-                window.RenderEngine.spawnParticles(data.x, data.y, 20, {
-                    colors: [pData.color, '#FFFFFF'], speed: 5, life: 30, size: 3, gravity: 0.1
-                });
-            }
+            if (window.RenderEngine) { window.RenderEngine.spawnParticles(data.x, data.y, 20, { colors: [pData.color, '#FFFFFF'], speed: 5, life: 30, size: 3, gravity: 0.1 }); }
             updateUI();
         }
     });
@@ -216,33 +207,26 @@ window.PackUIs = window.PackUIs || [];
         updateUI();
     });
 
-    // === РЕНДЕР (ЭФФЕКТЫ) ===
     window.GameEvents.on('render_frame', ({ ctx, player }) => {
         const W = ctx.canvas.width; const H = ctx.canvas.height;
         const weather = Pack2State.currentWeather;
         
-        // 1. Щит (Не рисуем, если персонаж падает в яму)
         if (Pack2State.hasShield && player && !player.isFallingIntoPit) {
             ctx.save();
             const pCenterX = player.x + player.w / 2;
             const pCenterY = player.y + player.h / 2;
             const baseRadius = Math.max(player.w, player.h) * 0.65;
             const radius = baseRadius + Math.sin(Date.now() / 150) * 8;
-            
             const grad = ctx.createRadialGradient(pCenterX, pCenterY, radius * 0.2, pCenterX, pCenterY, radius);
             grad.addColorStop(0, 'rgba(0, 255, 255, 0.0)');
             grad.addColorStop(0.6, 'rgba(0, 255, 255, 0.2)');
             grad.addColorStop(1, 'rgba(0, 255, 255, 0.9)');
-            
             ctx.beginPath(); ctx.arc(pCenterX, pCenterY, radius, 0, Math.PI * 2);
             ctx.fillStyle = grad; ctx.fill();
             ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0, 255, 255, 0.9)'; ctx.stroke();
-            ctx.beginPath(); ctx.arc(pCenterX - radius * 0.3, pCenterY - radius * 0.3, radius * 0.15, 0, Math.PI * 2);
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.6)'; ctx.fill();
             ctx.restore();
         }
 
-        // 2. Slow-mo / Sprint (Оверлеи и искры)
         if (Pack2State.activePowerups.slowmo && Pack2State.activePowerups.slowmo > Date.now()) {
             ctx.fillStyle = 'rgba(0, 128, 255, 0.15)'; ctx.fillRect(0, 0, W, H);
         }
@@ -258,96 +242,60 @@ window.PackUIs = window.PackUIs || [];
             ctx.strokeStyle = 'rgba(255, 0, 0, 0.4)'; ctx.lineWidth = 2; ctx.stroke(); ctx.restore();
         }
 
-        // 3. ДОЖДЬ (Оптимизированный, без shadowBlur)
         if (weather.rain) {
             const groundY = H * 0.8;
-
             if (Pack2State.rainParticles.length < 150) {
                 for(let i=0; i<3; i++) {
-                    Pack2State.rainParticles.push({
-                        x: Math.random() * W, y: -20 - Math.random() * 100,
-                        speed: 22 + Math.random() * 10, length: 20 + Math.random() * 20,
-                        alpha: 0.8 + Math.random() * 0.2
-                    });
+                    Pack2State.rainParticles.push({ x: Math.random() * W, y: -20 - Math.random() * 100, speed: 22 + Math.random() * 10, length: 20 + Math.random() * 20, alpha: 0.8 + Math.random() * 0.2 });
                 }
             }
-
-            ctx.save();
-            ctx.globalCompositeOperation = 'screen';
-            ctx.lineCap = 'round';
-            ctx.strokeStyle = 'rgba(200, 240, 255, 0.9)';
-            ctx.lineWidth = 2.5;
-
+            ctx.save(); ctx.globalCompositeOperation = 'screen'; ctx.lineCap = 'round'; ctx.strokeStyle = 'rgba(200, 240, 255, 0.9)'; ctx.lineWidth = 2.5;
             for (let i = Pack2State.rainParticles.length - 1; i >= 0; i--) {
                 const p = Pack2State.rainParticles[i];
-                p.y += p.speed;
-                p.x -= p.speed * 0.15;
-
+                p.y += p.speed; p.x -= p.speed * 0.15;
                 if (p.y > groundY + (Math.random() * 30)) {
                     for(let j=0; j<2; j++) {
-                        Pack2State.splashParticles.push({
-                            x: p.x, y: groundY + Math.random() * 20,
-                            vx: (Math.random() - 0.5) * 6, vy: -Math.random() * 4,
-                            life: 20 + Math.random() * 10, maxLife: 30, size: 2 + Math.random() * 2
-                        });
+                        Pack2State.splashParticles.push({ x: p.x, y: groundY + Math.random() * 20, vx: (Math.random() - 0.5) * 6, vy: -Math.random() * 4, life: 20 + Math.random() * 10, maxLife: 30, size: 2 + Math.random() * 2 });
                     }
                     p.y = -20 - Math.random() * 100; p.x = Math.random() * W + 50; 
                 }
-
-                ctx.beginPath();
-                ctx.moveTo(p.x, p.y);
-                ctx.lineTo(p.x + p.speed * 0.2, p.y + p.length);
-                ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x + p.speed * 0.2, p.y + p.length); ctx.stroke();
             }
-
             ctx.fillStyle = 'rgba(200, 240, 255, 0.7)';
             for (let i = Pack2State.splashParticles.length - 1; i >= 0; i--) {
                 const s = Pack2State.splashParticles[i];
                 s.x += s.vx; s.y += s.vy; s.vy += 0.6; s.life--;
-
                 if (s.life <= 0) { Pack2State.splashParticles.splice(i, 1); continue; }
-
-                ctx.beginPath();
-                ctx.arc(s.x, s.y, s.size * (s.life / s.maxLife), 0, Math.PI * 2);
-                ctx.fill();
+                ctx.beginPath(); ctx.arc(s.x, s.y, s.size * (s.life / s.maxLife), 0, Math.PI * 2); ctx.fill();
             }
             ctx.restore();
         } else {
-            Pack2State.rainParticles = [];
-            Pack2State.splashParticles = [];
+            Pack2State.rainParticles = []; Pack2State.splashParticles = [];
         }
 
-        // 4. ТУМАН
         if (weather.fog) {
             const fogGrad = ctx.createLinearGradient(W * 0.1, 0, W, 0);
             fogGrad.addColorStop(0, 'rgba(200, 210, 220, 0.0)');
             fogGrad.addColorStop(0.6, 'rgba(200, 210, 220, 0.5)');
             fogGrad.addColorStop(1, 'rgba(200, 210, 220, 0.95)');
             ctx.fillStyle = fogGrad; ctx.fillRect(0, 0, W, H);
-            
             const vigGrad = ctx.createRadialGradient(W/2, H/2, H*0.4, W/2, H/2, H*0.8);
             vigGrad.addColorStop(0, 'rgba(0,0,0,0)'); vigGrad.addColorStop(1, 'rgba(180, 190, 200, 0.4)');
             ctx.fillStyle = vigGrad; ctx.fillRect(0, 0, W, H);
         }
 
-        // 5. ЦВЕТОВОЙ ФИЛЬТР
         if (weather.tint && weather.tint !== 'rgba(0,0,0,0)') {
             ctx.fillStyle = weather.tint; ctx.fillRect(0, 0, W, H);
         }
     });
 
-    // === UI КОМПОНЕНТ (ИНВЕНТАРЬ) ===
     function Pack2UI({ gameState }) {
         const [, forceUpdate] = React.useReducer(x => x + 1, 0);
-
         React.useEffect(() => {
             const listener = () => forceUpdate();
             Pack2State.uiListeners.push(listener);
-            return () => {
-                Pack2State.uiListeners = Pack2State.uiListeners.filter(l => l !== listener);
-            };
+            return () => { Pack2State.uiListeners = Pack2State.uiListeners.filter(l => l !== listener); };
         }, []);
-
         if (gameState !== 'playing') return null;
 
         return React.createElement('div', { className: 'pack2-inventory' },
@@ -370,6 +318,5 @@ window.PackUIs = window.PackUIs || [];
     }
 
     if (window.PackUIs) { window.PackUIs.push(Pack2UI); } else { window.PackUIs = [Pack2UI]; }
-
     console.log('%c🌪️ PACK 2 (Inventory & Weather) loaded', 'color:#00FFFF;font-weight:bold;font-size:14px');
 })();
