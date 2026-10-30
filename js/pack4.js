@@ -13,7 +13,7 @@ window.PackUIs = window.PackUIs || [];
 
     const P4_CONFIG = (window.GAME_CONFIG && window.GAME_CONFIG.pack4) || {
         economy: { coinsPerMeter: 1, bonusCombo: 5, bonusGoldenFood: 50 },
-        shop: { buffs: [], consumables: [] }, // Убрали skins
+        shop: { skins: [], buffs: [], consumables: [] },
         missions: [],
         secrets: { goldenCrocDistance: 5000, konami: { code: [], duration: 10000 }, ufoChance: 0.05, ufoCoins: 100 }
     };
@@ -23,6 +23,7 @@ window.PackUIs = window.PackUIs || [];
         inventory: JSON.parse(localStorage.getItem('lacosteInventory') || '{}'),
         boughtBuffs: JSON.parse(localStorage.getItem('lacosteBuffs') || '[]'),
         unlockedSkins: JSON.parse(localStorage.getItem('lacosteSkins') || '["default"]'),
+        upgrades: JSON.parse(localStorage.getItem('lacosteUpgrades') || '{}'),
         missions: JSON.parse(localStorage.getItem('lacosteMissions') || '[]'),
         leaderboard: JSON.parse(localStorage.getItem('lacosteLeaderboard') || '[]'),
         cheatInvincible: 0,
@@ -39,6 +40,7 @@ window.PackUIs = window.PackUIs || [];
         localStorage.setItem('lacosteInventory', JSON.stringify(Pack4State.inventory));
         localStorage.setItem('lacosteBuffs', JSON.stringify(Pack4State.boughtBuffs));
         localStorage.setItem('lacosteSkins', JSON.stringify(Pack4State.unlockedSkins));
+        localStorage.setItem('lacosteUpgrades', JSON.stringify(Pack4State.upgrades));
         localStorage.setItem('lacosteMissions', JSON.stringify(Pack4State.missions));
         localStorage.setItem('lacosteLeaderboard', JSON.stringify(Pack4State.leaderboard));
         localStorage.setItem('lacosteRunsPlayed', Pack4State.runsPlayed);
@@ -56,9 +58,12 @@ window.PackUIs = window.PackUIs || [];
     function buyItem(type, id, price) {
         if (Pack4State.coins < price) { window.GameEvents.emit('pack4_toast', { text: '❌ Not enough coins!', type: 'danger' }); return; }
         Pack4State.coins -= price;
-        if (type === 'buff') {
+        if (type === 'skin') {
+            if (!Pack4State.unlockedSkins.includes(id)) Pack4State.unlockedSkins.push(id);
+        } else if (type === 'buff') {
             if (!Pack4State.boughtBuffs.includes(id)) Pack4State.boughtBuffs.push(id);
         }
+        window.GameEvents.emit('pack4_coins_updated');
         window.GameEvents.emit('pack4_toast', { text: '✅ Purchased!', type: 'success' });
         saveState(); updateUI();
     }
@@ -71,9 +76,21 @@ window.PackUIs = window.PackUIs || [];
             window.Pack2State.inventory[id]++;
             if (window.Pack2State.uiListeners) window.Pack2State.uiListeners.forEach(fn => fn());
         }
+        window.GameEvents.emit('pack4_coins_updated');
         window.GameEvents.emit('pack4_toast', { text: `✅ Bought ${id.toUpperCase()}!`, type: 'success' });
         saveState(); updateUI();
     }
+
+    function buyUpgrade(charId, stat, price) {
+        if (Pack4State.coins < price) { window.GameEvents.emit('pack4_toast', { text: '❌ Not enough coins!', type: 'danger' }); return; }
+        Pack4State.coins -= price;
+        if (!Pack4State.upgrades[charId]) Pack4State.upgrades[charId] = { speed: 0, jump: 0, luck: 0 };
+        Pack4State.upgrades[charId][stat]++;
+        window.GameEvents.emit('pack4_coins_updated');
+        window.GameEvents.emit('pack4_toast', { text: `✅ ${stat.toUpperCase()} Upgraded!`, type: 'success' });
+        saveState(); updateUI();
+    }
+    Pack4State.buyUpgrade = buyUpgrade;
 
     window.GameEvents.on('start', (data) => {
         Pack4State.settings = data.settings;
@@ -155,6 +172,7 @@ window.PackUIs = window.PackUIs || [];
             Pack4State.unlockedSkins.push('gold');
             window.GameEvents.emit('pack4_toast', { text: '🌟 GOLDEN CROC UNLOCKED!', type: 'success' });
         }
+        window.GameEvents.emit('pack4_coins_updated');
         saveState(); updateUI();
     });
 
@@ -173,7 +191,7 @@ window.PackUIs = window.PackUIs || [];
 
     function Pack4Shop() {
         const [visible, setVisible] = React.useState(false);
-        const [activeTab, setActiveTab] = React.useState('upgrades'); // Теперь по умолчанию 'upgrades'
+        const [activeTab, setActiveTab] = React.useState('skins');
         const [, forceUpdate] = React.useReducer(x => x + 1, 0);
 
         React.useEffect(() => {
@@ -199,14 +217,28 @@ window.PackUIs = window.PackUIs || [];
                     )
                 ),
 
-                // Оставили только 2 вкладки
                 React.createElement('div', { className: 'shop-tabs' },
+                    React.createElement('button', { className: `shop-tab ${activeTab === 'skins' ? 'active' : ''}`, onClick: () => setActiveTab('skins') }, 'Skins'),
                     React.createElement('button', { className: `shop-tab ${activeTab === 'upgrades' ? 'active' : ''}`, onClick: () => setActiveTab('upgrades') }, 'Upgrades'),
                     React.createElement('button', { className: `shop-tab ${activeTab === 'consumables' ? 'active' : ''}`, onClick: () => setActiveTab('consumables') }, 'Consumables')
                 ),
 
                 React.createElement('div', { className: 'shop-content' },
-                    // ВКЛАДКА УЛУЧШЕНИЙ
+                    activeTab === 'skins' && React.createElement('div', { className: 'pack4-section' },
+                        React.createElement('div', { className: 'pack4-grid' },
+                            P4_CONFIG.shop.skins.map(skin => {
+                                const owned = Pack4State.unlockedSkins.includes(skin.id);
+                                return React.createElement('div', { key: skin.id, className: `pack4-item ${owned ? 'owned' : ''}` },
+                                    React.createElement('div', { className: 'pack4-item-icon' }, skin.icon),
+                                    React.createElement('div', { className: 'pack4-item-name' }, skin.name),
+                                    React.createElement('div', { className: 'pack4-item-desc' }, skin.desc),
+                                    !owned && React.createElement('button', { className: 'pack4-buy-btn', onClick: () => buyItem('skin', skin.id, skin.price) }, `💰 ${skin.price}`),
+                                    owned && React.createElement('div', { className: 'pack4-owned-label' }, 'OWNED')
+                                );
+                            })
+                        )
+                    ),
+
                     activeTab === 'upgrades' && React.createElement('div', { className: 'pack4-section' },
                         React.createElement('div', { className: 'pack4-grid' },
                             P4_CONFIG.shop.buffs.map(buff => {
@@ -222,7 +254,6 @@ window.PackUIs = window.PackUIs || [];
                         )
                     ),
 
-                    // ВКЛАДКА РАСХОДНИКОВ
                     activeTab === 'consumables' && React.createElement('div', { className: 'pack4-section' },
                         React.createElement('div', { className: 'pack4-grid' },
                             P4_CONFIG.shop.consumables.map(item => {
