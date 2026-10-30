@@ -759,7 +759,7 @@ function Game() {
     // === PATCH: собираем вкладки для MenuShell ===
     const menuTabs = [];
 
-    // Home — главное меню
+// Home — главное меню
     menuTabs.push({
         id: 'home', icon: '🏠', label: 'Home', title: 'Main Menu',
         render: () => React.createElement('div', null,
@@ -775,19 +775,20 @@ function Game() {
             React.createElement('div', { className: 'ms-section-title' }, '🐾 Character'),
             React.createElement('div', { className: 'ms-char-tabs' },
                 Object.values(CHARACTERS).map(char => {
-                const has3DConfig = char.model3d && settings.use3DCharacters;
-                return React.createElement('button', {
-                    key: char.id,
-                    className: `ms-char-tab ${character === char.id ? 'active' : ''}`,
-                    onClick: () => { setCharacter(char.id); window.GameEvents.emit('pack4_character_changed', { charId: char.id }); },
-                    style: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '4px 12px', minHeight: '60px' }
-                }, 
-                    has3DConfig && window.ThreePreview
-                        ? React.createElement(window.ThreePreview, { charId: char.id, emoji: char.emoji }) 
-                        : React.createElement('span', { style: { fontSize: '24px' } }, char.emoji || '❓'),
-                    React.createElement('span', null, char.name)
-                );
-            }),
+                    const has3DConfig = char.model3d && settings.use3DCharacters;
+                    return React.createElement('button', {
+                        key: char.id,
+                        className: `ms-char-tab ${character === char.id ? 'active' : ''}`,
+                        onClick: () => { setCharacter(char.id); window.GameEvents.emit('pack4_character_changed', { charId: char.id }); },
+                        style: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '4px 12px', minHeight: '60px' }
+                    }, 
+                        has3DConfig && window.ThreePreview
+                            ? React.createElement(window.ThreePreview, { charId: char.id, emoji: char.emoji }) 
+                            : React.createElement('span', { style: { fontSize: '24px' } }, char.emoji || '❓'),
+                        React.createElement('span', null, char.name)
+                    );
+                })
+            ),
 
             React.createElement('div', { className: 'ms-section-title', style: { marginTop: '16px' } }, '🗺️ Background'),
             React.createElement('div', { className: 'ms-char-tabs' },
