@@ -1,6 +1,6 @@
 const { useState, useEffect, useRef, useCallback } = React;
 
-// === ПЛАГИННАЯ ИНФРАСТРУКТУРА (Инициализация) ===
+// === ПЛАГИННАЯ ИНФРАСТРУКТУРА ===
 window.GameEvents = window.GameEvents || {
     listeners: {},
     on(event, cb) { if (!this.listeners[event]) this.listeners[event] = []; this.listeners[event].push(cb); },
@@ -13,24 +13,7 @@ window.GameBoot = window.GameBoot || {
     trigger() { if (this.triggered) return; this.triggered = true; this.callbacks.forEach(cb => { try { cb(); } catch(e){ console.error(e); } }); this.callbacks = []; }
 };
 
-// === ЗАЩИТА ОТ ОТСУТСТВИЯ CONFIG.JS ===
-const DEFAULT_CONFIG = {
-    physics: { gravity: 0.75, jumpForce: -10.5, holdThrust: 0.45, groundY: 530, baseSpeed: 4.0, speedMultiplier: 0.8 },
-    defaultSettings: { sfxVolume: 0.7, ambientVolume: 0.25, masterVolume: 1.0, soundEnabled: true, graphics: 'high', comboEnabled: true, comboVisualsEnabled: true, weatherEnabled: true, dynamicMusicEnabled: true, biomesEnabled: true, achievementsEnabled: true, dailyGoalsEnabled: true, hudScale: 1.0, hudOpacity: 0.8 },
-    combo: { decayTimeMs: 3000, tiers: [{ threshold: 3, mult: 2, emoji: '😎', color: '#00FFFF' }], sadEmoji: '😢', sadColor: '#888888' },
-    pack2: { powerups: { spawnChance: 0.05, types: {} }, weather: { changeDistance: 1000 }, music: { layers: [], maxTempoRate: 1.15, tempoDistance: 2000 } },
-    pack3: { biomes: [], music: { layers: [] }, achievements: [] },
-    pack4: { economy: {}, shop: {}, missions: [], secrets: {} },
-    characters: {
-        crocodile: { id: 'crocodile', name: 'Crocodile', emoji: '🐊', folder: 'source/characters/crocodile', frameCount: 12, baseWidth: 165.4, baseHeight: 110.3, foodEmojis: ['🍗', '🍔', '🍕', '🥩'], eatEmoji: null, eatFolder: null, eatFrameCount: 0, eatDuration: 0 },
-        panda: { id: 'panda', name: 'Panda', emoji: '🐼', folder: 'source/characters/panda', frameCount: 20, baseWidth: 160, baseHeight: 120, foodEmojis: ['🎋'], eatEmoji: '🎋', eatFolder: 'source/characters/panda/eating', eatFrameCount: 8, eatDuration: 4.0 }
-    },
-    biomes: {
-        default: { id: 'default', name: 'Forest', emoji: '🌳', dayImg: 'source/landscape.jpg', nightImg: 'source/landscape_n.jpg', groundOffset: 0, obstacleTypes: ['barrel', 'rock', 'cactus', 'puddle', 'pit'], foodEmojis: null },
-        cartoon: { id: 'cartoon', name: 'Cartoon', emoji: '🌲', dayImg: 'source/cartoon_forest.png', nightImg: 'source/cartoon_forest_n.png', groundOffset: 30, obstacleTypes: ['rock', 'puddle', 'pit'], foodEmojis: ['🎋'] }
-    }
-};
-
+const DEFAULT_CONFIG = { /* ... */ };
 const CONFIG = (window.GAME_CONFIG && window.GAME_CONFIG.physics) ? window.GAME_CONFIG : DEFAULT_CONFIG;
 const FLIP_CROC = false; 
 const GRAVITY = CONFIG.physics.gravity ?? 0.75;        
@@ -41,7 +24,7 @@ const BASE_SPEED = CONFIG.physics.baseSpeed ?? 4.0;
 const SPEED_MULTIPLIER = CONFIG.physics.speedMultiplier ?? 0.8;
 const DEFAULT_SETTINGS = CONFIG.defaultSettings;
 
-// === ПОЛНЫЙ РЕНДЕР ДВИЖОК ===
+// === РЕНДЕР ДВИЖОК ===
 const RenderEngine = (function () {
     const QUALITY = { low: { parallax: false, bloom: false, particles: false, shake: false, trail: false, vignette: false, flash: false, maxParticles: 0 }, medium: { parallax: true, bloom: false, particles: true, shake: true, trail: false, vignette: false, flash: true, maxParticles: 200 }, high: { parallax: true, bloom: true, particles: true, shake: true, trail: true, vignette: true, flash: true, maxParticles: 500 } };
     const state = { quality: 'high', config: QUALITY.high, particles: [], shakeTime: 0, shakeIntensity: 0, flashAlpha: 0, flashColor: '255,0,0', time: 0, trail: [], cache: { vignetteCanvas: null, particleSprite: null } };
@@ -373,9 +356,17 @@ function Game() {
         
         resetCombo(); RenderEngine.reset(); setScore(0); setSpeedDisplay(1.0); setPowerDisplay(1.0); setGameState('playing');
         
-        if (window.Pack4State && window.Pack4State.boughtBuffs?.includes('start_shield')) {
-            window.Pack2State.inventory.shield++;
-            window.Pack2State.uiListeners.forEach(fn => fn());
+        if (window.Pack4State) {
+            window.Pack4State.reviveUsed = false;
+            if (window.Pack4State.boughtBuffs?.includes('start_shield')) {
+                window.Pack2State.inventory.shield++;
+                window.Pack2State.uiListeners.forEach(fn => fn());
+            }
+            if (window.Pack4State.boughtBuffs?.includes('start_combo')) {
+                comboRef.current = 5;
+                comboMultRef.current = 3;
+                window.GameEvents.emit('combo_changed', { mult: 3, count: 5 });
+            }
         }
 
         window.GameEvents.emit('start', { character, background, timeOfDay, settings: settingsRef.current });
@@ -402,12 +393,25 @@ function Game() {
 
         obstaclesRef.current.splice(index, 1);
         healthRef.current -= 1; setHealth(healthRef.current);
+        
+        if (healthRef.current <= 0) {
+            if (window.Pack4State && window.Pack4State.boughtBuffs?.includes('revive') && !window.Pack4State.reviveUsed) {
+                window.Pack4State.reviveUsed = true;
+                healthRef.current = 3; setHealth(3);
+                RenderEngine.flash('255,0,255', 0.8); RenderEngine.shake(20, 30);
+                window.GameEvents.emit('pack4_toast', { text: '💖 SECOND CHANCE ACTIVATED!', type: 'success' });
+                RenderEngine.spawnParticles(playerRef.current.x + playerRef.current.width / 2, playerRef.current.y + playerRef.current.height / 2, 50, { colors: ['#FF007F', '#FFFFFF'], speed: 8, life: 40, size: 4, gravity: 0.1 });
+            } else {
+                handleGameOver(); return;
+            }
+        }
+
         if (type === 'puddle' && splashAudioRef.current && settingsRef.current.soundEnabled) { splashAudioRef.current.currentTime = 0; splashAudioRef.current.playbackRate = 1.2; splashAudioRef.current.play().catch(e => console.warn("Audio blocked", e)); }
         RenderEngine.flash('255,0,0', 0.4); RenderEngine.shake(6, 12);
         RenderEngine.spawnParticles(playerRef.current.x + playerRef.current.width / 2, playerRef.current.y + playerRef.current.height / 2, 15, { colors: ['#FF007F', '#FFFFFF'], speed: 4, life: 25, size: 3, gravity: 0.15 });
         resetCombo();
         window.GameEvents.emit('hit', { health: healthRef.current, type, playerX: playerRef.current.x + playerRef.current.width / 2, playerY: playerRef.current.y + playerRef.current.height / 2, distance: Math.floor(distanceRef.current) });
-        if (healthRef.current <= 0) { handleGameOver(); return; }
+        
         isTrippingRef.current = true; tripTimerRef.current = 0; isBarrelTripRef.current = false;
         const p = playerRef.current; p.y = groundYRef.current - p.height; p.velocityY = 0; p.isJumping = false; p.tilt = 0;
         speedPenaltyRef.current = speedPenaltyRef.current * 0.65;
@@ -446,8 +450,8 @@ function Game() {
 
         let pack2SpeedMult = 1.0;
         if (window.Pack2State && window.Pack2State.activePowerups) {
-            if (window.Pack2State.activePowerups.slowmo) pack2SpeedMult *= 0.5;
-            if (window.Pack2State.activePowerups.sprint) pack2SpeedMult *= 1.5;
+            if (window.Pack2State.activePowerups.slowmo && window.Pack2State.activePowerups.slowmo > Date.now()) pack2SpeedMult *= 0.5;
+            if (window.Pack2State.activePowerups.sprint && window.Pack2State.activePowerups.sprint > Date.now()) pack2SpeedMult *= 1.5;
         }
         
         let pack4SpeedMult = 1.0;
@@ -500,7 +504,7 @@ function Game() {
 
         const currentPower = calculateJumpMultiplier(p.height, baseSpeedMult, speedPenaltyRef.current); setPowerDisplay(currentPower.toFixed(2));
 
-        if (window.Pack2State && window.Pack2State.activePowerups && window.Pack2State.activePowerups.magnet) { foodsRef.current.forEach(f => { const dx = (p.x + p.width/2) - (f.x + f.width/2); const dy = (p.y + p.height/2) - (f.y + f.height/2); const dist = Math.hypot(dx, dy); if (dist < 300) { f.x += dx * 0.1; f.y += dy * 0.1; } }); }
+        if (window.Pack2State && window.Pack2State.activePowerups && window.Pack2State.activePowerups.magnet && window.Pack2State.activePowerups.magnet > Date.now()) { foodsRef.current.forEach(f => { const dx = (p.x + p.width/2) - (f.x + f.width/2); const dy = (p.y + p.height/2) - (f.y + f.height/2); const dist = Math.hypot(dx, dy); if (dist < 300) { f.x += dx * 0.1; f.y += dy * 0.1; } }); }
 
         if (p.isJumping) { p.velocityY += GRAVITY; if (p.isHoldingJump) p.velocityY -= HOLD_THRUST * p.jumpMult; p.y += p.velocityY; p.tilt = p.velocityY * 0.025; p.tilt = Math.max(-0.35, Math.min(0.35, p.tilt)); if (p.y <= 0) { p.y = 0; if (p.velocityY < 0) p.velocityY = 0; } if (p.y >= gy - p.height) { p.y = gy - p.height; p.velocityY = 0; p.isJumping = false; p.tilt = 0; window.GameEvents.emit('land', { x: p.x + p.width / 2, y: p.y + p.height }); } } 
         else if (!isTrippingRef.current) { p.bob = Math.sin(Date.now() / 80) * 2.5; p.tilt = 0; }
