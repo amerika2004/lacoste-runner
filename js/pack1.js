@@ -1,6 +1,5 @@
 /* ==================================================================
    PACK 1 — Advanced Game Feel: Audio, Vibration, Visual Juice
-   (Система комбо оставлена без изменений, добавлены новые фичи)
    ================================================================== */
 (function () {
     'use strict';
@@ -13,44 +12,35 @@
             { threshold: 10, mult: 5, emoji: '👑', color: '#FF007F' },
             { threshold: 20, mult: 10, emoji: '🌈', color: '#FFFFFF' }
         ],
-        sadEmoji: '😢',
-        sadColor: '#888888'
+        sadEmoji: '😢', sadColor: '#888888'
     };
 
-    // === СОСТОЯНИЕ ПАКЕТА 1 ===
     const Pack1State = {
-        // Combo State
         combo: 0,
         comboMult: 1,
         comboDisplay: { mult: 1, count: 0 },
         lastJumpTime: 0,
         uiListeners: [],
         activeEmojis: [], 
-        
-        // Game Feel State
         settings: null,
         audios: { jump: null, hit: null, land: null, eat: null, milestone: null },
         lastHealth: 6,
         lowHealthPulse: 0,
         lastMilestone: 0,
-        milestonesActive: [], // { text, x, y, life, color }
-        
-        // Внутренние флаги
-        isFalling: false, // Для отслеживания приземления
+        milestonesActive: [],
+        isFalling: false,
     };
 
     window.Pack1State = Pack1State;
 
-    // === ИНИЦИАЛИЗАЦИЯ ЗВУКОВ ===
     function initSounds() {
         const soundPaths = {
             jump: 'source/sounds/jump.wav',
-            hit: 'source/sounds/hit.wav', // Если нет, замените на что-то другое
-            land: 'source/sounds/land.wav', // Если нет, замените
-            eat: 'source/sounds/eat.wav',   // Если нет, замените
-            milestone: 'source/sounds/milestone.wav' // Если нет, замените
+            hit: 'source/sounds/hit.wav',
+            land: 'source/sounds/land.wav',
+            eat: 'source/sounds/eat.wav',
+            milestone: 'source/sounds/milestone.wav'
         };
-
         for (const [key, path] of Object.entries(soundPaths)) {
             if (!Pack1State.audios[key]) {
                 const audio = new Audio(path);
@@ -71,15 +61,10 @@
     }
 
     function vibrate(pattern) {
-        if (navigator.vibrate) {
-            try { navigator.vibrate(pattern); } catch (e) {}
-        }
+        if (navigator.vibrate) { try { navigator.vibrate(pattern); } catch (e) {} }
     }
 
-    // === УТИЛИТЫ КОМБО (БЕЗ ИЗМЕНЕНИЙ) ===
-    function updateUI() {
-        Pack1State.uiListeners.forEach(fn => fn({ ...Pack1State.comboDisplay }));
-    }
+    function updateUI() { Pack1State.uiListeners.forEach(fn => fn({ ...Pack1State.comboDisplay })); }
 
     function resetCombo(triggerSadEmoji = false, x = 0, y = 0) {
         if (Pack1State.combo > 0 && triggerSadEmoji && Pack1State.settings?.comboVisualsEnabled) {
@@ -96,7 +81,6 @@
 
     function addCombo(x, y) {
         if (Pack1State.settings && !Pack1State.settings.comboEnabled) return;
-        
         Pack1State.combo++;
         Pack1State.lastJumpTime = Date.now();
 
@@ -104,7 +88,6 @@
         for (const tier of COMBO_CONFIG.tiers) {
             if (Pack1State.combo >= tier.threshold) currentTier = tier;
         }
-
         const prevMult = Pack1State.comboMult;
         Pack1State.comboMult = currentTier.mult;
         Pack1State.comboDisplay = { mult: currentTier.mult, count: Pack1State.combo };
@@ -132,8 +115,6 @@
         updateUI();
     }
 
-    // === ПОДПИСКА НА СОБЫТИЯ ИГРЫ ===
-    
     window.GameEvents.on('start', (data) => {
         initSounds();
         resetCombo(false);
@@ -144,26 +125,30 @@
         Pack1State.lastMilestone = 0;
         Pack1State.lowHealthPulse = 0;
         Pack1State.isFalling = false;
+
+        // === START_COMBO BUFF (после resetCombo) ===
+        if (window.Pack4State && window.Pack4State.boughtBuffs?.includes('start_combo')) {
+            Pack1State.combo = 5;
+            Pack1State.comboMult = 3;
+            Pack1State.comboDisplay = { mult: 3, count: 5 };
+            Pack1State.lastJumpTime = Date.now();
+            updateUI();
+        }
     });
 
     window.GameEvents.on('jump', (data) => {
         addCombo(data.x || 100, data.y || 400);
-        // Высота звука растет с комбо
         playSound('jump', 1.0 + Math.min(Pack1State.combo * 0.02, 0.5));
         vibrate(15);
-        Pack1State.isFalling = true; // Персонаж в воздухе
+        Pack1State.isFalling = true;
     });
 
-       window.GameEvents.on('land', () => {
-        // Проигрываем звук приземления (если он есть)
-        playSound('land');
-    });
+    window.GameEvents.on('land', () => { playSound('land'); });
 
     window.GameEvents.on('hit', (data) => {
         resetCombo(true, data.playerX || 100, data.playerY || 400);
         playSound('hit');
         vibrate([30, 50, 30]);
-        
         if (window.RenderEngine) {
             window.RenderEngine.flash('255,0,0', 0.4);
             window.RenderEngine.shake(6, 12);
@@ -182,51 +167,34 @@
     window.GameEvents.on('eat', (data) => {
         playSound('eat', 1.2);
         vibrate(10);
-
-        // Визуальный фидбек от еды
         if (window.RenderEngine) {
-            window.RenderEngine.spawnParticles(100, 400, 10, { // Координаты примерные, так как игра не шлет их в событии eat
+            window.RenderEngine.spawnParticles(100, 400, 10, {
                 colors: ['#FFD700', '#FFAA00'], speed: 3, life: 30, size: 4, gravity: 0.1
             });
         }
     });
 
-    // Отслеживаем тики для затухания комбо, приземлений, здоровья и рубежей
     window.GameEvents.on('tick', (data) => {
         if (data.settings) Pack1State.settings = data.settings;
-        
-        // 1. Затухание комбо
         if (Pack1State.combo > 0 && Pack1State.settings?.comboEnabled) {
             const timeSinceLastJump = Date.now() - Pack1State.lastJumpTime;
-            if (timeSinceLastJump > COMBO_CONFIG.decayTimeMs) {
-                resetCombo(false);
-            }
+            if (timeSinceLastJump > COMBO_CONFIG.decayTimeMs) resetCombo(false);
         }
-
-        // 2. Проверка здоровья (для красной пульсации)
         if (data.health !== undefined) {
-            if (data.health <= 2 && data.health > 0) {
-                Pack1State.lowHealthPulse += 0.1; // Ускоряем пульс
-            } else {
-                Pack1State.lowHealthPulse = 0;
-            }
+            if (data.health <= 2 && data.health > 0) Pack1State.lowHealthPulse += 0.1;
+            else Pack1State.lowHealthPulse = 0;
             Pack1State.lastHealth = data.health;
         }
-
-        // 3. Рубежи дистанции
         if (data.distance !== undefined) {
             const currentMile = Math.floor(data.distance / 100);
             if (currentMile > Pack1State.lastMilestone && currentMile > 0) {
                 Pack1State.lastMilestone = currentMile;
-                playSound('milestone', 1.0 + (currentMile % 5) * 0.1); // Каждые 500м звук выше
+                playSound('milestone', 1.0 + (currentMile % 5) * 0.1);
                 vibrate([20, 100, 20]);
-                
                 Pack1State.milestonesActive.push({
-                    text: `${currentMile * 100}m! ✨`,
-                    x: 600, y: 200, // Центр экрана (примерно)
+                    text: `${currentMile * 100}m! ✨`, x: 600, y: 200,
                     life: 120, maxLife: 120, color: '#FFD700', scale: 1.5, vy: -1
                 });
-
                 if (window.RenderEngine) {
                     window.RenderEngine.spawnParticles(600, 300, 40, {
                         colors: ['#FFD700', '#FF007F', '#00FFFF'], speed: 8, life: 60, size: 4, gravity: 0.05
@@ -243,19 +211,14 @@
         Pack1State.lowHealthPulse = 0;
     });
 
-
-    // === РЕНДЕР ЭФФЕКТОВ НА КАНВАСЕ ===
     window.GameEvents.on('render_frame', ({ ctx }) => {
-        // 1. Рендер эмодзи комбо
         if (Pack1State.activeEmojis.length) {
             ctx.save();
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
             for (let i = Pack1State.activeEmojis.length - 1; i >= 0; i--) {
                 const e = Pack1State.activeEmojis[i];
                 e.y += e.vy; e.life--;
                 if (e.life <= 0) { Pack1State.activeEmojis.splice(i, 1); continue; }
-                
                 const progress = e.life / e.maxLife;
                 ctx.globalAlpha = Math.min(1, Math.max(0, progress > 0.8 ? (1 - progress) / 0.2 : progress));
                 ctx.font = `${Math.floor(30 * e.scale)}px Arial`;
@@ -263,35 +226,25 @@
             }
             ctx.restore();
         }
-
-        // 2. Рендер текста рубежей
         if (Pack1State.milestonesActive.length) {
             ctx.save();
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
             for (let i = Pack1State.milestonesActive.length - 1; i >= 0; i--) {
                 const m = Pack1State.milestonesActive[i];
                 m.y += m.vy; m.life--;
                 if (m.life <= 0) { Pack1State.milestonesActive.splice(i, 1); continue; }
-                
                 const progress = m.life / m.maxLife;
                 ctx.globalAlpha = Math.min(1, Math.max(0, progress));
                 ctx.font = `bold ${Math.floor(40 * m.scale)}px Arial`;
                 ctx.fillStyle = m.color;
-                ctx.shadowColor = '#000';
-                ctx.shadowBlur = 10;
+                ctx.shadowColor = '#000'; ctx.shadowBlur = 10;
                 ctx.fillText(m.text, m.x, m.y);
             }
             ctx.restore();
         }
-
-        // 3. Красная пульсация при низком здоровье
         if (Pack1State.lastHealth <= 2 && Pack1State.lastHealth > 0) {
             ctx.save();
-            // Пульсирующая альфа от 0.1 до 0.4
             const alpha = 0.15 + Math.sin(Pack1State.lowHealthPulse) * 0.15;
-            
-            // Рисуем виньетку по краям
             const grad = ctx.createRadialGradient(
                 ctx.canvas.width / 2, ctx.canvas.height / 2, Math.min(ctx.canvas.width, ctx.canvas.height) * 0.4,
                 ctx.canvas.width / 2, ctx.canvas.height / 2, Math.max(ctx.canvas.width, ctx.canvas.height) * 0.7
@@ -304,10 +257,8 @@
         }
     });
 
-    // === UI КОМПОНЕНТ (Индикатор комбо) ===
     function Pack1UI({ gameState }) {
         const [display, setDisplay] = React.useState(Pack1State.comboDisplay);
-
         React.useEffect(() => {
             Pack1State.uiListeners.push(setDisplay);
             return () => {
@@ -315,25 +266,17 @@
                 if (idx >= 0) Pack1State.uiListeners.splice(idx, 1);
             };
         }, []);
-
         if (display.mult <= 1 || gameState !== 'playing') return null;
-
         let tierColor = '#FFFFFF';
         for (const tier of COMBO_CONFIG.tiers) {
             if (display.count >= tier.threshold) tierColor = tier.color;
         }
-
         return React.createElement('div', {
             key: display.count, 
             className: `combo-indicator combo-x${display.mult}`,
         }, `COMBO x${display.mult}  [${display.count}]`);
     }
 
-    if (window.PackUIs) {
-        window.PackUIs.push(Pack1UI);
-    } else {
-        window.PackUIs = [Pack1UI];
-    }
-
+    if (window.PackUIs) { window.PackUIs.push(Pack1UI); } else { window.PackUIs = [Pack1UI]; }
     console.log('%c🔥 PACK 1 (Advanced Game Feel) loaded', 'color:#FF007F;font-weight:bold;font-size:14px');
 })();
