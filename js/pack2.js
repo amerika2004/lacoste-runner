@@ -167,9 +167,36 @@ window.PackUIs = window.PackUIs || [];
 
     // Сбор буста в инвентарь
     window.GameEvents.on('powerup_collect', (data) => {
+        const pData = P2_CONFIG.powerups.types[data.kind];
+        if (!pData) return;
+    
+        // ⏳ SLOW-MO — работает независимо от инвентаря, активируется сразу при касании
+        if (data.kind === 'slowmo') {
+            // Если уже активен — обновляем таймер на полный duration (не стакается бесконечно)
+            Pack2State.activePowerups.slowmo = Date.now() + pData.duration;
+    
+            playSound(Pack2State.powerupAudios['slowmo']);
+    
+            if (window.RenderEngine) {
+                window.RenderEngine.spawnParticles(data.x, data.y, 25, {
+                    colors: [pData.color, '#FFFFFF', '#00FFFF'],
+                    speed: 6, life: 35, size: 3, gravity: 0.1
+                });
+                window.RenderEngine.flash('0,128,255', 0.25);
+            }
+            window.GameEvents.emit('pack3_toast', { text: '⏳ SLOW-MO!', type: 'info' });
+            updateUI();
+            return;
+        }
+    
+        // Остальные бафы (shield / magnet / sprint) — по-прежнему в инвентарь
         if (Pack2State.inventory[data.kind] !== undefined) {
             Pack2State.inventory[data.kind]++;
-            if (window.RenderEngine) { window.RenderEngine.spawnParticles(data.x, data.y, 20, { colors: [P2_CONFIG.powerups.types[data.kind].color, '#FFFFFF'], speed: 5, life: 30, size: 3, gravity: 0.1 }); }
+            if (window.RenderEngine) {
+                window.RenderEngine.spawnParticles(data.x, data.y, 20, {
+                    colors: [pData.color, '#FFFFFF'], speed: 5, life: 30, size: 3, gravity: 0.1
+                });
+            }
             updateUI();
         }
     });
@@ -339,11 +366,6 @@ window.PackUIs = window.PackUIs || [];
                 React.createElement('span', { className: 'inv-icon' }, '⚡'),
                 React.createElement('span', { className: 'inv-count' }, Pack2State.inventory.sprint),
                 React.createElement('span', { className: 'inv-key' }, '3')
-            ),
-            React.createElement('button', { className: `inv-btn ${Pack2State.inventory.slowmo > 0 ? 'active' : ''}`, onClick: () => usePowerup('slowmo') },
-                React.createElement('span', { className: 'inv-icon' }, '⏳'),
-                React.createElement('span', { className: 'inv-count' }, Pack2State.inventory.slowmo),
-                React.createElement('span', { className: 'inv-key' }, '4')
             )
         );
     }
