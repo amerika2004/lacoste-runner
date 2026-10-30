@@ -568,7 +568,16 @@ function Game() {
                 if (food.isPowerup) { window.GameEvents.emit('powerup_collect', { kind: food.kind, x: food.x, y: food.y }); return false; }
                 const isEatTrigger = char.eatEmoji && food.emoji === char.eatEmoji && !isTrippingRef.current;
                 p.foodEaten++;
-                if (p.foodEaten >= p.foodTarget) { p.width += 2; p.height += 1.3; p.y = gy - p.height; p.foodEaten = 0; p.foodTarget = p.foodTarget + 1; healthRef.current = Math.min(6, healthRef.current + 1); setHealth(healthRef.current); RenderEngine.spawnParticles(p.x + p.width / 2, p.y + p.height / 2, 12, { colors: ['#FFD700', '#FFFFFF'], speed: 3, life: 30, size: 3, gravity: 0.1 }); }
+                
+                if (p.foodEaten >= p.foodTarget) {
+                    p.width += 2; p.height += 1.3; p.y = gy - p.height; p.foodEaten = 0; p.foodTarget = p.foodTarget + 1; 
+                    
+                    // ФИКС СЕРДЕЦ: проверяем купленное улучшение max HP
+                    const maxHp = (window.Pack4State && window.Pack4State.boughtBuffs?.includes('start_hp')) ? 8 : 6;
+                    healthRef.current = Math.min(maxHp, healthRef.current + 1); setHealth(healthRef.current); 
+                    
+                    RenderEngine.spawnParticles(p.x + p.width / 2, p.y + p.height / 2, 12, { colors: ['#FFD700', '#FFFFFF'], speed: 3, life: 30, size: 3, gravity: 0.1 }); 
+                }
                 if (isEatTrigger) { isEatingRef.current = true; eatTimerRef.current = 0; eatFrameIdxRef.current = 0; p.y = gy - p.height; p.velocityY = 0; p.isJumping = false; p.isHoldingJump = false; p.tilt = 0; p.bob = 0; }
                 window.GameEvents.emit('eat', { type: 'normal', emoji: food.emoji });
                 return false; 
@@ -679,13 +688,13 @@ function Game() {
             React.createElement('button', { id: 'btn-pause', className: 'game-btn', onClick: () => setGameState('paused') }, '❚❚')
         ) : null,
         
-                gameState === 'menu' ? React.createElement('div', { className: 'menu-overlay' },
+        // МЕНЮ
+        gameState === 'menu' ? React.createElement('div', { className: 'menu-overlay' },
             React.createElement('div', { className: 'game-logo' },
                 React.createElement('div', { className: 'title' }, 'LACOSTE', React.createElement('br'), 'RUNNER'),
                 React.createElement('div', { className: 'subtitle' }, 'VICE CITY EDITION')
             ),
             React.createElement('div', { className: 'menu-box' },
-// ... дальше меню
                 renderCharacterPanel(),
                 renderBackgroundPanel(),
                 React.createElement('div', { className: 'settings' }, 
@@ -707,6 +716,7 @@ function Game() {
             )
         ) : null,
 
+        // ПАУЗА
         gameState === 'paused' ? React.createElement('div', { className: 'menu-overlay' },
             React.createElement('div', { className: 'menu-box' },
                 React.createElement('div', { className: 'title', style: { fontSize: '48px' } }, 'PAUSED'),
@@ -718,6 +728,7 @@ function Game() {
             )
         ) : null,
         
+        // GAMEOVER
         gameState === 'gameover' ? React.createElement('div', { className: 'menu-overlay' },
             React.createElement('div', { className: 'menu-box' },
                 React.createElement('div', { className: 'title', style: { color: '#FF3333', filter: 'none', background: 'none', WebkitTextFillColor: '#FF3333', fontSize: '60px' } }, 'BUSTED'),
@@ -734,14 +745,13 @@ function Game() {
             )
         ) : null,
 
-                showSettings && React.createElement('div', { className: 'settings-overlay' },
+        // НАСТРОЙКИ
+        showSettings && React.createElement('div', { className: 'settings-overlay' },
             React.createElement('div', { className: 'settings-panel' },
                 React.createElement('div', { className: 'settings-header' }, 
                     React.createElement('div', { className: 'settings-title' }, 'SETTINGS'), 
-                    // Заменили класс на modal-close
                     React.createElement('button', { className: 'modal-close', onClick: () => setShowSettings(false) }, '✕')
                 ),
-// ... дальше без изменений
                 
                 React.createElement('div', { className: 'settings-section' },
                     React.createElement('div', { className: 'settings-section-title' }, 'HUD Customization'),
