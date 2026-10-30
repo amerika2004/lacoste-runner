@@ -771,8 +771,15 @@ function Game() {
                 Object.values(CHARACTERS).map(char => React.createElement('button', {
                     key: char.id,
                     className: `ms-char-tab ${character === char.id ? 'active' : ''}`,
-                    onClick: () => { setCharacter(char.id); window.GameEvents.emit('pack4_character_changed', { charId: char.id }); }
-                }, `${char.emoji || '❓'} ${char.name}`))
+                    onClick: () => { setCharacter(char.id); window.GameEvents.emit('pack4_character_changed', { charId: char.id }); },
+                    style: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '4px 12px', minHeight: '60px' }
+                }, 
+                    // Если это крокодил и плагин загружен — показываем 3D, иначе эмодзи
+                    char.id === 'crocodile' && window.ThreePreview 
+                        ? React.createElement(window.ThreePreview) 
+                        : React.createElement('span', { style: { fontSize: '24px' } }, char.emoji || '❓'),
+                    React.createElement('span', null, char.name)
+                ))
             ),
 
             React.createElement('div', { className: 'ms-section-title', style: { marginTop: '16px' } }, '🗺️ Background'),
