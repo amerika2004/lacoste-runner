@@ -679,12 +679,13 @@ function Game() {
             React.createElement('button', { id: 'btn-pause', className: 'game-btn', onClick: () => setGameState('paused') }, '❚❚')
         ) : null,
         
-        gameState === 'menu' ? React.createElement('div', { className: 'menu-overlay' },
+                gameState === 'menu' ? React.createElement('div', { className: 'menu-overlay' },
             React.createElement('div', { className: 'game-logo' },
                 React.createElement('div', { className: 'title' }, 'LACOSTE', React.createElement('br'), 'RUNNER'),
                 React.createElement('div', { className: 'subtitle' }, 'VICE CITY EDITION')
             ),
             React.createElement('div', { className: 'menu-box' },
+// ... дальше меню
                 renderCharacterPanel(),
                 renderBackgroundPanel(),
                 React.createElement('div', { className: 'settings' }, 
@@ -733,12 +734,14 @@ function Game() {
             )
         ) : null,
 
-        showSettings && React.createElement('div', { className: 'settings-overlay' },
+                showSettings && React.createElement('div', { className: 'settings-overlay' },
             React.createElement('div', { className: 'settings-panel' },
                 React.createElement('div', { className: 'settings-header' }, 
                     React.createElement('div', { className: 'settings-title' }, 'SETTINGS'), 
-                    React.createElement('button', { className: 'settings-close', onClick: () => setShowSettings(false) }, '✕')
+                    // Заменили класс на modal-close
+                    React.createElement('button', { className: 'modal-close', onClick: () => setShowSettings(false) }, '✕')
                 ),
+// ... дальше без изменений
                 
                 React.createElement('div', { className: 'settings-section' },
                     React.createElement('div', { className: 'settings-section-title' }, 'HUD Customization'),
