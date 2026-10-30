@@ -680,9 +680,11 @@ function Game() {
         ) : null,
         
         gameState === 'menu' ? React.createElement('div', { className: 'menu-overlay' },
-            React.createElement('div', { className: 'menu-box' },
+            React.createElement('div', { className: 'game-logo' },
                 React.createElement('div', { className: 'title' }, 'LACOSTE', React.createElement('br'), 'RUNNER'),
-                React.createElement('div', { className: 'subtitle' }, 'VICE CITY EDITION'),
+                React.createElement('div', { className: 'subtitle' }, 'VICE CITY EDITION')
+            ),
+            React.createElement('div', { className: 'menu-box' },
                 renderCharacterPanel(),
                 renderBackgroundPanel(),
                 React.createElement('div', { className: 'settings' }, 
