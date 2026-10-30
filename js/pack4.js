@@ -219,7 +219,10 @@ window.PackUIs = window.PackUIs || [];
             React.createElement('div', { className: 'pack4-panel shop-panel' },
                 React.createElement('div', { className: 'pack4-header' },
                     React.createElement('div', { className: 'pack4-title' }, '🛒 SHOP'),
-                    React.createElement('div', { className: 'pack4-coins' }, `💰 ${Pack4State.coins}`)
+                    React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: '15px' } },
+                        React.createElement('div', { className: 'pack4-coins' }, `💰 ${Pack4State.coins}`),
+                        React.createElement('button', { className: 'modal-close', onClick: () => setVisible(false) }, '✕')
+                    )
                 ),
                 React.createElement('div', { className: 'pack4-section' },
                     React.createElement('h3', null, 'Skins'),
@@ -263,8 +266,7 @@ window.PackUIs = window.PackUIs || [];
                             );
                         })
                     )
-                ),
-                React.createElement('button', { className: 'pack3-close-btn', onClick: () => setVisible(false) }, 'CLOSE')
+                )
             )
         );
     }
@@ -280,7 +282,10 @@ window.PackUIs = window.PackUIs || [];
 
         return React.createElement('div', { className: 'pack4-overlay' },
             React.createElement('div', { className: 'pack4-panel' },
-                React.createElement('div', { className: 'pack4-title' }, '🏅 LEADERBOARD'),
+                React.createElement('div', { className: 'pack4-header', style: { borderBottom: 'none', paddingBottom: '0' } },
+                    React.createElement('div', { className: 'pack4-title' }, '🏅 LEADERBOARD'),
+                    React.createElement('button', { className: 'modal-close', onClick: () => setVisible(false) }, '✕')
+                ),
                 React.createElement('div', { className: 'pack4-leaderboard-list' },
                     Pack4State.leaderboard.length === 0
                         ? React.createElement('div', { style: { textAlign: 'center', color: 'var(--fh-text-muted)', padding: '30px' } }, 'No runs yet. Go play!')
@@ -289,8 +294,7 @@ window.PackUIs = window.PackUIs || [];
                             React.createElement('span', { className: 'pack4-lb-score' }, `${entry.score}m`),
                             React.createElement('span', { className: 'pack4-lb-date' }, new Date(entry.date).toLocaleDateString())
                         ))
-                ),
-                React.createElement('button', { className: 'pack3-close-btn', onClick: () => setVisible(false) }, 'CLOSE')
+                )
             )
         );
     }
@@ -320,13 +324,15 @@ window.PackUIs = window.PackUIs || [];
 
         return React.createElement('div', { className: 'pack4-overlay' },
             React.createElement('div', { className: 'pack4-panel', style: { textAlign: 'center' } },
-                React.createElement('div', { className: 'pack4-title' }, '📸 SHARE'),
-                React.createElement('div', { style: { fontSize: '48px', margin: '20px 0' } }, '🐊🏃💨'),
+                React.createElement('div', { className: 'pack4-header', style: { borderBottom: 'none', paddingBottom: '0' } },
+                    React.createElement('div', { className: 'pack4-title' }, '📸 SHARE'),
+                    React.createElement('button', { className: 'modal-close', onClick: () => setVisible(false) }, '✕')
+                ),
+                React.createElement('div', { style: { fontSize: '48px', margin: '10px 0' } }, '🐊🏃💨'),
                 React.createElement('div', { style: { fontSize: '24px', color: '#FFD700', marginBottom: '20px' } }, `Score: ${Math.floor(score)}m`),
                 React.createElement('img', { src: qrUrl, style: { width: '150px', height: '150px', marginBottom: '20px' } }),
-                React.createElement('div', { style: { display: 'flex', gap: '10px', justifyContent: 'center' } },
-                    React.createElement('button', { className: 'pack4-buy-btn', onClick: share }, 'SHARE LINK'),
-                    React.createElement('button', { className: 'pack3-close-btn', onClick: () => setVisible(false) }, 'CLOSE')
+                React.createElement('div', { style: { display: 'flex', justifyContent: 'center' } },
+                    React.createElement('button', { className: 'pack4-buy-btn', onClick: share, style: { maxWidth: '200px' } }, 'SHARE LINK')
                 )
             )
         );
