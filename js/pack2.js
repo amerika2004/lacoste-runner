@@ -1,21 +1,27 @@
+window.GameEvents = window.GameEvents || {
+    listeners: {},
+    on(event, cb) { if (!this.listeners[event]) this.listeners[event] = []; this.listeners[event].push(cb); },
+    emit(event, data) { if (this.listeners[event]) this.listeners[event].forEach(cb => { try { cb(data); } catch(e) { console.error(e); } }); }
+};
+window.PackUIs = window.PackUIs || [];
+
 /* ==================================================================
-   PACK 2 — Atmosphere, Power-ups, Combined Weather, Inventory
+   PACK 2 — Power-ups, Inventory System, Weather
    ================================================================== */
 (function () {
     'use strict';
 
     const P2_CONFIG = (window.GAME_CONFIG && window.GAME_CONFIG.pack2) || {
-        powerups: { spawnChance: 0.05, types: { shield: { emoji: '🛡️', duration: 0, color: '#00FFFF' }, magnet: { emoji: '🧲', duration: 5000, color: '#FF0000' }, sprint: { emoji: '⚡', duration: 3000, color: '#FFD700' } } },
-        weather: { combinations: [{ id: 'clear', label: '☀️', rain: false, fog: false, storm: false, tint: 'rgba(0,0,0,0)' }] },
-        music: { layers: [], maxTempoRate: 1.15, tempoDistance: 2000 }
+        powerups: { spawnChance: 0.05, types: { shield: { emoji: '🛡️', duration: 0, color: '#00FFFF' }, magnet: { emoji: '🧲', duration: 5000, color: '#FF0000' }, sprint: { emoji: '⚡', duration: 3000, color: '#FFD700' }, slowmo: { emoji: '⏳', duration: 3000, color: '#0080FF' } } },
+        weather: { combinations: [{ id: 'clear', label: '☀️', rain: false, fog: false, storm: false, tint: 'rgba(0,0,0,0)' }] }
     };
 
     const Pack2State = {
         // Инвентарь (накопительные)
-        inventory: { shield: 0, magnet: 0, sprint: 0 },
+        inventory: { shield: 0, magnet: 0, sprint: 0, slowmo: 0 },
         
         // Активные эффекты (могут работать одновременно)
-        activePowerups: { magnet: 0, sprint: 0 }, 
+        activePowerups: { magnet: 0, sprint: 0, slowmo: 0 }, 
         hasShield: false, // Щит работает отдельно как одноразовая защита
 
         currentWeather: P2_CONFIG.weather.combinations[0],
@@ -27,7 +33,6 @@
         lightningTimer: 0,
         lightningActive: false,
         
-        musicAudios: [],
         rainAudio: null,
         thunderAudio: null,
         powerupAudios: {},
@@ -46,14 +51,6 @@
         }
         if (!Pack2State.rainAudio) { Pack2State.rainAudio = new Audio('source/sounds/rain_loop.mp3'); Pack2State.rainAudio.loop = true; Pack2State.rainAudio.preload = 'auto'; }
         if (!Pack2State.thunderAudio) { Pack2State.thunderAudio = new Audio('source/sounds/thunder.wav'); Pack2State.thunderAudio.preload = 'auto'; }
-        
-        if (Pack2State.musicAudios.length === 0 && P2_CONFIG.music.layers.length > 0) {
-            P2_CONFIG.music.layers.forEach((layer) => {
-                const a = new Audio(layer.file);
-                a.loop = true; a.preload = 'auto'; a.volume = 0; 
-                Pack2State.musicAudios.push(a);
-            });
-        }
     }
 
     function playSound(audio, rate = 1.0) {
@@ -64,9 +61,7 @@
         }
     }
 
-    function updateUI() {
-        Pack2State.uiListeners.forEach(fn => fn());
-    }
+    function updateUI() { Pack2State.uiListeners.forEach(fn => fn()); }
 
     // === ПОГОДА ===
     function changeWeather(forceId = null) {
@@ -81,8 +76,7 @@
         }
         
         Pack2State.currentWeather = newWeather;
-        Pack2State.rainParticles = [];
-        Pack2State.splashParticles = [];
+        Pack2State.rainParticles = []; Pack2State.splashParticles = [];
 
         if (Pack2State.rainAudio) {
             if (newWeather.rain) {
@@ -114,11 +108,12 @@
         updateUI();
     }
 
-    // Обработка клавиш 1, 2, 3
+    // Обработка клавиш 1, 2, 3, 4
     window.addEventListener('keydown', (e) => {
         if (e.code === 'Digit1') usePowerup('shield');
         if (e.code === 'Digit2') usePowerup('magnet');
         if (e.code === 'Digit3') usePowerup('sprint');
+        if (e.code === 'Digit4') usePowerup('slowmo');
     });
 
     // === ПОДПИСКА НА СОБЫТИЯ ===
@@ -127,15 +122,14 @@
         Pack2State.settings = data.settings;
         
         // Сброс инвентаря
-        Pack2State.inventory = { shield: 0, magnet: 0, sprint: 0 };
-        Pack2State.activePowerups = { magnet: 0, sprint: 0 };
+        Pack2State.inventory = { shield: 0, magnet: 0, sprint: 0, slowmo: 0 };
+        Pack2State.activePowerups = { magnet: 0, sprint: 0, slowmo: 0 };
         Pack2State.hasShield = false;
 
         Pack2State.lastWeatherChange = 0;
         Pack2State.lightningActive = false;
         
         changeWeather('clear');
-        Pack2State.musicAudios.forEach((a, i) => { a.currentTime = 0; a.volume = i === 0 ? 0.2 : 0; a.play().catch(() => {}); });
         updateUI();
     });
 
@@ -145,12 +139,9 @@
 
         // Очистка просроченных эффектов
         let uiChanged = false;
-        if (Pack2State.activePowerups.magnet && Date.now() > Pack2State.activePowerups.magnet) {
-            Pack2State.activePowerups.magnet = 0; uiChanged = true;
-        }
-        if (Pack2State.activePowerups.sprint && Date.now() > Pack2State.activePowerups.sprint) {
-            Pack2State.activePowerups.sprint = 0; uiChanged = true;
-        }
+        if (Pack2State.activePowerups.magnet && Date.now() > Pack2State.activePowerups.magnet) { Pack2State.activePowerups.magnet = 0; uiChanged = true; }
+        if (Pack2State.activePowerups.sprint && Date.now() > Pack2State.activePowerups.sprint) { Pack2State.activePowerups.sprint = 0; uiChanged = true; }
+        if (Pack2State.activePowerups.slowmo && Date.now() > Pack2State.activePowerups.slowmo) { Pack2State.activePowerups.slowmo = 0; uiChanged = true; }
         if (uiChanged) updateUI();
 
         // Погода
@@ -172,29 +163,13 @@
                 setTimeout(() => { Pack2State.lightningActive = false; }, 150);
             }
         }
-
-        // Музыка
-        if (Pack2State.settings?.dynamicMusicEnabled && Pack2State.musicAudios.length > 0) {
-            const dist = data.distance || 0;
-            const tempoRate = 1.0 + Math.min(dist / P2_CONFIG.music.tempoDistance, 1.0) * (P2_CONFIG.music.maxTempoRate - 1.0);
-            Pack2State.musicAudios.forEach(a => { a.playbackRate = tempoRate; });
-
-            P2_CONFIG.music.layers.forEach((layer, index) => {
-                const audio = Pack2State.musicAudios[index];
-                if (!audio) return;
-                const targetVolume = dist >= layer.minDistance ? 0.2 : 0; 
-                if (audio.volume !== targetVolume) audio.volume += (targetVolume - audio.volume) * 0.05;
-            });
-        }
     });
 
     // Сбор буста в инвентарь
     window.GameEvents.on('powerup_collect', (data) => {
         if (Pack2State.inventory[data.kind] !== undefined) {
             Pack2State.inventory[data.kind]++;
-            if (window.RenderEngine) {
-                window.RenderEngine.spawnParticles(data.x, data.y, 20, { colors: [P2_CONFIG.powerups.types[data.kind].color, '#FFFFFF'], speed: 5, life: 30, size: 3, gravity: 0.1 });
-            }
+            if (window.RenderEngine) { window.RenderEngine.spawnParticles(data.x, data.y, 20, { colors: [P2_CONFIG.powerups.types[data.kind].color, '#FFFFFF'], speed: 5, life: 30, size: 3, gravity: 0.1 }); }
             updateUI();
         }
     });
@@ -209,14 +184,13 @@
     });
 
     window.GameEvents.on('gameover', () => {
-        Pack2State.activePowerups = { magnet: 0, sprint: 0 };
+        Pack2State.activePowerups = { magnet: 0, sprint: 0, slowmo: 0 };
         Pack2State.hasShield = false;
-        Pack2State.musicAudios.forEach(a => a.pause());
         if (Pack2State.rainAudio) Pack2State.rainAudio.pause();
         updateUI();
     });
 
-    // === РЕНДЕР (ОПТИМИЗИРОВАННЫЙ) ===
+    // === РЕНДЕР (ЭФФЕКТЫ) ===
     window.GameEvents.on('render_frame', ({ ctx, player }) => {
         const W = ctx.canvas.width; const H = ctx.canvas.height;
         const weather = Pack2State.currentWeather;
@@ -242,28 +216,27 @@
             ctx.restore();
         }
 
-        // 2. Slow-mo / Sprint
-        if (Pack2State.activePowerups.sprint) {
+        // 2. Slow-mo / Sprint (Оверлеи и искры)
+        if (Pack2State.activePowerups.slowmo && Pack2State.activePowerups.slowmo > Date.now()) {
+            ctx.fillStyle = 'rgba(0, 128, 255, 0.15)'; ctx.fillRect(0, 0, W, H);
+        }
+        if (Pack2State.activePowerups.sprint && Pack2State.activePowerups.sprint > Date.now()) {
             ctx.fillStyle = 'rgba(255, 215, 0, 0.05)'; ctx.fillRect(0, 0, W, H);
             if (window.RenderEngine && Math.random() > 0.5 && player) {
                 window.RenderEngine.spawnParticles(player.x, player.y + player.h / 2, 1, { colors: ['#FFD700', '#FFFFFF'], speed: 5, life: 20, size: 3, gravity: 0 });
             }
         }
-        if (Pack2State.activePowerups.magnet && player) {
-            // Визуал магнита
-            ctx.save();
-            const pCenterX = player.x + player.w / 2;
-            const pCenterY = player.y + player.h / 2;
+        if (Pack2State.activePowerups.magnet && Pack2State.activePowerups.magnet > Date.now() && player) {
+            ctx.save(); const pCenterX = player.x + player.w / 2; const pCenterY = player.y + player.h / 2;
             ctx.beginPath(); ctx.arc(pCenterX, pCenterY, 150 + Math.sin(Date.now()/100)*20, 0, Math.PI*2);
-            ctx.strokeStyle = 'rgba(255, 0, 0, 0.4)'; ctx.lineWidth = 2; ctx.stroke();
-            ctx.restore();
+            ctx.strokeStyle = 'rgba(255, 0, 0, 0.4)'; ctx.lineWidth = 2; ctx.stroke(); ctx.restore();
         }
 
-        // 3. ДОЖДЬ (БЕЗ SHADOWBLUR ДЛЯ FPS)
+        // 3. ДОЖДЬ (Оптимизированный, без shadowBlur)
         if (weather.rain) {
             const groundY = H * 0.8;
 
-            if (Pack2State.rainParticles.length < 150) { // Уменьшили количество для FPS
+            if (Pack2State.rainParticles.length < 150) {
                 for(let i=0; i<3; i++) {
                     Pack2State.rainParticles.push({
                         x: Math.random() * W, y: -20 - Math.random() * 100,
@@ -274,10 +247,8 @@
             }
 
             ctx.save();
-            ctx.globalCompositeOperation = 'screen'; // Свечение без потери FPS
+            ctx.globalCompositeOperation = 'screen';
             ctx.lineCap = 'round';
-            
-            // Яркие, плотные капли (без shadowBlur)
             ctx.strokeStyle = 'rgba(200, 240, 255, 0.9)';
             ctx.lineWidth = 2.5;
 
@@ -287,7 +258,7 @@
                 p.x -= p.speed * 0.15;
 
                 if (p.y > groundY + (Math.random() * 30)) {
-                    for(let j=0; j<2; j++) { // Меньше брызг для FPS
+                    for(let j=0; j<2; j++) {
                         Pack2State.splashParticles.push({
                             x: p.x, y: groundY + Math.random() * 20,
                             vx: (Math.random() - 0.5) * 6, vy: -Math.random() * 4,
@@ -297,14 +268,12 @@
                     p.y = -20 - Math.random() * 100; p.x = Math.random() * W + 50; 
                 }
 
-                // Рисуем группами для оптимизации (можно и по одной, но без теней это быстро)
                 ctx.beginPath();
                 ctx.moveTo(p.x, p.y);
                 ctx.lineTo(p.x + p.speed * 0.2, p.y + p.length);
                 ctx.stroke();
             }
 
-            // Брызги
             ctx.fillStyle = 'rgba(200, 240, 255, 0.7)';
             for (let i = Pack2State.splashParticles.length - 1; i >= 0; i--) {
                 const s = Pack2State.splashParticles[i];
@@ -335,7 +304,7 @@
             ctx.fillStyle = vigGrad; ctx.fillRect(0, 0, W, H);
         }
 
-        // 5. ЦВЕТОВОЙ ФИЛЬТР (Tint)
+        // 5. ЦВЕТОВОЙ ФИЛЬТР
         if (weather.tint && weather.tint !== 'rgba(0,0,0,0)') {
             ctx.fillStyle = weather.tint; ctx.fillRect(0, 0, W, H);
         }
@@ -344,66 +313,42 @@
     // === UI КОМПОНЕНТ (ИНВЕНТАРЬ) ===
     function Pack2UI({ gameState }) {
         const [, forceUpdate] = React.useReducer(x => x + 1, 0);
-        const [timeOfDay, setTimeOfDay] = React.useState('day');
-        const [weather, setWeather] = React.useState(P2_CONFIG.weather.combinations[0]);
 
         React.useEffect(() => {
             const listener = () => forceUpdate();
             Pack2State.uiListeners.push(listener);
-            const interval = setInterval(() => {
-                setWeather(Pack2State.currentWeather);
-                setTimeOfDay(Pack2State.timeOfDay);
-            }, 500); // Обновляем погоду реже
             return () => {
                 Pack2State.uiListeners = Pack2State.uiListeners.filter(l => l !== listener);
-                clearInterval(interval);
             };
         }, []);
 
         if (gameState !== 'playing') return null;
 
-        const timeIcon = timeOfDay === 'night' ? '🌙' : '☀️';
-        
-        // Проверка активных бустов для отображения таймера
-        const magnetActive = Pack2State.activePowerups.magnet > Date.now();
-        const sprintActive = Pack2State.activePowerups.sprint > Date.now();
-
-        return React.createElement(React.Fragment, null,
-            // Погода и Время
-            React.createElement('div', { className: 'hud-right', style: { top: '50px', right: '20px', display: 'flex', gap: '10px', fontSize: '24px' } }, 
-                React.createElement('span', { title: 'Time' }, timeIcon),
-                React.createElement('span', { title: 'Weather', style: {fontSize: '20px'} }, weather.label || '❓')
+        return React.createElement('div', { className: 'pack2-inventory' },
+            React.createElement('button', { className: `inv-btn ${Pack2State.inventory.shield > 0 ? 'active' : ''}`, onClick: () => usePowerup('shield') },
+                React.createElement('span', { className: 'inv-icon' }, '🛡️'),
+                React.createElement('span', { className: 'inv-count' }, Pack2State.inventory.shield),
+                React.createElement('span', { className: 'inv-key' }, '1')
             ),
-            
-            // Активные эффекты (сверху по центру)
-            (Pack2State.hasShield || magnetActive || sprintActive) && React.createElement('div', { style: { position: 'absolute', top: '100px', left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: '10px' } },
-                Pack2State.hasShield && React.createElement('div', { className: 'pack2-powerup-badge', style: { borderColor: '#00FFFF', color: '#00FFFF' } }, '🛡️'),
-                magnetActive && React.createElement('div', { className: 'pack2-powerup-badge', style: { borderColor: '#FF0000', color: '#FF0000' } }, `🧲 ${Math.ceil((Pack2State.activePowerups.magnet - Date.now())/1000)}s`),
-                sprintActive && React.createElement('div', { className: 'pack2-powerup-badge', style: { borderColor: '#FFD700', color: '#FFD700' } }, `⚡ ${Math.ceil((Pack2State.activePowerups.sprint - Date.now())/1000)}s`)
+            React.createElement('button', { className: `inv-btn ${Pack2State.inventory.magnet > 0 ? 'active' : ''}`, onClick: () => usePowerup('magnet') },
+                React.createElement('span', { className: 'inv-icon' }, '🧲'),
+                React.createElement('span', { className: 'inv-count' }, Pack2State.inventory.magnet),
+                React.createElement('span', { className: 'inv-key' }, '2')
             ),
-
-            // Инвентарь (внизу)
-            React.createElement('div', { className: 'pack2-inventory' },
-                React.createElement('button', { className: `inv-btn ${Pack2State.inventory.shield > 0 ? 'active' : ''}`, onClick: () => usePowerup('shield') },
-                    React.createElement('span', { className: 'inv-icon' }, '🛡️'),
-                    React.createElement('span', { className: 'inv-count' }, Pack2State.inventory.shield),
-                    React.createElement('span', { className: 'inv-key' }, '1')
-                ),
-                React.createElement('button', { className: `inv-btn ${Pack2State.inventory.magnet > 0 ? 'active' : ''}`, onClick: () => usePowerup('magnet') },
-                    React.createElement('span', { className: 'inv-icon' }, '🧲'),
-                    React.createElement('span', { className: 'inv-count' }, Pack2State.inventory.magnet),
-                    React.createElement('span', { className: 'inv-key' }, '2')
-                ),
-                React.createElement('button', { className: `inv-btn ${Pack2State.inventory.sprint > 0 ? 'active' : ''}`, onClick: () => usePowerup('sprint') },
-                    React.createElement('span', { className: 'inv-icon' }, '⚡'),
-                    React.createElement('span', { className: 'inv-count' }, Pack2State.inventory.sprint),
-                    React.createElement('span', { className: 'inv-key' }, '3')
-                )
+            React.createElement('button', { className: `inv-btn ${Pack2State.inventory.sprint > 0 ? 'active' : ''}`, onClick: () => usePowerup('sprint') },
+                React.createElement('span', { className: 'inv-icon' }, '⚡'),
+                React.createElement('span', { className: 'inv-count' }, Pack2State.inventory.sprint),
+                React.createElement('span', { className: 'inv-key' }, '3')
+            ),
+            React.createElement('button', { className: `inv-btn ${Pack2State.inventory.slowmo > 0 ? 'active' : ''}`, onClick: () => usePowerup('slowmo') },
+                React.createElement('span', { className: 'inv-icon' }, '⏳'),
+                React.createElement('span', { className: 'inv-count' }, Pack2State.inventory.slowmo),
+                React.createElement('span', { className: 'inv-key' }, '4')
             )
         );
     }
 
     if (window.PackUIs) { window.PackUIs.push(Pack2UI); } else { window.PackUIs = [Pack2UI]; }
 
-    console.log('%c🌪️ PACK 2 (Inventory & Optimized Weather) loaded', 'color:#00FFFF;font-weight:bold;font-size:14px');
+    console.log('%c🌪️ PACK 2 (Inventory & Weather) loaded', 'color:#00FFFF;font-weight:bold;font-size:14px');
 })();
