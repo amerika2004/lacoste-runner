@@ -832,3 +832,100 @@ canvas { display: block; width: 100%; height: 100%; object-fit: contain; touch-a
     .upgrade-bar { display: none; }
     .custom-tab { font-size: 11px; padding: 8px 6px; }
 }
+
+/* ==================================================================
+   MENU SHELL — фиксы размеров (поле игры = поле меню)
+   ================================================================== */
+
+/* Overlay ровно по #game-container. Без vh/vw — только padding в px */
+.ms-overlay {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, #050a14 0%, #0a0514 100%);
+    z-index: 20;
+    padding: 6px;                 /* маленький зазор, а не 2vh */
+    box-sizing: border-box;
+    overflow: hidden;
+}
+
+/* Панель занимает всё доступное место, скроллится только контент */
+.ms-panel {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    max-width: 100%;
+    max-height: 100%;
+    background: var(--fh-bg-dark);
+    border: 1px solid var(--fh-glass-border);
+    border-radius: 12px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.8);
+    overflow: hidden;
+    box-sizing: border-box;
+    padding: 14px 18px;           /* меньше, чем 20px по умолчанию */
+}
+
+/* Контент — единственная часть со скроллом */
+.ms-content {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 4px 2px 4px 0;
+}
+
+/* ===== Мобильные ===== */
+@media (max-width: 640px) {
+    .ms-overlay { padding: 4px; }
+    .ms-panel   { padding: 10px 12px; border-radius: 10px; }
+    .ms-header  { padding-bottom: 8px; margin-bottom: 8px; }
+    .ms-logo    { font-size: 18px; }
+    .ms-coins   { font-size: 14px; padding: 4px 10px; }
+    .ms-nav     { gap: 3px; padding: 4px; margin-bottom: 8px; }
+    .ms-nav-btn { padding: 7px 8px; font-size: 10px; letter-spacing: 0; }
+    .ms-title   { font-size: 14px; padding-bottom: 6px; }
+    .ms-home-title { font-size: 32px; }
+    .ms-home-sub   { font-size: 10px; letter-spacing: 3px; margin-bottom: 12px; }
+    .ms-section-title { font-size: 12px; margin-bottom: 6px; }
+    .ms-row span { font-size: 12px; }
+    .ms-btn     { padding: 9px 14px; font-size: 12px; }
+    .ms-grid    { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+    .ms-card    { padding: 10px; }
+    .ms-card-icon { font-size: 28px; }
+    .ms-card-name { font-size: 12px; }
+    .ms-card-sub  { font-size: 10px; }
+    .ms-tod-btn   { font-size: 11px; padding: 8px 10px; }
+    .ms-char-tab  { font-size: 11px; padding: 6px 10px; }
+    .ms-tab       { font-size: 11px; padding: 7px 6px; }
+}
+
+/* Очень низкие экраны (портрет телефона: #game-container ≈ 200px высотой) */
+@media (max-width: 900px) and (orientation: portrait) {
+    .ms-panel { padding: 8px 10px; }
+    .ms-header { padding-bottom: 5px; margin-bottom: 5px; }
+    .ms-logo  { font-size: 15px; }
+    .ms-coins { font-size: 12px; padding: 3px 8px; }
+    .ms-nav   { margin-bottom: 5px; padding: 3px; }
+    .ms-nav-btn { padding: 5px 6px; font-size: 9px; }
+    .ms-title { font-size: 12px; padding-bottom: 3px; }
+    .ms-home-title { font-size: 22px; }
+    .ms-home-sub   { display: none; }
+    .ms-section-title { font-size: 10px; margin-bottom: 3px; margin-top: 6px !important; }
+    .ms-actions    { margin-top: 8px; }
+    .ms-btn        { padding: 6px 10px; font-size: 11px; }
+    .ms-grid       { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 6px; }
+    .ms-card       { padding: 8px 6px; gap: 4px; }
+    .ms-card-icon  { font-size: 22px; }
+    .ms-card-name  { font-size: 11px; }
+    .ms-card-sub   { font-size: 9px; }
+    .ms-tab        { padding: 5px 4px; font-size: 9px; }
+    .ms-char-tab   { padding: 5px 8px; font-size: 10px; }
+    .ms-tod-btn    { padding: 6px 8px; font-size: 10px; }
+}
+
+/* Очень-очень узкие экраны — nav в 2 строки не даём */
+@media (max-width: 400px) {
+    .ms-nav-btn { font-size: 9px; padding: 5px 4px; }
+    .ms-nav { flex-wrap: wrap; }
+    .ms-nav-btn { flex: 1 1 calc(33% - 4px); }
+}
