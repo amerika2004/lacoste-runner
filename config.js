@@ -50,8 +50,8 @@
         pack3: {
             biomes: [
                 { id: 'forest', name: '🌳 Forest', distance: 0, dayImg: 'source/landscape.jpg', nightImg: 'source/landscape_n.jpg', obstacleTypes: ['barrel', 'rock', 'cactus', 'puddle', 'pit'] },
-                { id: 'desert', name: '🏜️ Desert', distance: 1000, dayImg: 'source/desert_day.jpg', nightImg: 'source/desert_night.jpg', obstacleTypes: ['cactus', 'rock', 'pit'] },
-                { id: 'city', name: '🏙️ City', distance: 2000, dayImg: 'source/city_day.jpg', nightImg: 'source/city_night.jpg', obstacleTypes: ['barrel', 'puddle', 'pit'] },
+//                { id: 'desert', name: '🏜️ Desert', distance: 1000, dayImg: 'source/desert_day.jpg', nightImg: 'source/desert_night.jpg', obstacleTypes: ['cactus', 'rock', 'pit'] },
+//                { id: 'city', name: '🏙️ City', distance: 2000, dayImg: 'source/city_day.jpg', nightImg: 'source/city_night.jpg', obstacleTypes: ['barrel', 'puddle', 'pit'] },
                 { id: 'jungle', name: '🌿 Jungle', distance: 3000, dayImg: 'source/jungle_day.jpg', nightImg: 'source/jungle_night.jpg', obstacleTypes: ['cactus', 'puddle', 'pit'] }
             ],
             music: {
