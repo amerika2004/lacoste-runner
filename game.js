@@ -71,6 +71,14 @@ const RenderEngine = (function () {
             const p = scene.player;
             if (p.img && p.img.complete && p.img.naturalWidth > 0) {
                 ctx.save(); let fallAngle = 0, yOffset = 0, flyTilt = 0; let chewScale = 1.0;
+                
+                // ПРИМЕНЕНИЕ ЦВЕТА СКИНА
+                if (p.skinColor) {
+                    // Простой CSS-фильтр для перекраски (работает в большинстве браузеров)
+                    if (p.skinColor === '#FFD700') ctx.filter = 'sepia(1) saturate(5) hue-rotate(5deg) brightness(1.2)'; // Golden
+                    else if (p.skinColor === '#FF4500') ctx.filter = 'sepia(1) saturate(5) hue-rotate(330deg) brightness(1.1)'; // Red Panda
+                }
+
                 if (p.isEating) chewScale = 1.0 + Math.sin(Date.now() / 80) * 0.05;
                 if (p.isBarrelFlying) flyTilt = p.tilt;
                 if (p.isTripping) { const fallProgress = Math.min(1, p.tripTimer / 15); const standProgress = Math.max(0, (p.tripTimer - 40) / 80); const flatAmount = fallProgress * (1 - standProgress); let dir = p.isBarrelTrip ? (FLIP_CROC ? 1 : -1) : (FLIP_CROC ? -1 : 1); fallAngle = dir * (Math.PI / 2) * flatAmount; yOffset = -((p.w - p.h) / 2) * flatAmount; if (Math.floor(p.tripTimer / 10) % 2 === 1) ctx.globalAlpha = 0.5; }
@@ -130,8 +138,16 @@ function Game() {
     const [gameState, setGameState] = useState('menu');
     const [timeOfDay, setTimeOfDay] = useState(() => localStorage.getItem('lacosteTimeOfDay') || 'day');
     const [background, setBackground] = useState(() => { const saved = localStorage.getItem('lacosteBackground'); return (saved && BACKGROUNDS[saved]) ? saved : Object.keys(BACKGROUNDS)[0]; });
-    const [character, setCharacter] = useState(() => { const saved = localStorage.getItem('lacosteCharacter'); return (saved && CHARACTERS[saved]) ? saved : Object.keys(CHARACTERS)[0]; });
     
+    // СОСТОЯНИЕ ПЕРСОНАЖА И СКИНА
+    const [character, setCharacter] = useState(() => { 
+        const saved = localStorage.getItem('lacosteCharacter'); 
+        return (saved && CHARACTERS[saved]) ? saved : Object.keys(CHARACTERS)[0]; 
+    });
+    const [currentSkin, setCurrentSkin] = useState(() => {
+        return localStorage.getItem('lacosteSkin') || 'default';
+    });
+
     const [score, setScore] = useState(0);
     const [speedDisplay, setSpeedDisplay] = useState(1.0); 
     const [powerDisplay, setPowerDisplay] = useState(1.0);
@@ -143,6 +159,8 @@ function Game() {
         try { const saved = JSON.parse(localStorage.getItem('lacosteSettings') || '{}'); return { ...DEFAULT_SETTINGS, ...saved }; } catch { return { ...DEFAULT_SETTINGS }; }
     });
     const [showSettings, setShowSettings] = useState(false);
+    const [showCustomization, setShowCustomization] = useState(false);
+    const [customTab, setCustomTab] = useState('characters'); // Вкладка в кастомизации
 
     const comboRef = useRef(0);
     const comboMultRef = useRef(1);
@@ -183,11 +201,12 @@ function Game() {
 
     useEffect(() => {
         localStorage.setItem('lacosteCharacter', character);
+        localStorage.setItem('lacosteSkin', currentSkin);
         walkFramesRef.current = []; currentFrameRef.current = 0; eatFramesRef.current = []; eatFrameIdxRef.current = 0; isEatingRef.current = false; eatTimerRef.current = 0; eatSpeedFactorRef.current = 1.0;
         const char = CHARACTERS[character] || CHARACTERS[Object.keys(CHARACTERS)[0]];
         for (let i = 1; i <= char.frameCount; i++) { const img = new Image(); img.src = `${char.folder}/${i}.png`; walkFramesRef.current.push(img); }
         if (char.eatFolder && char.eatFrameCount) { for (let i = 1; i <= char.eatFrameCount; i++) { const img = new Image(); img.src = `${char.eatFolder}/${i}.png`; eatFramesRef.current.push(img); } }
-    }, [character]);
+    }, [character, currentSkin]);
 
     const pitAudioRef = useRef(null); const pitAudioEndedRef = useRef(false); const barrelAudioRef = useRef(null); const splashAudioRef = useRef(null); const nightAmbientRef = useRef(null); const dayAmbientRef = useRef(null);
 
@@ -216,10 +235,10 @@ function Game() {
     }, [timeOfDay, settings.soundEnabled, gameState]);
 
     useEffect(() => {
-        const isPaused = gameState === 'paused' || showSettings || gameState === 'menu' || gameState === 'gameover';
+        const isPaused = gameState === 'paused' || showSettings || showCustomization || gameState === 'menu' || gameState === 'gameover';
         if (isPaused) { if (pitAudioRef.current) pitAudioRef.current.pause(); if (barrelAudioRef.current) barrelAudioRef.current.pause(); if (splashAudioRef.current) splashAudioRef.current.pause(); if (nightAmbientRef.current) nightAmbientRef.current.pause(); if (dayAmbientRef.current) dayAmbientRef.current.pause(); }
         else { if (settingsRef.current.soundEnabled && gameState === 'playing') { if (timeOfDayRef.current === 'night' && nightAmbientRef.current) nightAmbientRef.current.play().catch(() => {}); else if (timeOfDayRef.current === 'day' && dayAmbientRef.current) dayAmbientRef.current.play().catch(() => {}); } }
-    }, [gameState, showSettings]);
+    }, [gameState, showSettings, showCustomization]);
     
     const initChar = CHARACTERS[character] || CHARACTERS[Object.keys(CHARACTERS)[0]];
     const initGroundY = GROUND_Y + (BACKGROUNDS[background]?.groundOffset || 0);
@@ -277,11 +296,13 @@ function Game() {
         explosionImg.current.src = 'source/explosion.png';
     }, []);
 
+    // ПРИМЕНЕНИЕ СТАТОВ ПЕРСОНАЖА
     const calculateJumpMultiplier = (playerHeight, gameSpeed, penalty = 1.0) => {
         const char = CHARACTERS[character] || CHARACTERS[Object.keys(CHARACTERS)[0]];
         const sizeFactor = Math.sqrt(playerHeight / char.baseHeight);
         const speedFactor = 1 + (gameSpeed - 1) * 0.10;
-        return Math.max(1.0, sizeFactor * speedFactor * penalty);
+        const statJump = char.stats ? char.stats.jump : 1.0;
+        return Math.max(1.0, sizeFactor * speedFactor * penalty * statJump);
     };
 
     const toggleFullscreen = () => {
@@ -304,7 +325,7 @@ function Game() {
             }
         }
 
-        if (e.code === 'Escape') { e.preventDefault(); if (showSettings) { setShowSettings(false); return; } if (isFallingIntoPitRef.current || isPitDeathDelayRef.current) return; if (gameState === 'playing') setGameState('paused'); else if (gameState === 'paused') setGameState('playing'); return; }
+        if (e.code === 'Escape') { e.preventDefault(); if (showSettings) { setShowSettings(false); return; } if (showCustomization) { setShowCustomization(false); return; } if (isFallingIntoPitRef.current || isPitDeathDelayRef.current) return; if (gameState === 'playing') setGameState('paused'); else if (gameState === 'paused') setGameState('playing'); return; }
         if (e.code === 'KeyN') { e.preventDefault(); setTimeOfDay(prev => prev === 'day' ? 'night' : 'day'); return; }
         if (e.code === 'Space' || e.code === 'ArrowUp') {
             e.preventDefault();
@@ -319,14 +340,14 @@ function Game() {
                 RenderEngine.spawnParticles(p.x + p.width / 2, p.y + p.height, 6, { colors: ['#FFFFFF', '#AAAAAA'], speed: 2, life: 20, size: 2, gravity: 0.1 });
             }
         }
-    }, [gameState, character, showSettings]);
+    }, [gameState, character, showSettings, showCustomization]);
     const handleKeyUp = useCallback((e) => { if (e.code === 'Space' || e.code === 'ArrowUp') playerRef.current.isHoldingJump = false; }, []);
     useEffect(() => { window.addEventListener('keydown', handleKeyDown); window.addEventListener('keyup', handleKeyUp); return () => { window.removeEventListener('keydown', handleKeyDown); window.removeEventListener('keyup', handleKeyUp); }; }, [handleKeyDown, handleKeyUp]);
 
     useEffect(() => {
         const canvas = canvasRef.current; if (!canvas) return;
         const handleTouchStart = (e) => {
-            if (e.target.closest('.game-btn') || e.target.closest('.btn') || e.target.closest('.char-btn') || e.target.closest('.settings-panel') || e.target.closest('.settings-open-btn') || e.target.closest('.pack2-inventory') || e.target.closest('.pack3-ui')) return;
+            if (e.target.closest('.game-btn') || e.target.closest('.btn') || e.target.closest('.char-btn') || e.target.closest('.settings-panel') || e.target.closest('.settings-open-btn') || e.target.closest('.pack2-inventory') || e.target.closest('.pack3-ui') || e.target.closest('.customization-panel')) return;
             e.preventDefault(); if (gameState !== 'playing') return;
             if (playerRef.current.isJumping || isTrippingRef.current || isFallingIntoPitRef.current || isPitDeathDelayRef.current || isBarrelFlyingRef.current || isEatingRef.current) return;
             const p = playerRef.current; const baseMult = 1.0 + Math.floor(distanceRef.current / 100) * 0.04;
@@ -334,7 +355,7 @@ function Game() {
             window.GameEvents.emit('jump', { x: p.x + p.width / 2, y: p.y });
             RenderEngine.spawnParticles(p.x + p.width / 2, p.y + p.height, 6, { colors: ['#FFFFFF', '#AAAAAA'], speed: 2, life: 20, size: 2, gravity: 0.1 });
         };
-        const handleTouchEnd = (e) => { if (e.target.closest('.game-btn') || e.target.closest('.btn') || e.target.closest('.char-btn') || e.target.closest('.settings-panel') || e.target.closest('.settings-open-btn') || e.target.closest('.pack2-inventory') || e.target.closest('.pack3-ui')) return; if (gameState !== 'playing') return; e.preventDefault(); playerRef.current.isHoldingJump = false; };
+        const handleTouchEnd = (e) => { if (e.target.closest('.game-btn') || e.target.closest('.btn') || e.target.closest('.char-btn') || e.target.closest('.settings-panel') || e.target.closest('.settings-open-btn') || e.target.closest('.pack2-inventory') || e.target.closest('.pack3-ui') || e.target.closest('.customization-panel')) return; if (gameState !== 'playing') return; e.preventDefault(); playerRef.current.isHoldingJump = false; };
         canvas.addEventListener('touchstart', handleTouchStart, { passive: false }); canvas.addEventListener('touchend', handleTouchEnd, { passive: false }); canvas.addEventListener('touchcancel', handleTouchEnd, { passive: false });
         return () => { canvas.removeEventListener('touchstart', handleTouchStart); canvas.removeEventListener('touchend', handleTouchEnd); canvas.removeEventListener('touchcancel', handleTouchEnd); };
     }, [gameState, character]);
@@ -447,6 +468,7 @@ function Game() {
         if (window.Pack3State && window.Pack3State.currentBiome) { currentBgConfig = window.Pack3State.currentBiome; }
 
         const diffMult = SPEED_MULTIPLIER; const gfxQuality = settingsRef.current.graphics;
+        const charSpeedStat = char.stats ? char.stats.speed : 1.0;
 
         let pack2SpeedMult = 1.0;
         if (window.Pack2State && window.Pack2State.activePowerups) {
@@ -476,8 +498,8 @@ function Game() {
             if (eatTimerRef.current < 12) eatSpeedFactorRef.current = 1 - eatTimerRef.current / 12; else eatSpeedFactorRef.current = 0;
             const eatSpeedFactor = eatSpeedFactorRef.current;
             const baseSpeedMultEat = 1.0 + Math.floor(distanceRef.current / 100) * 0.04; const effectiveSpeedMultEat = Math.max(1.0, baseSpeedMultEat * speedPenaltyRef.current);
-            const currentSpeedEat = BASE_SPEED * effectiveSpeedMultEat * diffMult * eatSpeedFactor * pack2SpeedMult * pack4SpeedMult;
-            distanceRef.current += currentSpeedEat * 0.03; setScore(Math.floor(distanceRef.current)); setSpeedDisplay(eatSpeedFactor > 0.01 ? (effectiveSpeedMultEat * diffMult * eatSpeedFactor * pack2SpeedMult * pack4SpeedMult).toFixed(2) : "0.00"); bgOffsetRef.current -= currentSpeedEat;
+            const currentSpeedEat = BASE_SPEED * effectiveSpeedMultEat * diffMult * eatSpeedFactor * pack2SpeedMult * pack4SpeedMult * charSpeedStat;
+            distanceRef.current += currentSpeedEat * 0.03; setScore(Math.floor(distanceRef.current)); setSpeedDisplay(eatSpeedFactor > 0.01 ? (effectiveSpeedMultEat * diffMult * eatSpeedFactor * pack2SpeedMult * pack4SpeedMult * charSpeedStat).toFixed(2) : "0.00"); bgOffsetRef.current -= currentSpeedEat;
             obstaclesRef.current.forEach(o => { o.x -= currentSpeedEat; }); obstaclesRef.current = obstaclesRef.current.filter(o => o.x + o.width > 0); foodsRef.current.forEach(f => { f.x -= currentSpeedEat; }); foodsRef.current = foodsRef.current.filter(f => f.x + f.width > 0);
             explosionsRef.current.forEach(e => e.timer++); explosionsRef.current = explosionsRef.current.filter(e => e.timer < e.maxTimer);
             p.isJumping = false; p.velocityY = 0; p.y = gy - p.height; p.tilt = 0; p.bob = Math.sin(Date.now() / 150) * 3;
@@ -499,7 +521,7 @@ function Game() {
         const effectiveSpeedMult = Math.max(1.0, baseSpeedMult * speedPenaltyRef.current);
         
         let currentSpeed = 0;
-        if (!isTrippingRef.current) { currentSpeed = BASE_SPEED * effectiveSpeedMult * diffMult * eatSpeedFactorRef.current * pack2SpeedMult * pack4SpeedMult; setSpeedDisplay((effectiveSpeedMult * diffMult * eatSpeedFactorRef.current * pack2SpeedMult * pack4SpeedMult).toFixed(2)); distanceRef.current += (currentSpeed * 0.03); setScore(Math.floor(distanceRef.current)); bgOffsetRef.current -= currentSpeed; } 
+        if (!isTrippingRef.current) { currentSpeed = BASE_SPEED * effectiveSpeedMult * diffMult * eatSpeedFactorRef.current * pack2SpeedMult * pack4SpeedMult * charSpeedStat; setSpeedDisplay((effectiveSpeedMult * diffMult * eatSpeedFactorRef.current * pack2SpeedMult * pack4SpeedMult * charSpeedStat).toFixed(2)); distanceRef.current += (currentSpeed * 0.03); setScore(Math.floor(distanceRef.current)); bgOffsetRef.current -= currentSpeed; } 
         else { setSpeedDisplay("0.00"); }
 
         const currentPower = calculateJumpMultiplier(p.height, baseSpeedMult, speedPenaltyRef.current); setPowerDisplay(currentPower.toFixed(2));
@@ -572,7 +594,6 @@ function Game() {
                 if (p.foodEaten >= p.foodTarget) {
                     p.width += 2; p.height += 1.3; p.y = gy - p.height; p.foodEaten = 0; p.foodTarget = p.foodTarget + 1; 
                     
-                    // ФИКС СЕРДЕЦ: проверяем купленное улучшение max HP
                     const maxHp = (window.Pack4State && window.Pack4State.boughtBuffs?.includes('start_hp')) ? 8 : 6;
                     healthRef.current = Math.min(maxHp, healthRef.current + 1); setHealth(healthRef.current); 
                     
@@ -609,13 +630,24 @@ function Game() {
         if (isEatingRef.current && eatFramesRef.current.length > 0) charImg = eatFramesRef.current[eatFrameIdxRef.current % eatFramesRef.current.length];
         else { const frames = walkFramesRef.current; const idx = frames.length > 0 ? currentFrameRef.current % frames.length : 0; charImg = frames[idx]; }
         const pickImg = (dayImg, nightImg) => timeOfDayRef.current === 'night' ? nightImg.current : dayImg.current;
+
+        // Определяем цвет скина
+        const skinData = char.skins ? char.skins.find(s => s.id === currentSkin) : null;
+        const skinColor = skinData ? skinData.color : null;
         
         return {
             bg: { img: timeOfDayRef.current === 'night' ? bgImages.night : bgImages.day, offset: bgOffsetRef.current, fallbackColor: timeOfDayRef.current === 'night' ? '#0a0512' : '#1a0b2e' },
             bgNext: bgNextImg ? { img: bgNextImg } : null,
             transitionAlpha: transitionAlpha,
             groundY: gy,
-            player: { x: playerRef.current.x, y: playerRef.current.y, w: playerRef.current.width, h: playerRef.current.height, tilt: playerRef.current.tilt, bob: playerRef.current.bob, isJumping: playerRef.current.isJumping, img: charImg, isEating: isEatingRef.current, isTripping: isTrippingRef.current, tripTimer: tripTimerRef.current, isBarrelTrip: isBarrelTripRef.current, isBarrelFlying: isBarrelFlyingRef.current, isFallingIntoPit: isFallingIntoPitRef.current },
+            player: { 
+                x: playerRef.current.x, y: playerRef.current.y, w: playerRef.current.width, h: playerRef.current.height, 
+                tilt: playerRef.current.tilt, bob: playerRef.current.bob, isJumping: playerRef.current.isJumping, 
+                img: charImg, isEating: isEatingRef.current, isTripping: isTrippingRef.current, 
+                tripTimer: tripTimerRef.current, isBarrelTrip: isBarrelTripRef.current, 
+                isBarrelFlying: isBarrelFlyingRef.current, isFallingIntoPit: isFallingIntoPitRef.current,
+                skinColor: skinColor 
+            },
             obstacles: obstaclesRef.current.map(o => ({ x: o.x, y: o.y, w: o.width, h: o.height, type: o.type })),
             foods: foodsRef.current.map(f => ({ x: f.x, y: f.y, w: f.width, h: f.height, emoji: f.emoji, isPowerup: f.isPowerup })),
             explosions: explosionsRef.current.map(e => ({ x: e.x, y: e.y, size: e.size, timer: e.timer, maxTimer: e.maxTimer })),
@@ -646,7 +678,7 @@ function Game() {
             requestRef.current = requestAnimationFrame(gameLoop);
         }
         return () => cancelAnimationFrame(requestRef.current);
-    }, [gameState, character, background]);
+    }, [gameState, character, background, currentSkin]);
 
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
@@ -658,8 +690,91 @@ function Game() {
     const formatScore = (num) => num.toString().padStart(5, '0');
     const getHearts = () => { let h = []; for (let i = 0; i < 4; i++) { if (health >= (i + 1) * 2) h.push('❤️'); else if (health === i * 2 + 1) h.push('💔'); else h.push('🖤'); } return h.join(''); };
 
-    const renderCharacterPanel = () => React.createElement('div', { className: 'char-panel' }, Object.values(CHARACTERS).map(char => React.createElement('button', { key: char.id, className: `char-btn ${character === char.id ? 'active' : ''}`, onClick: () => setCharacter(char.id) }, React.createElement('span', { className: 'char-emoji' }, char.emoji || '❓'), React.createElement('span', { className: 'char-name' }, char.name))));
-    const renderBackgroundPanel = () => React.createElement('div', { className: 'settings', style: { marginBottom: '20px' } }, Object.values(BACKGROUNDS).map(bg => React.createElement('button', { key: bg.id, className: `btn ${background === bg.id ? 'active' : ''}`, onClick: () => setBackground(bg.id) }, `${bg.emoji} ${bg.name}`)));
+    // Компоненты для меню кастомизации
+    const renderCustomization = () => {
+        const char = CHARACTERS[character] || CHARACTERS[Object.keys(CHARACTERS)[0]];
+        return React.createElement('div', { className: 'pack3-overlay' }, // Используем стили оверлея
+            React.createElement('div', { className: 'customization-panel' }, // Новый класс
+                React.createElement('div', { className: 'pack4-header', style: { borderBottom: 'none', paddingBottom: '0' } },
+                    React.createElement('div', { className: 'pack4-title' }, '🎭 CUSTOMIZATION'),
+                    React.createElement('button', { className: 'modal-close', onClick: () => setShowCustomization(false) }, '✕')
+                ),
+                
+                // Вкладки
+                React.createElement('div', { className: 'shop-tabs' },
+                    React.createElement('button', { className: `shop-tab ${customTab === 'characters' ? 'active' : ''}`, onClick: () => setCustomTab('characters') }, 'Characters'),
+                    React.createElement('button', { className: `shop-tab ${customTab === 'biomes' ? 'active' : ''}`, onClick: () => setCustomTab('biomes') }, 'Biomes')
+                ),
+
+                React.createElement('div', { className: 'shop-content' },
+                    customTab === 'characters' && React.createElement(React.Fragment, null,
+                        // Сетка персонажей
+                        React.createElement('div', { className: 'char-select-grid' },
+                            Object.values(CHARACTERS).map(c => React.createElement('button', { 
+                                key: c.id, 
+                                className: `char-card ${character === c.id ? 'active' : ''}`, 
+                                onClick: () => { 
+                                    setCharacter(c.id); 
+                                    // При смене персонажа сбрасываем скин на дефолтный или первый доступный
+                                    const unlockedSkin = c.skins.find(s => s.id === 'default') || c.skins[0];
+                                    setCurrentSkin(unlockedSkin.id); 
+                                } 
+                            }, 
+                                React.createElement('span', { className: 'char-emoji' }, c.emoji || '❓'),
+                                React.createElement('span', { className: 'char-name' }, c.name)
+                            ))
+                        ),
+                        // Характеристики
+                        React.createElement('div', { className: 'char-stats-panel' },
+                            React.createElement('h3', null, 'Stats'),
+                            React.createElement('div', { className: 'stat-row' }, React.createElement('span', null, '⚡ Speed'), React.createElement('span', null, `${(char.stats?.speed || 1).toFixed(2)}x`)),
+                            React.createElement('div', { className: 'stat-row' }, React.createElement('span', null, '🦘 Jump'), React.createElement('span', null, `${(char.stats?.jump || 1).toFixed(2)}x`)),
+                            React.createElement('div', { className: 'stat-row' }, React.createElement('span', null, '🍀 Luck'), React.createElement('span', null, `${(char.stats?.luck || 1).toFixed(2)}x`))
+                        ),
+                        // Скины
+                        React.createElement('div', { className: 'skin-grid' },
+                            char.skins.map(skin => {
+                                // Проверка на разблокировку (в будущем будет проверять Pack4State)
+                                const isUnlocked = skin.unlocked || (window.Pack4State && window.Pack4State.unlockedSkins?.includes(skin.id));
+                                return React.createElement('button', {
+                                    key: skin.id,
+                                    className: `skin-card ${currentSkin === skin.id ? 'active' : ''} ${!isUnlocked ? 'locked' : ''}`,
+                                    onClick: () => { if (isUnlocked) setCurrentSkin(skin.id); },
+                                    style: { borderColor: skin.color || 'rgba(255,255,255,0.1)' }
+                                },
+                                    React.createElement('span', { className: 'skin-color', style: { background: skin.color || '#555' } }),
+                                    React.createElement('span', { className: 'skin-name' }, skin.name),
+                                    !isUnlocked && React.createElement('span', { className: 'skin-locked' }, '🔒')
+                                );
+                            })
+                        )
+                    ),
+
+                    customTab === 'biomes' && React.createElement(React.Fragment, null,
+                        React.createElement('div', { className: 'char-select-grid' },
+                            Object.values(BACKGROUNDS).map(bg => React.createElement('button', { 
+                                key: bg.id, 
+                                className: `char-card ${background === bg.id ? 'active' : ''}`, 
+                                onClick: () => setBackground(bg.id) 
+                            }, 
+                                React.createElement('span', { className: 'char-emoji' }, bg.emoji),
+                                React.createElement('span', { className: 'char-name' }, bg.name)
+                            ))
+                        ),
+                        React.createElement('h3', { style: { marginTop: '20px', color: 'var(--fh-accent)' } }, 'Time of Day'),
+                        React.createElement('div', { className: 'char-select-grid' },
+                            React.createElement('button', { className: `char-card ${timeOfDay === 'day' ? 'active' : ''}`, onClick: () => setTimeOfDay('day') }, 
+                                React.createElement('span', { className: 'char-emoji' }, '☀️'), React.createElement('span', { className: 'char-name' }, 'Day')
+                            ),
+                            React.createElement('button', { className: `char-card ${timeOfDay === 'night' ? 'active' : ''}`, onClick: () => setTimeOfDay('night') }, 
+                                React.createElement('span', { className: 'char-emoji' }, '🌙'), React.createElement('span', { className: 'char-name' }, 'Night')
+                            )
+                        )
+                    )
+                )
+            )
+        );
+    };
 
     return React.createElement('div', { id: 'game-container' },
         
@@ -688,26 +803,26 @@ function Game() {
             React.createElement('button', { id: 'btn-pause', className: 'game-btn', onClick: () => setGameState('paused') }, '❚❚')
         ) : null,
         
-        // МЕНЮ
+        // ГЛАВНОЕ МЕНЮ
         gameState === 'menu' ? React.createElement('div', { className: 'menu-overlay' },
             React.createElement('div', { className: 'game-logo' },
                 React.createElement('div', { className: 'title' }, 'LACOSTE', React.createElement('br'), 'RUNNER'),
                 React.createElement('div', { className: 'subtitle' }, 'VICE CITY EDITION')
             ),
             React.createElement('div', { className: 'menu-box' },
-                renderCharacterPanel(),
-                renderBackgroundPanel(),
-                React.createElement('div', { className: 'settings' }, 
-                    React.createElement('button', { className: `btn ${timeOfDay === 'day' ? 'active' : ''}`, onClick: () => setTimeOfDay('day') }, '☀️ Day'), 
-                    React.createElement('button', { className: `btn ${timeOfDay === 'night' ? 'active' : ''}`, onClick: () => setTimeOfDay('night') }, '🌙 Night')
+                
+                // Кнопки действий
+                React.createElement('div', { style: { display: 'flex', gap: '10px', marginBottom: '20px', flexWrap: 'wrap', justifyContent: 'center' } }, 
+                    React.createElement('button', { className: 'btn btn-start', onClick: startGame, style: { width: '100%', maxWidth: '300px', marginBottom: '10px' } }, 'START ESCAPE'),
+                    React.createElement('button', { className: 'btn', onClick: () => setShowCustomization(true), style: { flex: '1 1 45%' } }, '🎭 CUSTOMIZE'),
+                    React.createElement('button', { className: 'btn', onClick: () => window.GameEvents.emit('show_shop'), style: { flex: '1 1 45%' } }, '🛒 SHOP')
                 ),
                 React.createElement('div', { style: { display: 'flex', gap: '10px', marginBottom: '20px', flexWrap: 'wrap', justifyContent: 'center' } }, 
-                    React.createElement('button', { className: 'btn', onClick: toggleFullscreen }, '⛶ Fullscreen'), 
-                    React.createElement('button', { className: 'btn', onClick: () => window.GameEvents.emit('show_achievements') }, '🏆 Achievements'),
-                    React.createElement('button', { className: 'btn', onClick: () => window.GameEvents.emit('show_shop') }, '🛒 Shop'),
-                    React.createElement('button', { className: 'btn', onClick: () => window.GameEvents.emit('show_leaderboard') }, '🏅 Leaderboard')
+                    React.createElement('button', { className: 'btn', onClick: () => window.GameEvents.emit('show_achievements'), style: { flex: '1 1 30%' } }, '🏆 ACHIEVEMENTS'),
+                    React.createElement('button', { className: 'btn', onClick: () => window.GameEvents.emit('show_leaderboard'), style: { flex: '1 1 30%' } }, '🏅 LEADERBOARD'),
+                    React.createElement('button', { className: 'btn', onClick: toggleFullscreen, style: { flex: '1 1 30%' } }, '⛶ FULLSCREEN')
                 ),
-                React.createElement('button', { className: 'btn btn-start', onClick: startGame }, 'START ESCAPE'),
+                
                 React.createElement('button', { className: 'btn', onClick: () => setShowSettings(true), style: { marginTop: '10px', background: 'transparent' } }, '⚙ SETTINGS'),
                 React.createElement('div', { style: { marginTop: '20px', color: 'var(--fh-text-muted)', fontSize: '12px', fontFamily: 'Montserrat', textAlign: 'center' } }, 
                     React.createElement('p', null, 'Space / Tap — jump, HOLD — high jump!'),
@@ -807,6 +922,9 @@ function Game() {
                 )
             )
         ),
+
+        // КАСТОМИЗАЦИЯ (Выбор персонажа, биома и т.д.)
+        showCustomization && renderCustomization(),
         
         ...(window.PackUIs || []).map((UI, i) => React.createElement(UI, { key: 'plugin-' + i, gameState, setGameState, score }))
     );
