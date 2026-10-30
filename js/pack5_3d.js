@@ -50,11 +50,11 @@ window.PackUIs = window.PackUIs || [];
             
             // Загружаем модель для превью
             const mtlLoader = new THREE.MTLLoader();
-            mtlLoader.load('source/characters/crocodile_3d/model.mtl', (materials) => {
+            mtlLoader.load('source/characters/crocodile_3d/Kip.mtl', (materials) => {
                 materials.preload();
                 const objLoader = new THREE.OBJLoader();
                 objLoader.setMaterials(materials);
-                objLoader.load('source/characters/crocodile_3d/model.obj', (object) => {
+                objLoader.load('source/characters/crocodile_3d/Kip.obj', (object) => {
                     const box = new THREE.Box3().setFromObject(object);
                     const center = box.getCenter(new THREE.Vector3());
                     object.position.sub(center);
