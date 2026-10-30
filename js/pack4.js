@@ -46,7 +46,6 @@ window.PackUIs = window.PackUIs || [];
 
     function updateUI() { Pack4State.uiListeners.forEach(fn => fn()); }
 
-    // Инициализация миссий при первом запуске
     function initMissions() {
         if (Pack4State.missions.length === 0) {
             Pack4State.missions = P4_CONFIG.missions.map(m => ({ ...m, progress: 0, completed: false }));
@@ -54,49 +53,34 @@ window.PackUIs = window.PackUIs || [];
         }
     }
 
-    // === МАГАЗИН ===
     function buyItem(type, id, price) {
         if (Pack4State.coins < price) { window.GameEvents.emit('pack4_toast', { text: '❌ Not enough coins!', type: 'danger' }); return; }
-        
         Pack4State.coins -= price;
-        
         if (type === 'skin') {
             if (!Pack4State.unlockedSkins.includes(id)) Pack4State.unlockedSkins.push(id);
         } else if (type === 'buff') {
             if (!Pack4State.boughtBuffs.includes(id)) Pack4State.boughtBuffs.push(id);
-        } else if (type === 'bg') {
-            // Логика для фонов
         }
-        
         window.GameEvents.emit('pack4_toast', { text: '✅ Purchased!', type: 'success' });
         saveState(); updateUI();
     }
 
-    // Покупка расходника — кладёт в инвентарь Pack2 (если он есть) и в свой inventory
     function buyConsumable(id, price) {
-        if (Pack4State.coins < price) {
-            window.GameEvents.emit('pack4_toast', { text: '❌ Not enough coins!', type: 'danger' });
-            return;
-        }
+        if (Pack4State.coins < price) { window.GameEvents.emit('pack4_toast', { text: '❌ Not enough coins!', type: 'danger' }); return; }
         Pack4State.coins -= price;
         Pack4State.inventory[id] = (Pack4State.inventory[id] || 0) + 1;
-
         if (window.Pack2State && window.Pack2State.inventory && window.Pack2State.inventory[id] !== undefined) {
             window.Pack2State.inventory[id]++;
             if (window.Pack2State.uiListeners) window.Pack2State.uiListeners.forEach(fn => fn());
         }
-
         window.GameEvents.emit('pack4_toast', { text: `✅ Bought ${id.toUpperCase()}!`, type: 'success' });
         saveState(); updateUI();
     }
 
-    // === ПОДПИСКА НА СОБЫТИЯ ===
     window.GameEvents.on('start', (data) => {
         Pack4State.settings = data.settings;
         initMissions();
         Pack4State.activeUFO = null;
-
-        // Шанс спавна НЛО (раз в ~20 забегов)
         if (Math.random() < P4_CONFIG.secrets.ufoChance) {
             Pack4State.activeUFO = { x: 800, y: 100, w: 80, h: 40, collected: false, speed: 2 };
         }
@@ -105,12 +89,9 @@ window.PackUIs = window.PackUIs || [];
     window.GameEvents.on('tick', (data) => {
         if (data.settings) Pack4State.settings = data.settings;
         
-        // Движение НЛО
         if (Pack4State.activeUFO && !Pack4State.activeUFO.collected) {
             Pack4State.activeUFO.x -= Pack4State.activeUFO.speed;
-            Pack4State.activeUFO.y = 100 + Math.sin(Date.now() / 500) * 30; // Легкое покачивание
-            
-            // Проверка коллизии с игроком
+            Pack4State.activeUFO.y = 100 + Math.sin(Date.now() / 500) * 30;
             const pX = 100; const pY = 530 - 100;
             if (Math.abs(Pack4State.activeUFO.x - pX) < 100 && Math.abs(Pack4State.activeUFO.y - pY) < 150) {
                 Pack4State.activeUFO.collected = true;
@@ -119,11 +100,9 @@ window.PackUIs = window.PackUIs || [];
                 if (window.RenderEngine) window.RenderEngine.flash('0,255,255', 0.5);
                 saveState(); updateUI();
             }
-            
             if (Pack4State.activeUFO.x < -100) Pack4State.activeUFO = null;
         }
 
-        // Обновление миссий (distance)
         if (data.distance) {
             Pack4State.missions.forEach(m => {
                 if (m.type === 'distance' && m.progress < m.target && !m.completed) {
@@ -166,26 +145,21 @@ window.PackUIs = window.PackUIs || [];
     });
 
     window.GameEvents.on('gameover', (data) => {
-        // Начисление монет
         const earned = Math.floor(data.distance * P4_CONFIG.economy.coinsPerMeter);
         Pack4State.coins += earned;
         Pack4State.runsPlayed++;
         
-        // Лидерборд
         Pack4State.leaderboard.push({ score: data.distance, date: new Date().toISOString() });
         Pack4State.leaderboard.sort((a, b) => b.score - a.score);
         Pack4State.leaderboard = Pack4State.leaderboard.slice(0, 10);
 
-        // Секретный персонаж
         if (data.distance >= P4_CONFIG.secrets.goldenCrocDistance && !Pack4State.unlockedSkins.includes('gold')) {
             Pack4State.unlockedSkins.push('gold');
             window.GameEvents.emit('pack4_toast', { text: '🌟 GOLDEN CROC UNLOCKED!', type: 'success' });
         }
-
         saveState(); updateUI();
     });
 
-    // === UI КОМПОНЕНТЫ ===
     function Pack4ToastSystem() {
         const [toasts, setToasts] = React.useState([]);
         React.useEffect(() => {
@@ -201,6 +175,7 @@ window.PackUIs = window.PackUIs || [];
 
     function Pack4Shop() {
         const [visible, setVisible] = React.useState(false);
+        const [activeTab, setActiveTab] = React.useState('skins');
         const [, forceUpdate] = React.useReducer(x => x + 1, 0);
 
         React.useEffect(() => {
@@ -217,6 +192,7 @@ window.PackUIs = window.PackUIs || [];
 
         return React.createElement('div', { className: 'pack4-overlay' },
             React.createElement('div', { className: 'pack4-panel shop-panel' },
+                
                 React.createElement('div', { className: 'pack4-header' },
                     React.createElement('div', { className: 'pack4-title' }, '🛒 SHOP'),
                     React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: '15px' } },
@@ -224,47 +200,55 @@ window.PackUIs = window.PackUIs || [];
                         React.createElement('button', { className: 'modal-close', onClick: () => setVisible(false) }, '✕')
                     )
                 ),
-                React.createElement('div', { className: 'pack4-section' },
-                    React.createElement('h3', null, 'Skins'),
-                    React.createElement('div', { className: 'pack4-grid' },
-                        P4_CONFIG.shop.skins.map(skin => {
-                            const owned = Pack4State.unlockedSkins.includes(skin.id);
-                            return React.createElement('div', { key: skin.id, className: `pack4-item ${owned ? 'owned' : ''}` },
-                                React.createElement('div', { className: 'pack4-item-icon' }, skin.id === 'gold' ? '👑' : '🐊'),
-                                React.createElement('div', { className: 'pack4-item-name' }, skin.name),
-                                !owned && React.createElement('button', { className: 'pack4-buy-btn', onClick: () => buyItem('skin', skin.id, skin.price) }, `💰 ${skin.price}`),
-                                owned && React.createElement('div', { className: 'pack4-owned-label' }, 'OWNED')
-                            );
-                        })
-                    )
+
+                React.createElement('div', { className: 'shop-tabs' },
+                    React.createElement('button', { className: `shop-tab ${activeTab === 'skins' ? 'active' : ''}`, onClick: () => setActiveTab('skins') }, 'Skins'),
+                    React.createElement('button', { className: `shop-tab ${activeTab === 'upgrades' ? 'active' : ''}`, onClick: () => setActiveTab('upgrades') }, 'Upgrades'),
+                    React.createElement('button', { className: `shop-tab ${activeTab === 'consumables' ? 'active' : ''}`, onClick: () => setActiveTab('consumables') }, 'Consumables')
                 ),
-                React.createElement('div', { className: 'pack4-section' },
-                    React.createElement('h3', null, 'Buffs'),
-                    React.createElement('div', { className: 'pack4-grid' },
-                        P4_CONFIG.shop.buffs.map(buff => {
-                            const owned = Pack4State.boughtBuffs.includes(buff.id);
-                            return React.createElement('div', { key: buff.id, className: `pack4-item ${owned ? 'owned' : ''}` },
-                                React.createElement('div', { className: 'pack4-item-icon' }, buff.icon || '✨'),
-                                React.createElement('div', { className: 'pack4-item-name' }, buff.name),
-                                React.createElement('div', { className: 'pack4-item-desc' }, buff.description),
-                                !owned && React.createElement('button', { className: 'pack4-buy-btn', onClick: () => buyItem('buff', buff.id, buff.price) }, `💰 ${buff.price}`),
-                                owned && React.createElement('div', { className: 'pack4-owned-label' }, 'ACTIVE')
-                            );
-                        })
-                    )
-                ),
-                React.createElement('div', { className: 'pack4-section' },
-                    React.createElement('h3', null, 'Consumables'),
-                    React.createElement('div', { className: 'pack4-grid' },
-                        P4_CONFIG.shop.consumables.map(item => {
-                            const qty = Pack4State.inventory[item.id] || 0;
-                            return React.createElement('div', { key: item.id, className: 'pack4-item consumable' },
-                                qty > 0 && React.createElement('div', { className: 'pack4-item-qty' }, `×${qty}`),
-                                React.createElement('div', { className: 'pack4-item-icon', style: { filter: `drop-shadow(0 0 20px ${item.color})` } }, item.icon),
-                                React.createElement('div', { className: 'pack4-item-name' }, item.name),
-                                React.createElement('button', { className: 'pack4-buy-btn', onClick: () => buyConsumable(item.id, item.price) }, `💰 ${item.price}`)
-                            );
-                        })
+
+                React.createElement('div', { className: 'shop-content' },
+                    activeTab === 'skins' && React.createElement('div', { className: 'pack4-section' },
+                        React.createElement('div', { className: 'pack4-grid' },
+                            P4_CONFIG.shop.skins.map(skin => {
+                                const owned = Pack4State.unlockedSkins.includes(skin.id);
+                                return React.createElement('div', { key: skin.id, className: `pack4-item ${owned ? 'owned' : ''}` },
+                                    React.createElement('div', { className: 'pack4-item-icon' }, skin.id === 'gold' ? '👑' : '🐊'),
+                                    React.createElement('div', { className: 'pack4-item-name' }, skin.name),
+                                    !owned && React.createElement('button', { className: 'pack4-buy-btn', onClick: () => buyItem('skin', skin.id, skin.price) }, `💰 ${skin.price}`),
+                                    owned && React.createElement('div', { className: 'pack4-owned-label' }, 'OWNED')
+                                );
+                            })
+                        )
+                    ),
+
+                    activeTab === 'upgrades' && React.createElement('div', { className: 'pack4-section' },
+                        React.createElement('div', { className: 'pack4-grid' },
+                            P4_CONFIG.shop.buffs.map(buff => {
+                                const owned = Pack4State.boughtBuffs.includes(buff.id);
+                                return React.createElement('div', { key: buff.id, className: `pack4-item ${owned ? 'owned' : ''}` },
+                                    React.createElement('div', { className: 'pack4-item-icon' }, buff.icon || '✨'),
+                                    React.createElement('div', { className: 'pack4-item-name' }, buff.name),
+                                    React.createElement('div', { className: 'pack4-item-desc' }, buff.description),
+                                    !owned && React.createElement('button', { className: 'pack4-buy-btn', onClick: () => buyItem('buff', buff.id, buff.price) }, `💰 ${buff.price}`),
+                                    owned && React.createElement('div', { className: 'pack4-owned-label' }, 'ACTIVE')
+                                );
+                            })
+                        )
+                    ),
+
+                    activeTab === 'consumables' && React.createElement('div', { className: 'pack4-section' },
+                        React.createElement('div', { className: 'pack4-grid' },
+                            P4_CONFIG.shop.consumables.map(item => {
+                                const qty = Pack4State.inventory[item.id] || 0;
+                                return React.createElement('div', { key: item.id, className: 'pack4-item consumable' },
+                                    qty > 0 && React.createElement('div', { className: 'pack4-item-qty' }, `×${qty}`),
+                                    React.createElement('div', { className: 'pack4-item-icon', style: { filter: `drop-shadow(0 0 20px ${item.color})` } }, item.icon),
+                                    React.createElement('div', { className: 'pack4-item-name' }, item.name),
+                                    React.createElement('button', { className: 'pack4-buy-btn', onClick: () => buyConsumable(item.id, item.price) }, `💰 ${item.price}`)
+                                );
+                            })
+                        )
                     )
                 )
             )
@@ -301,13 +285,11 @@ window.PackUIs = window.PackUIs || [];
 
     function Pack4Share({ score }) {
         const [visible, setVisible] = React.useState(false);
-        
         React.useEffect(() => {
             const show = () => setVisible(true);
             window.GameEvents.on('show_share', show);
             return () => { if (window.GameEvents.listeners['show_share']) window.GameEvents.listeners['show_share'] = window.GameEvents.listeners['show_share'].filter(cb => cb !== show); };
         }, []);
-
         if (!visible) return null;
 
         const gameUrl = window.location.origin + window.location.pathname;
