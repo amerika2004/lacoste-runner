@@ -22,35 +22,48 @@ window.PackUIs = window.PackUIs || [];
     };
 
     // ═══════════ MIGRATION старого localStorage ═══════════
+    // === PATCH: динамический набор дефолтных скинов из конфига ===
     function migrateSkins() {
-        const raw = localStorage.getItem('lacosteSkins');
-        if (!raw) return ['croc_default', 'panda_default'];
-        let old = [];
-        try { old = JSON.parse(raw); } catch {}
-        const set = new Set(['croc_default', 'panda_default']);
-        const legacyMap = { 'default': null, 'gold': 'croc_gold', 'red': 'panda_gold' };
-        old.forEach(id => {
-            if (legacyMap[id]) { set.add(legacyMap[id]); return; }
-            if (legacyMap[id] === null) return;
-            if (typeof id === 'string' && id.includes('_')) set.add(id);
+        const chars = (window.GAME_CONFIG && window.GAME_CONFIG.characters) || {};
+        const allSkinIds = new Set();
+        const defaultSkinIds = new Set();
+        Object.values(chars).forEach(char => {
+            (char.skins || []).forEach(s => allSkinIds.add(s.id));
+            if (char.skins?.[0]?.id) defaultSkinIds.add(char.skins[0].id);
         });
+
+        const set = new Set(defaultSkinIds);
+
+        const raw = localStorage.getItem('lacosteSkins');
+        if (raw) {
+            let old = [];
+            try { old = JSON.parse(raw); } catch {}
+            const legacyMap = { 'gold': 'croc_gold', 'red': 'panda_gold' };
+            old.forEach(id => {
+                if (id === 'default') return; // старый "default" = дефолт, уже в set
+                const mapped = legacyMap[id];
+                if (mapped) {
+                    if (allSkinIds.has(mapped)) set.add(mapped);
+                    return;
+                }
+                if (typeof id === 'string' && id.includes('_') && allSkinIds.has(id)) set.add(id);
+            });
+        }
         return Array.from(set);
     }
 
-    function migrateCurrentSkins() {
-        try {
-            const saved = JSON.parse(localStorage.getItem('lacosteCurrentSkins') || '{}');
-            if (saved && Object.keys(saved).length > 0) return saved;
-        } catch {}
-        const old = localStorage.getItem('lacosteSkin') || 'default';
+    // === PATCH: при загрузке автодобавляем дефолт для новых персонажей ===
+    function ensureAllDefaultsUnlocked() {
         const chars = (window.GAME_CONFIG && window.GAME_CONFIG.characters) || {};
-        const result = {};
-        Object.keys(chars).forEach(id => {
-            result[id] = chars[id].skins?.[0]?.id || 'default';
+        let changed = false;
+        Object.values(chars).forEach(char => {
+            const defaultSkin = char.skins?.[0]?.id;
+            if (defaultSkin && !Pack4State.unlockedSkins.includes(defaultSkin)) {
+                Pack4State.unlockedSkins.push(defaultSkin);
+                changed = true;
+            }
         });
-        if (old === 'gold') result.crocodile = 'croc_gold';
-        if (old === 'red') result.panda = 'panda_gold';
-        return result;
+        if (changed) saveState();
     }
 
     function generateFriendCode() {
@@ -102,6 +115,9 @@ window.PackUIs = window.PackUIs || [];
             saveState();
         }
     }
+
+    // Гарантируем дефолты (в т.ч. для новых персонажей из конфига)
+    ensureAllDefaultsUnlocked();
 
     // ═══════════ ХЕЛПЕРЫ ═══════════
     function getCurrentSkinFor(charId) {
@@ -293,7 +309,13 @@ window.PackUIs = window.PackUIs || [];
     // ═══════════ RENDER ФУНКЦИИ (для MenuShell) ═══════════
     function renderShopTab() {
         const [activeSub, setActiveSub] = React.useState('skins');
-        const [charId, setCharId] = React.useState(() => localStorage.getItem('lacosteCharacter') || 'crocodile');
+        // === PATCH: charId c fallback на первый доступный из конфига ===
+        const [charId, setCharId] = React.useState(() => {
+            const saved = localStorage.getItem('lacosteCharacter');
+            const chars = (window.GAME_CONFIG && window.GAME_CONFIG.characters) || {};
+            if (saved && chars[saved]) return saved;
+            return Object.keys(chars)[0] || 'crocodile';
+        });
         const [, force] = React.useReducer(x => x + 1, 0);
         React.useEffect(() => {
             Pack4State.uiListeners.push(force);
@@ -304,6 +326,14 @@ window.PackUIs = window.PackUIs || [];
         const tiers = P4_CONFIG.skinTiers || {};
         const currentSkinsMap = (() => { try { return JSON.parse(localStorage.getItem('lacosteCurrentSkins') || '{}'); } catch { return {}; } })();
         const currentSkinForChar = currentSkinsMap[charId] || chars[charId]?.skins?.[0]?.id;
+
+        // === PATCH: единый хендлер смены персонажа в магазине ===
+        const selectChar = (id) => {
+            setCharId(id);
+            localStorage.setItem('lacosteCharacter', id);
+            if (window.__gameSetCharacter) window.__gameSetCharacter(id);
+            window.GameEvents.emit('pack4_character_changed', { charId: id });
+        };
 
         const subTabs = [
             { id: 'skins', label: '🎨 Skins' },
@@ -319,13 +349,13 @@ window.PackUIs = window.PackUIs || [];
                     Object.values(chars).map(c => React.createElement('button', {
                         key: c.id,
                         className: `ms-char-tab ${charId === c.id ? 'active' : ''}`,
-                        onClick: () => { setCharId(c.id); localStorage.setItem('lacosteCharacter', c.id); }
+                        onClick: () => selectChar(c.id)   // === PATCH ===
                     }, `${c.emoji || '❓'} ${c.name}`))
                 ),
                 charSkins.length === 0
                     ? React.createElement('div', { className: 'ms-empty' }, 'No skins for this character')
                     : React.createElement('div', { className: 'ms-grid' },
-                        charSkins.sort((a, b) => (tiers[a.tier]?.order || 0) - (tiers[b.tier]?.order || 0)).map(skin => {
+                        charSkins.slice().sort((a, b) => (tiers[a.tier]?.order || 0) - (tiers[b.tier]?.order || 0)).map(skin => {
                             const owned = Pack4State.unlockedSkins.includes(skin.id);
                             const equipped = currentSkinForChar === skin.id;
                             const tier = tiers[skin.tier] || { name: skin.tier, color: '#fff', emoji: '?' };
@@ -380,7 +410,7 @@ window.PackUIs = window.PackUIs || [];
                     Object.values(chars).map(c => React.createElement('button', {
                         key: c.id,
                         className: `ms-char-tab ${charId === c.id ? 'active' : ''}`,
-                        onClick: () => { setCharId(c.id); localStorage.setItem('lacosteCharacter', c.id); }
+                        onClick: () => selectChar(c.id)   // === PATCH ===
                     }, `${c.emoji || '❓'} ${c.name}`))
                 ),
                 React.createElement('div', { className: 'ms-grid' },
