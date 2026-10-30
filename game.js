@@ -31,10 +31,14 @@ function getStat(charId, statName) {
     const lvl = window.Pack4State?.upgrades?.[charId]?.[statName] || 0;
     return base + lvl * 0.05;
 }
-function getSkinColor(skinId) {
-    const list = (CONFIG.pack4?.shop?.skins) || [];
-    const skin = list.find(s => s.id === skinId);
-    return skin?.color || null;
+
+// === PATCH: getSkinColor → getSkinFilter (тир-фильтр) ===
+function getSkinFilter(characterId, skinId) {
+    const char = CONFIG.characters?.[characterId];
+    const skin = char?.skins?.find(s => s.id === skinId);
+    if (!skin) return null;
+    const tier = CONFIG.pack4?.skinTiers?.[skin.tier];
+    return tier?.filter || null;
 }
 
 // === РЕНДЕР ДВИЖОК ===
@@ -84,11 +88,8 @@ const RenderEngine = (function () {
             const p = scene.player;
             if (p.img && p.img.complete && p.img.naturalWidth > 0) {
                 ctx.save(); let fallAngle = 0, yOffset = 0, flyTilt = 0; let chewScale = 1.0;
-                // === SKIN COLOR ===
-                if (p.skinColor) {
-                    if (p.skinColor === '#FFD700') ctx.filter = 'sepia(1) saturate(5) hue-rotate(5deg) brightness(1.2)';
-                    else if (p.skinColor === '#FF4500') ctx.filter = 'sepia(1) saturate(5) hue-rotate(330deg) brightness(1.1)';
-                }
+                // === PATCH: применяем тир-фильтр скина ===
+                if (p.skinFilter) ctx.filter = p.skinFilter;
                 if (p.isEating) chewScale = 1.0 + Math.sin(Date.now() / 80) * 0.05;
                 if (p.isBarrelFlying) flyTilt = p.tilt;
                 if (p.isTripping) { const fallProgress = Math.min(1, p.tripTimer / 15); const standProgress = Math.max(0, (p.tripTimer - 40) / 80); const flatAmount = fallProgress * (1 - standProgress); let dir = p.isBarrelTrip ? (FLIP_CROC ? 1 : -1) : (FLIP_CROC ? -1 : 1); fallAngle = dir * (Math.PI / 2) * flatAmount; yOffset = -((p.w - p.h) / 2) * flatAmount; if (Math.floor(p.tripTimer / 10) % 2 === 1) ctx.globalAlpha = 0.5; }
@@ -149,7 +150,37 @@ function Game() {
     const [timeOfDay, setTimeOfDay] = useState(() => localStorage.getItem('lacosteTimeOfDay') || 'day');
     const [background, setBackground] = useState(() => { const saved = localStorage.getItem('lacosteBackground'); return (saved && BACKGROUNDS[saved]) ? saved : Object.keys(BACKGROUNDS)[0]; });
     const [character, setCharacter] = useState(() => { const saved = localStorage.getItem('lacosteCharacter'); return (saved && CHARACTERS[saved]) ? saved : Object.keys(CHARACTERS)[0]; });
-    const [currentSkin] = useState(() => localStorage.getItem('lacosteSkin') || 'default');
+
+    // === PATCH: currentSkin → currentSkins (объект по персонажам) ===
+    const [currentSkins, setCurrentSkins] = useState(() => {
+        try {
+            const saved = JSON.parse(localStorage.getItem('lacosteCurrentSkins') || '{}');
+            if (saved && Object.keys(saved).length > 0) return saved;
+        } catch {}
+        const result = {};
+        Object.keys(CHARACTERS).forEach(id => { result[id] = CHARACTERS[id].skins?.[0]?.id || 'default'; });
+        const old = localStorage.getItem('lacosteSkin') || 'default';
+        if (old === 'gold') result.crocodile = 'croc_gold';
+        if (old === 'red') result.panda = 'panda_gold';
+        return result;
+    });
+    const currentSkin = currentSkins[character] || CHARACTERS[character]?.skins?.[0]?.id || 'default';
+
+    useEffect(() => {
+        localStorage.setItem('lacosteCurrentSkins', JSON.stringify(currentSkins));
+        localStorage.setItem('lacosteSkin', currentSkin || 'default');
+    }, [currentSkins, currentSkin]);
+
+    // === PATCH: слушаем смену скина из Shop ===
+    useEffect(() => {
+        const handler = (data) => setCurrentSkins(prev => ({ ...prev, [data.charId]: data.skinId }));
+        window.GameEvents.on('pack4_skins_updated', handler);
+        return () => {
+            if (window.GameEvents.listeners['pack4_skins_updated']) {
+                window.GameEvents.listeners['pack4_skins_updated'] = window.GameEvents.listeners['pack4_skins_updated'].filter(cb => cb !== handler);
+            }
+        };
+    }, []);
 
     const [score, setScore] = useState(0);
     const [speedDisplay, setSpeedDisplay] = useState(1.0);
@@ -161,7 +192,6 @@ function Game() {
     const [settings, setSettings] = useState(() => {
         try { const saved = JSON.parse(localStorage.getItem('lacosteSettings') || '{}'); return { ...DEFAULT_SETTINGS, ...saved }; } catch { return { ...DEFAULT_SETTINGS }; }
     });
-    const [showSettings, setShowSettings] = useState(false);
 
     const comboRef = useRef(0);
     const comboMultRef = useRef(1);
@@ -202,6 +232,8 @@ function Game() {
 
     useEffect(() => {
         localStorage.setItem('lacosteCharacter', character);
+        // === PATCH: пробрасываем setCharacter в Shop для синхронизации ===
+        window.__gameSetCharacter = setCharacter;
         walkFramesRef.current = []; currentFrameRef.current = 0; eatFramesRef.current = []; eatFrameIdxRef.current = 0; isEatingRef.current = false; eatTimerRef.current = 0; eatSpeedFactorRef.current = 1.0;
         const char = CHARACTERS[character] || CHARACTERS[Object.keys(CHARACTERS)[0]];
         for (let i = 1; i <= char.frameCount; i++) { const img = new Image(); img.src = `${char.folder}/${i}.png`; walkFramesRef.current.push(img); }
@@ -234,15 +266,17 @@ function Game() {
         else { if (gameState === 'playing') dayAudio.play().catch(() => {}); nightAudio.pause(); }
     }, [timeOfDay, settings.soundEnabled, gameState]);
 
+    // === PATCH: isPaused больше не учитывает showSettings (его нет) ===
     useEffect(() => {
-        const isPaused = gameState === 'paused' || showSettings || gameState === 'menu' || gameState === 'gameover';
+        const isPaused = gameState === 'paused' || gameState === 'menu' || gameState === 'gameover';
         if (isPaused) { if (pitAudioRef.current) pitAudioRef.current.pause(); if (barrelAudioRef.current) barrelAudioRef.current.pause(); if (splashAudioRef.current) splashAudioRef.current.pause(); if (nightAmbientRef.current) nightAmbientRef.current.pause(); if (dayAmbientRef.current) dayAmbientRef.current.pause(); }
         else { if (settingsRef.current.soundEnabled && gameState === 'playing') { if (timeOfDayRef.current === 'night' && nightAmbientRef.current) nightAmbientRef.current.play().catch(() => {}); else if (timeOfDayRef.current === 'day' && dayAmbientRef.current) dayAmbientRef.current.play().catch(() => {}); } }
-    }, [gameState, showSettings]);
+    }, [gameState]);
 
     const initChar = CHARACTERS[character] || CHARACTERS[Object.keys(CHARACTERS)[0]];
     const initGroundY = GROUND_Y + (BACKGROUNDS[background]?.groundOffset || 0);
-    const playerRef = useRef({ x: 100, y: initGroundY - initChar.baseHeight, width: initChar.baseWidth, height: initChar.baseHeight, velocityY: 0, isJumping: false, isHoldingJump: false, jumpMult: 1.0, tilt: 0, bob: 0, foodEaten: 0, foodTarget: 1, skinColor: null });
+    // === PATCH: skinColor → skinFilter ===
+    const playerRef = useRef({ x: 100, y: initGroundY - initChar.baseHeight, width: initChar.baseWidth, height: initChar.baseHeight, velocityY: 0, isJumping: false, isHoldingJump: false, jumpMult: 1.0, tilt: 0, bob: 0, foodEaten: 0, foodTarget: 1, skinFilter: null });
 
     const obstaclesRef = useRef([]);
     const foodsRef = useRef([]);
@@ -313,6 +347,7 @@ function Game() {
     const addCombo = () => { comboRef.current++; let mult = 1; if (comboRef.current >= 8) mult = 5; else if (comboRef.current >= 5) mult = 3; else if (comboRef.current >= 3) mult = 2; comboMultRef.current = mult; window.GameEvents.emit('combo_changed', { mult: comboRef.current, count: comboRef.current }); };
 
     const konamiRef = useRef([]);
+    // === PATCH: убран showSettings из зависимостей и Escape-логики ===
     const handleKeyDown = useCallback((e) => {
         konamiRef.current.push(e.code);
         if (konamiRef.current.length > 10) konamiRef.current.shift();
@@ -324,7 +359,7 @@ function Game() {
             }
         }
 
-        if (e.code === 'Escape') { e.preventDefault(); if (showSettings) { setShowSettings(false); return; } if (isFallingIntoPitRef.current || isPitDeathDelayRef.current) return; if (gameState === 'playing') setGameState('paused'); else if (gameState === 'paused') setGameState('playing'); return; }
+        if (e.code === 'Escape') { e.preventDefault(); if (isFallingIntoPitRef.current || isPitDeathDelayRef.current) return; if (gameState === 'playing') setGameState('paused'); else if (gameState === 'paused') setGameState('playing'); return; }
         if (e.code === 'KeyN') { e.preventDefault(); setTimeOfDay(prev => prev === 'day' ? 'night' : 'day'); return; }
         if (e.code === 'Space' || e.code === 'ArrowUp') {
             e.preventDefault();
@@ -339,14 +374,14 @@ function Game() {
                 RenderEngine.spawnParticles(p.x + p.width / 2, p.y + p.height, 6, { colors: ['#FFFFFF', '#AAAAAA'], speed: 2, life: 20, size: 2, gravity: 0.1 });
             }
         }
-    }, [gameState, character, showSettings]);
+    }, [gameState, character]);
     const handleKeyUp = useCallback((e) => { if (e.code === 'Space' || e.code === 'ArrowUp') playerRef.current.isHoldingJump = false; }, []);
     useEffect(() => { window.addEventListener('keydown', handleKeyDown); window.addEventListener('keyup', handleKeyUp); return () => { window.removeEventListener('keydown', handleKeyDown); window.removeEventListener('keyup', handleKeyUp); }; }, [handleKeyDown, handleKeyUp]);
 
     useEffect(() => {
         const canvas = canvasRef.current; if (!canvas) return;
         const handleTouchStart = (e) => {
-            if (e.target.closest('.game-btn') || e.target.closest('.btn') || e.target.closest('.char-btn') || e.target.closest('.settings-panel') || e.target.closest('.settings-open-btn') || e.target.closest('.pack2-inventory') || e.target.closest('.pack3-ui')) return;
+            if (e.target.closest('.game-btn') || e.target.closest('.btn') || e.target.closest('.char-btn') || e.target.closest('.settings-panel') || e.target.closest('.settings-open-btn') || e.target.closest('.pack2-inventory') || e.target.closest('.pack3-ui') || e.target.closest('.ms-overlay')) return;
             e.preventDefault(); if (gameState !== 'playing') return;
             if (playerRef.current.isJumping || isTrippingRef.current || isFallingIntoPitRef.current || isPitDeathDelayRef.current || isBarrelFlyingRef.current || isEatingRef.current) return;
             const p = playerRef.current; const baseMult = 1.0 + Math.floor(distanceRef.current / 100) * 0.04;
@@ -354,7 +389,7 @@ function Game() {
             window.GameEvents.emit('jump', { x: p.x + p.width / 2, y: p.y });
             RenderEngine.spawnParticles(p.x + p.width / 2, p.y + p.height, 6, { colors: ['#FFFFFF', '#AAAAAA'], speed: 2, life: 20, size: 2, gravity: 0.1 });
         };
-        const handleTouchEnd = (e) => { if (e.target.closest('.game-btn') || e.target.closest('.btn') || e.target.closest('.char-btn') || e.target.closest('.settings-panel') || e.target.closest('.settings-open-btn') || e.target.closest('.pack2-inventory') || e.target.closest('.pack3-ui')) return; if (gameState !== 'playing') return; e.preventDefault(); playerRef.current.isHoldingJump = false; };
+        const handleTouchEnd = (e) => { if (e.target.closest('.game-btn') || e.target.closest('.btn') || e.target.closest('.char-btn') || e.target.closest('.settings-panel') || e.target.closest('.settings-open-btn') || e.target.closest('.pack2-inventory') || e.target.closest('.pack3-ui') || e.target.closest('.ms-overlay')) return; if (gameState !== 'playing') return; e.preventDefault(); playerRef.current.isHoldingJump = false; };
         canvas.addEventListener('touchstart', handleTouchStart, { passive: false }); canvas.addEventListener('touchend', handleTouchEnd, { passive: false }); canvas.addEventListener('touchcancel', handleTouchEnd, { passive: false });
         return () => { canvas.removeEventListener('touchstart', handleTouchStart); canvas.removeEventListener('touchend', handleTouchEnd); canvas.removeEventListener('touchcancel', handleTouchEnd); };
     }, [gameState, character]);
@@ -365,9 +400,10 @@ function Game() {
         let startHp = 6;
         if (window.Pack4State && window.Pack4State.boughtBuffs?.includes('start_hp')) startHp = 8;
 
-        const skinColor = getSkinColor(currentSkin);
+        // === PATCH: используем тир-фильтр ===
+        const skinFilter = getSkinFilter(character, currentSkin);
 
-        playerRef.current = { x: 100, y: gy - char.baseHeight, width: char.baseWidth, height: char.baseHeight, velocityY: 0, isJumping: false, isHoldingJump: false, jumpMult: 1.0, tilt: 0, bob: 0, foodEaten: 0, foodTarget: 1, skinColor };
+        playerRef.current = { x: 100, y: gy - char.baseHeight, width: char.baseWidth, height: char.baseHeight, velocityY: 0, isJumping: false, isHoldingJump: false, jumpMult: 1.0, tilt: 0, bob: 0, foodEaten: 0, foodTarget: 1, skinFilter };
         obstaclesRef.current = []; foodsRef.current = []; explosionsRef.current = []; distanceRef.current = 0; spawnTimerRef.current = 0; foodTimerRef.current = 0; bgOffsetRef.current = 0; currentFrameRef.current = 0; spawnCooldownRef.current = 0;
         healthRef.current = startHp; setHealth(startHp);
         isTrippingRef.current = false; tripTimerRef.current = 0; speedPenaltyRef.current = 1.0; isBarrelTripRef.current = false; pendingBarrelDamageRef.current = false; isBarrelFlyingRef.current = false; barrelFlyVelocityYRef.current = 0; isFallingIntoPitRef.current = false; pitTargetRef.current = null; pitFallTimerRef.current = 0; pitVelocityRef.current = 0; isPitDeathDelayRef.current = false; pitDeathDelayTimerRef.current = 0;
@@ -630,7 +666,8 @@ function Game() {
             bgNext: bgNextImg ? { img: bgNextImg } : null,
             transitionAlpha: transitionAlpha,
             groundY: gy,
-            player: { x: playerRef.current.x, y: playerRef.current.y, w: playerRef.current.width, h: playerRef.current.height, tilt: playerRef.current.tilt, bob: playerRef.current.bob, isJumping: playerRef.current.isJumping, img: charImg, isEating: isEatingRef.current, isTripping: isTrippingRef.current, tripTimer: tripTimerRef.current, isBarrelTrip: isBarrelTripRef.current, isBarrelFlying: isBarrelFlyingRef.current, isFallingIntoPit: isFallingIntoPitRef.current, skinColor: playerRef.current.skinColor || null },
+            // === PATCH: skinFilter вместо skinColor ===
+            player: { x: playerRef.current.x, y: playerRef.current.y, w: playerRef.current.width, h: playerRef.current.height, tilt: playerRef.current.tilt, bob: playerRef.current.bob, isJumping: playerRef.current.isJumping, img: charImg, isEating: isEatingRef.current, isTripping: isTrippingRef.current, tripTimer: tripTimerRef.current, isBarrelTrip: isBarrelTripRef.current, isBarrelFlying: isBarrelFlyingRef.current, isFallingIntoPit: isFallingIntoPitRef.current, skinFilter: playerRef.current.skinFilter || null },
             obstacles: obstaclesRef.current.map(o => ({ x: o.x, y: o.y, w: o.width, h: o.height, type: o.type })),
             foods: foodsRef.current.map(f => ({ x: f.x, y: f.y, w: f.width, h: f.height, emoji: f.emoji, isPowerup: f.isPowerup })),
             explosions: explosionsRef.current.map(e => ({ x: e.x, y: e.y, size: e.size, timer: e.timer, maxTimer: e.maxTimer })),
@@ -673,8 +710,107 @@ function Game() {
     const formatScore = (num) => num.toString().padStart(5, '0');
     const getHearts = () => { let h = []; for (let i = 0; i < 4; i++) { if (health >= (i + 1) * 2) h.push('❤️'); else if (health === i * 2 + 1) h.push('💔'); else h.push('🖤'); } return h.join(''); };
 
-    const renderCharacterPanel = () => React.createElement('div', { className: 'char-panel' }, Object.values(CHARACTERS).map(char => React.createElement('button', { key: char.id, className: `char-btn ${character === char.id ? 'active' : ''}`, onClick: () => setCharacter(char.id) }, React.createElement('span', { className: 'char-emoji' }, char.emoji || '❓'), React.createElement('span', { className: 'char-name' }, char.name))));
-    const renderBackgroundPanel = () => React.createElement('div', { className: 'settings', style: { marginBottom: '20px' } }, Object.values(BACKGROUNDS).map(bg => React.createElement('button', { key: bg.id, className: `btn ${background === bg.id ? 'active' : ''}`, onClick: () => setBackground(bg.id) }, `${bg.emoji} ${bg.name}`)));
+    // === PATCH: контент вкладки Settings для MenuShell ===
+    const renderSettingsContent = () => React.createElement('div', null,
+        React.createElement('div', { className: 'ms-section-title' }, '🖥️ HUD'),
+        React.createElement('div', { className: 'ms-row' },
+            React.createElement('span', { style: { minWidth: '120px' } }, 'Scale'),
+            React.createElement('input', { type: 'range', min: 50, max: 150, value: Math.round(settings.hudScale * 100), onChange: (e) => setSettings(s => ({ ...s, hudScale: Number(e.target.value) / 100 })), style: { flex: 1 } }),
+            React.createElement('span', { style: { minWidth: '50px', textAlign: 'right' } }, `${Math.round(settings.hudScale * 100)}%`)
+        ),
+        React.createElement('div', { className: 'ms-row' },
+            React.createElement('span', { style: { minWidth: '120px' } }, 'Opacity'),
+            React.createElement('input', { type: 'range', min: 20, max: 100, value: Math.round(settings.hudOpacity * 100), onChange: (e) => setSettings(s => ({ ...s, hudOpacity: Number(e.target.value) / 100 })), style: { flex: 1 } }),
+            React.createElement('span', { style: { minWidth: '50px', textAlign: 'right' } }, `${Math.round(settings.hudOpacity * 100)}%`)
+        ),
+        React.createElement('div', { className: 'ms-section-title', style: { marginTop: '16px' } }, '🎨 Graphics'),
+        React.createElement('div', { className: 'ms-tod' },
+            ['low', 'medium', 'high'].map(q => React.createElement('button', {
+                key: q, className: `ms-tod-btn ${settings.graphics === q ? 'active' : ''}`,
+                onClick: () => setSettings(s => ({ ...s, graphics: q }))
+            }, q.toUpperCase()))
+        ),
+        React.createElement('div', { className: 'ms-section-title', style: { marginTop: '16px' } }, '⚡ Gameplay'),
+        ['comboEnabled', 'weatherEnabled', 'biomesEnabled'].map(key => React.createElement('div', { key, className: 'ms-row', style: { justifyContent: 'space-between' } },
+            React.createElement('span', null, key === 'comboEnabled' ? 'Combo System' : key === 'weatherEnabled' ? 'Weather Effects' : 'Dynamic Biomes'),
+            React.createElement('button', { className: `ms-tod-btn ${settings[key] ? 'active' : ''}`, onClick: () => setSettings(s => ({ ...s, [key]: !s[key] })) }, settings[key] ? 'ON' : 'OFF')
+        )),
+        React.createElement('div', { className: 'ms-section-title', style: { marginTop: '16px' } }, '🔊 Audio'),
+        React.createElement('div', { className: 'ms-row' },
+            React.createElement('span', { style: { minWidth: '120px' } }, 'Master'),
+            React.createElement('input', { type: 'range', min: 0, max: 100, value: Math.round(settings.masterVolume * 100), onChange: (e) => setSettings(s => ({ ...s, masterVolume: Number(e.target.value) / 100 })), style: { flex: 1 } }),
+            React.createElement('span', { style: { minWidth: '50px', textAlign: 'right' } }, `${Math.round(settings.masterVolume * 100)}%`)
+        ),
+        React.createElement('div', { className: 'ms-row', style: { marginTop: '16px' } },
+            React.createElement('button', { className: 'ms-btn ghost', onClick: () => setSettings({ ...DEFAULT_SETTINGS }) }, 'RESET DEFAULTS')
+        )
+    );
+
+    // === PATCH: хелпер для отображения имени скина ===
+    const currentSkinData = CHARACTERS[character]?.skins?.find(s => s.id === currentSkin);
+    const currentSkinName = currentSkinData?.name || 'Original';
+
+    // === PATCH: собираем вкладки для MenuShell ===
+    const menuTabs = [];
+
+    // Home — главное меню
+    menuTabs.push({
+        id: 'home', icon: '🏠', label: 'Home', title: 'Main Menu',
+        render: () => React.createElement('div', null,
+            React.createElement('div', { className: 'ms-home-title' }, 'LACOSTE'),
+            React.createElement('div', { className: 'ms-home-sub' }, 'RUNNER · VICE CITY EDITION'),
+
+            React.createElement('div', { className: 'ms-row', style: { justifyContent: 'center', gap: '24px', marginBottom: '20px' } },
+                React.createElement('span', null, `🏆 BEST: ${highScore}m`),
+                React.createElement('span', null, `💰 ${coins}`),
+                React.createElement('span', null, `🎨 ${currentSkinName}`)
+            ),
+
+            React.createElement('div', { className: 'ms-section-title' }, '🐾 Character'),
+            React.createElement('div', { className: 'ms-char-tabs' },
+                Object.values(CHARACTERS).map(char => React.createElement('button', {
+                    key: char.id,
+                    className: `ms-char-tab ${character === char.id ? 'active' : ''}`,
+                    onClick: () => { setCharacter(char.id); window.GameEvents.emit('pack4_character_changed', { charId: char.id }); }
+                }, `${char.emoji || '❓'} ${char.name}`))
+            ),
+
+            React.createElement('div', { className: 'ms-section-title', style: { marginTop: '16px' } }, '🗺️ Background'),
+            React.createElement('div', { className: 'ms-char-tabs' },
+                Object.values(BACKGROUNDS).map(bg => React.createElement('button', {
+                    key: bg.id,
+                    className: `ms-char-tab ${background === bg.id ? 'active' : ''}`,
+                    onClick: () => setBackground(bg.id)
+                }, `${bg.emoji || '🌍'} ${bg.name}`))
+            ),
+
+            React.createElement('div', { className: 'ms-section-title', style: { marginTop: '16px' } }, '🌓 Time of Day'),
+            React.createElement('div', { className: 'ms-tod' },
+                React.createElement('button', { className: `ms-tod-btn ${timeOfDay === 'day' ? 'active' : ''}`, onClick: () => setTimeOfDay('day') }, '☀️ DAY'),
+                React.createElement('button', { className: `ms-tod-btn ${timeOfDay === 'night' ? 'active' : ''}`, onClick: () => setTimeOfDay('night') }, '🌙 NIGHT')
+            ),
+
+            React.createElement('div', { className: 'ms-actions' },
+                React.createElement('button', { className: 'ms-btn ghost', onClick: toggleFullscreen }, '⛶ FULLSCREEN'),
+                React.createElement('button', { className: 'ms-btn ghost', onClick: () => window.GameEvents.emit('show_achievements') }, '🏆 ACHIEVEMENTS')
+            ),
+
+            React.createElement('button', { className: 'ms-btn primary', style: { width: '100%', marginTop: '16px', fontSize: '18px', padding: '14px' }, onClick: startGame }, '▶ START ESCAPE'),
+
+            React.createElement('div', { style: { marginTop: '20px', color: 'var(--fh-text-muted, #888)', fontSize: '12px', textAlign: 'center' } },
+                React.createElement('p', null, 'Space / Tap — jump, HOLD — high jump!'),
+                React.createElement('p', null, 'Eat food to grow stronger. Avoid pits.')
+            )
+        )
+    });
+
+    // Shop / Promo / Leaderboard — из pack4 (если доступны)
+    if (window.Pack4Render?.shop) menuTabs.push({ id: 'shop', icon: '🛒', label: 'Shop', title: 'Shop', render: window.Pack4Render.shop });
+    if (window.Pack4Render?.promo) menuTabs.push({ id: 'promo', icon: '🎁', label: 'Promo', title: 'Promo & Codes', render: window.Pack4Render.promo });
+    if (window.Pack4Render?.leaderboard) menuTabs.push({ id: 'leaderboard', icon: '🏅', label: 'Top', title: 'Leaderboard', render: window.Pack4Render.leaderboard });
+
+    // Settings — из game.js
+    menuTabs.push({ id: 'settings', icon: '⚙️', label: 'Settings', title: 'Settings', render: () => renderSettingsContent() });
 
     return React.createElement('div', { id: 'game-container' },
 
@@ -703,29 +839,17 @@ function Game() {
             React.createElement('button', { id: 'btn-pause', className: 'game-btn', onClick: () => setGameState('paused') }, '❚❚')
         ) : null,
 
-        gameState === 'menu' ? React.createElement('div', { className: 'menu-overlay' },
-            React.createElement('div', { className: 'menu-box' },
-                React.createElement('div', { className: 'title' }, 'LACOSTE', React.createElement('br'), 'RUNNER'),
-                React.createElement('div', { className: 'subtitle' }, 'VICE CITY EDITION'),
-                renderCharacterPanel(),
-                renderBackgroundPanel(),
-                React.createElement('div', { className: 'settings' },
-                    React.createElement('button', { className: `btn ${timeOfDay === 'day' ? 'active' : ''}`, onClick: () => setTimeOfDay('day') }, '☀️ Day'),
-                    React.createElement('button', { className: `btn ${timeOfDay === 'night' ? 'active' : ''}`, onClick: () => setTimeOfDay('night') }, '🌙 Night')
-                ),
-                React.createElement('div', { style: { display: 'flex', gap: '10px', marginBottom: '20px', flexWrap: 'wrap', justifyContent: 'center' } },
-                    React.createElement('button', { className: 'btn', onClick: toggleFullscreen }, '⛶ Fullscreen'),
-                    React.createElement('button', { className: 'btn', onClick: () => window.GameEvents.emit('show_achievements') }, '🏆 Achievements'),
-                    React.createElement('button', { className: 'btn', onClick: () => window.GameEvents.emit('show_shop') }, '🛒 Shop'),
-                    React.createElement('button', { className: 'btn', onClick: () => window.GameEvents.emit('show_leaderboard') }, '🏅 Leaderboard')
-                ),
-                React.createElement('button', { className: 'btn btn-start', onClick: startGame }, 'START ESCAPE'),
-                React.createElement('button', { className: 'btn', onClick: () => setShowSettings(true), style: { marginTop: '10px', background: 'transparent' } }, '⚙ SETTINGS'),
-                React.createElement('div', { style: { marginTop: '20px', color: 'var(--fh-text-muted)', fontSize: '12px', fontFamily: 'Montserrat', textAlign: 'center' } },
-                    React.createElement('p', null, 'Space / Tap — jump, HOLD — high jump!'),
-                    React.createElement('p', null, 'Eat food to grow stronger. Avoid pits.')
+        // === PATCH: единое меню через MenuShell ===
+        gameState === 'menu' ? (
+            window.MenuShell
+                ? React.createElement(window.MenuShell, { coins: coins, tabs: menuTabs })
+                : React.createElement('div', { className: 'menu-overlay' },
+                    React.createElement('div', { className: 'menu-box' },
+                        React.createElement('div', { className: 'title' }, 'LACOSTE RUNNER'),
+                        React.createElement('button', { className: 'btn btn-start', onClick: startGame }, 'START'),
+                        React.createElement('p', { style: { color: 'red', marginTop: '10px', fontSize: '12px' } }, 'MenuShell not loaded')
+                    )
                 )
-            )
         ) : null,
 
         gameState === 'paused' ? React.createElement('div', { className: 'menu-overlay' },
@@ -754,68 +878,6 @@ function Game() {
                 )
             )
         ) : null,
-
-        showSettings && React.createElement('div', { className: 'settings-overlay' },
-            React.createElement('div', { className: 'settings-panel' },
-                React.createElement('div', { className: 'settings-header' },
-                    React.createElement('div', { className: 'settings-title' }, 'SETTINGS'),
-                    React.createElement('button', { className: 'settings-close', onClick: () => setShowSettings(false) }, '✕')
-                ),
-
-                React.createElement('div', { className: 'settings-section' },
-                    React.createElement('div', { className: 'settings-section-title' }, 'HUD Customization'),
-                    React.createElement('div', { className: 'setting-row' },
-                        React.createElement('span', { className: 'setting-label' }, 'HUD Scale'),
-                        React.createElement('input', { type: 'range', min: 50, max: 150, value: Math.round(settings.hudScale * 100), onChange: (e) => setSettings(s => ({ ...s, hudScale: Number(e.target.value) / 100 })), className: 'setting-slider' }),
-                        React.createElement('span', { className: 'setting-value' }, `${Math.round(settings.hudScale * 100)}%`)
-                    ),
-                    React.createElement('div', { className: 'setting-row' },
-                        React.createElement('span', { className: 'setting-label' }, 'HUD Opacity'),
-                        React.createElement('input', { type: 'range', min: 20, max: 100, value: Math.round(settings.hudOpacity * 100), onChange: (e) => setSettings(s => ({ ...s, hudOpacity: Number(e.target.value) / 100 })), className: 'setting-slider' }),
-                        React.createElement('span', { className: 'setting-value' }, `${Math.round(settings.hudOpacity * 100)}%`)
-                    )
-                ),
-
-                React.createElement('div', { className: 'settings-section' },
-                    React.createElement('div', { className: 'settings-section-title' }, 'Graphics'),
-                    React.createElement('div', { className: 'setting-row' },
-                        React.createElement('span', { className: 'setting-label' }, 'Quality'),
-                        React.createElement('div', { className: 'segmented' }, ['low', 'medium', 'high'].map(q =>
-                            React.createElement('button', { key: q, className: settings.graphics === q ? 'active' : '', onClick: () => setSettings(s => ({ ...s, graphics: q })) }, q.toUpperCase())
-                        ))
-                    )
-                ),
-
-                React.createElement('div', { className: 'settings-section' },
-                    React.createElement('div', { className: 'settings-section-title' }, 'Gameplay Features'),
-                    React.createElement('div', { className: 'setting-row' },
-                        React.createElement('span', { className: 'setting-label' }, 'Combo System'),
-                        React.createElement('button', { className: `setting-toggle ${settings.comboEnabled ? 'on' : ''}`, onClick: () => setSettings(s => ({ ...s, comboEnabled: !s.comboEnabled })) })
-                    ),
-                    React.createElement('div', { className: 'setting-row' },
-                        React.createElement('span', { className: 'setting-label' }, 'Weather Effects'),
-                        React.createElement('button', { className: `setting-toggle ${settings.weatherEnabled ? 'on' : ''}`, onClick: () => setSettings(s => ({ ...s, weatherEnabled: !s.weatherEnabled })) })
-                    ),
-                    React.createElement('div', { className: 'setting-row' },
-                        React.createElement('span', { className: 'setting-label' }, 'Dynamic Biomes'),
-                        React.createElement('button', { className: `setting-toggle ${settings.biomesEnabled ? 'on' : ''}`, onClick: () => setSettings(s => ({ ...s, biomesEnabled: !s.biomesEnabled })) })
-                    )
-                ),
-
-                React.createElement('div', { className: 'settings-section' },
-                    React.createElement('div', { className: 'settings-section-title' }, 'Audio'),
-                    React.createElement('div', { className: 'setting-row' },
-                        React.createElement('span', { className: 'setting-label' }, 'Master Volume'),
-                        React.createElement('input', { type: 'range', min: 0, max: 100, value: Math.round(settings.masterVolume * 100), onChange: (e) => setSettings(s => ({ ...s, masterVolume: Number(e.target.value) / 100 })), className: 'setting-slider' }),
-                        React.createElement('span', { className: 'setting-value' }, `${Math.round(settings.masterVolume * 100)}%`)
-                    )
-                ),
-
-                React.createElement('div', { style: { display: 'flex', justifyContent: 'flex-end', marginTop: '10px' } },
-                    React.createElement('button', { className: 'btn', onClick: () => setSettings({ ...DEFAULT_SETTINGS }) }, 'RESET DEFAULTS')
-                )
-            )
-        ),
 
         ...(window.PackUIs || []).map((UI, i) => React.createElement(UI, { key: 'plugin-' + i, gameState, setGameState, score }))
     );
