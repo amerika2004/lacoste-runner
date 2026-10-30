@@ -1,10 +1,3 @@
-Приношу извинения! В прошлом ответе я случайно оставил комментарии-заглушки (например, `/* ... код рендера ... */` и `// ... (describeScene и gameLoop без изменений) ...`) вместо полного кода. Из-за этого движок отрисовки и игровой цикл просто не загрузились, и игра перестала запускаться.
-
-Вот **полностью рабочий, собранный и оптимизированный файл `game.js`**. В нем весь код на месте: и логика отрисовки (RenderEngine), и игровой цикл, и новая система HUD в стиле Dota 2, и настройки, которые не вылезают за края.
-
-Просто замените ваш текущий `game.js` на этот:
-
-```javascript
 const { useState, useEffect, useRef, useCallback } = React;
 
 // === ПЛАГИННАЯ ИНФРАСТРУКТУРА (Инициализация) ===
@@ -803,4 +796,3 @@ function Game() {
 const root = ReactDOM.createRoot(document.getElementById('root'));
 window.__bootGame = function () { if (window.__GAME_STARTED__) return; window.__GAME_STARTED__ = true; root.render(React.createElement(Game)); };
 if (!window.__LOADER_ACTIVE__) { window.__bootGame(); }
-```
