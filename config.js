@@ -11,7 +11,8 @@
             sfxVolume: 0.7, ambientVolume: 0.25, masterVolume: 1.0, soundEnabled: true, graphics: 'high',
             comboEnabled: true, comboVisualsEnabled: true, weatherEnabled: true, dynamicMusicEnabled: true,
             biomesEnabled: true, achievementsEnabled: true, dailyGoalsEnabled: true,
-            hudScale: 1.0, hudOpacity: 0.8
+            hudScale: 1.0, hudOpacity: 0.8,
+            use3DCharacters: true // <--- ДОБАВИТЬ ВОТ ЭТО
         },
 
         combo: {
