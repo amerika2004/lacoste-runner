@@ -17,8 +17,8 @@ window.PackUIs = window.PackUIs || [];
     };
 
     const Pack2State = {
-        inventory: { shield: 0, magnet: 0, sprint: 0, slowmo: 0 }, 
-        activePowerups: { magnet: 0, sprint: 0, slowmo: 0 }, 
+        inventory: { shield: 0, magnet: 0, sprint: 0, slowmo: 0 },
+        activePowerups: { magnet: 0, sprint: 0, slowmo: 0 },
         hasShield: false,
         currentWeather: P2_CONFIG.weather.combinations[0],
         lastWeatherChange: 0,
@@ -83,12 +83,14 @@ window.PackUIs = window.PackUIs || [];
         if (type !== 'shield' && Pack2State.activePowerups[type] > Date.now()) return;
 
         Pack2State.inventory[type]--;
-        
-        // Синхронизация с базой данных магазина
+
+        // === СИНХРОНИЗАЦИЯ С PACK4 (persistent inventory) ===
         if (window.Pack4State && window.Pack4State.inventory) {
-            window.Pack4State.inventory[type]--;
-            if (window.Pack4State.inventory[type] < 0) window.Pack4State.inventory[type] = 0;
-            localStorage.setItem('lacosteInventory', JSON.stringify(window.Pack4State.inventory));
+            if ((window.Pack4State.inventory[type] || 0) > 0) {
+                window.Pack4State.inventory[type]--;
+                try { localStorage.setItem('lacosteInventory', JSON.stringify(window.Pack4State.inventory)); } catch(e) {}
+                if (window.Pack4State.uiListeners) window.Pack4State.uiListeners.forEach(fn => fn());
+            }
         }
 
         if (type === 'shield') {
@@ -105,34 +107,31 @@ window.PackUIs = window.PackUIs || [];
         if (e.code === 'Digit1') usePowerup('shield');
         if (e.code === 'Digit2') usePowerup('magnet');
         if (e.code === 'Digit3') usePowerup('sprint');
+        if (e.code === 'Digit4') usePowerup('slowmo');
     });
 
     window.GameEvents.on('start', (data) => {
         initAudio();
         Pack2State.settings = data.settings;
-        
-        // ИНИЦИАЛИЗАЦИЯ ИНВЕНТАРЯ ИЗ МАГАЗИНА
-        if (window.Pack4State && window.Pack4State.inventory) {
-            Pack2State.inventory = { 
-                shield: window.Pack4State.inventory.shield || 0,
-                magnet: window.Pack4State.inventory.magnet || 0,
-                sprint: window.Pack4State.inventory.sprint || 0,
-                slowmo: window.Pack4State.inventory.slowmo || 0
-            };
-        } else {
-            Pack2State.inventory = { shield: 0, magnet: 0, sprint: 0, slowmo: 0 };
-        }
 
-        // Стартовый щит от купленного бафа
+        // === ИНВЕНТАРЬ БЕРЁТСЯ ИЗ PACK4 (persistent) ===
+        const p4inv = (window.Pack4State && window.Pack4State.inventory) || {};
+        Pack2State.inventory = {
+            shield: p4inv.shield || 0,
+            magnet: p4inv.magnet || 0,
+            sprint: p4inv.sprint || 0,
+            slowmo: p4inv.slowmo || 0
+        };
+
+        // === START_SHIELD BUFF (+1 shield на каждый забег) ===
         if (window.Pack4State && window.Pack4State.boughtBuffs?.includes('start_shield')) {
-            Pack2State.inventory.shield++;
+            Pack2State.inventory.shield += 1;
         }
 
         Pack2State.activePowerups = { magnet: 0, sprint: 0, slowmo: 0 };
         Pack2State.hasShield = false;
         Pack2State.lastWeatherChange = 0;
         Pack2State.lightningActive = false;
-        
         changeWeather('clear');
         updateUI();
     });
@@ -168,25 +167,9 @@ window.PackUIs = window.PackUIs || [];
     });
 
     window.GameEvents.on('powerup_collect', (data) => {
-        const pData = P2_CONFIG.powerups.types[data.kind];
-        if (!pData) return;
-
-        // SLOW-MO АКТИВИРУЕТСЯ СРАЗУ
-        if (data.kind === 'slowmo') {
-            Pack2State.activePowerups.slowmo = Date.now() + pData.duration;
-            playSound(Pack2State.powerupAudios['slowmo']);
-            if (window.RenderEngine) {
-                window.RenderEngine.spawnParticles(data.x, data.y, 25, { colors: [pData.color, '#FFFFFF'], speed: 6, life: 35, size: 3, gravity: 0.1 });
-                window.RenderEngine.flash('0,128,255', 0.2);
-            }
-            window.GameEvents.emit('pack3_toast', { text: '⏳ SLOW-MO ACTIVATED', type: 'info' });
-            updateUI();
-            return;
-        }
-
         if (Pack2State.inventory[data.kind] !== undefined) {
             Pack2State.inventory[data.kind]++;
-            if (window.RenderEngine) { window.RenderEngine.spawnParticles(data.x, data.y, 20, { colors: [pData.color, '#FFFFFF'], speed: 5, life: 30, size: 3, gravity: 0.1 }); }
+            if (window.RenderEngine) { window.RenderEngine.spawnParticles(data.x, data.y, 20, { colors: [P2_CONFIG.powerups.types[data.kind].color, '#FFFFFF'], speed: 5, life: 30, size: 3, gravity: 0.1 }); }
             updateUI();
         }
     });
@@ -210,7 +193,7 @@ window.PackUIs = window.PackUIs || [];
     window.GameEvents.on('render_frame', ({ ctx, player }) => {
         const W = ctx.canvas.width; const H = ctx.canvas.height;
         const weather = Pack2State.currentWeather;
-        
+
         if (Pack2State.hasShield && player && !player.isFallingIntoPit) {
             ctx.save();
             const pCenterX = player.x + player.w / 2;
@@ -224,6 +207,8 @@ window.PackUIs = window.PackUIs || [];
             ctx.beginPath(); ctx.arc(pCenterX, pCenterY, radius, 0, Math.PI * 2);
             ctx.fillStyle = grad; ctx.fill();
             ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0, 255, 255, 0.9)'; ctx.stroke();
+            ctx.beginPath(); ctx.arc(pCenterX - radius * 0.3, pCenterY - radius * 0.3, radius * 0.15, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.6)'; ctx.fill();
             ctx.restore();
         }
 
@@ -246,31 +231,50 @@ window.PackUIs = window.PackUIs || [];
             const groundY = H * 0.8;
             if (Pack2State.rainParticles.length < 150) {
                 for(let i=0; i<3; i++) {
-                    Pack2State.rainParticles.push({ x: Math.random() * W, y: -20 - Math.random() * 100, speed: 22 + Math.random() * 10, length: 20 + Math.random() * 20, alpha: 0.8 + Math.random() * 0.2 });
+                    Pack2State.rainParticles.push({
+                        x: Math.random() * W, y: -20 - Math.random() * 100,
+                        speed: 22 + Math.random() * 10, length: 20 + Math.random() * 20,
+                        alpha: 0.8 + Math.random() * 0.2
+                    });
                 }
             }
-            ctx.save(); ctx.globalCompositeOperation = 'screen'; ctx.lineCap = 'round'; ctx.strokeStyle = 'rgba(200, 240, 255, 0.9)'; ctx.lineWidth = 2.5;
+            ctx.save();
+            ctx.globalCompositeOperation = 'screen';
+            ctx.lineCap = 'round';
+            ctx.strokeStyle = 'rgba(200, 240, 255, 0.9)';
+            ctx.lineWidth = 2.5;
             for (let i = Pack2State.rainParticles.length - 1; i >= 0; i--) {
                 const p = Pack2State.rainParticles[i];
-                p.y += p.speed; p.x -= p.speed * 0.15;
+                p.y += p.speed;
+                p.x -= p.speed * 0.15;
                 if (p.y > groundY + (Math.random() * 30)) {
                     for(let j=0; j<2; j++) {
-                        Pack2State.splashParticles.push({ x: p.x, y: groundY + Math.random() * 20, vx: (Math.random() - 0.5) * 6, vy: -Math.random() * 4, life: 20 + Math.random() * 10, maxLife: 30, size: 2 + Math.random() * 2 });
+                        Pack2State.splashParticles.push({
+                            x: p.x, y: groundY + Math.random() * 20,
+                            vx: (Math.random() - 0.5) * 6, vy: -Math.random() * 4,
+                            life: 20 + Math.random() * 10, maxLife: 30, size: 2 + Math.random() * 2
+                        });
                     }
                     p.y = -20 - Math.random() * 100; p.x = Math.random() * W + 50; 
                 }
-                ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x + p.speed * 0.2, p.y + p.length); ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(p.x, p.y);
+                ctx.lineTo(p.x + p.speed * 0.2, p.y + p.length);
+                ctx.stroke();
             }
             ctx.fillStyle = 'rgba(200, 240, 255, 0.7)';
             for (let i = Pack2State.splashParticles.length - 1; i >= 0; i--) {
                 const s = Pack2State.splashParticles[i];
                 s.x += s.vx; s.y += s.vy; s.vy += 0.6; s.life--;
                 if (s.life <= 0) { Pack2State.splashParticles.splice(i, 1); continue; }
-                ctx.beginPath(); ctx.arc(s.x, s.y, s.size * (s.life / s.maxLife), 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath();
+                ctx.arc(s.x, s.y, s.size * (s.life / s.maxLife), 0, Math.PI * 2);
+                ctx.fill();
             }
             ctx.restore();
         } else {
-            Pack2State.rainParticles = []; Pack2State.splashParticles = [];
+            Pack2State.rainParticles = [];
+            Pack2State.splashParticles = [];
         }
 
         if (weather.fog) {
@@ -294,8 +298,11 @@ window.PackUIs = window.PackUIs || [];
         React.useEffect(() => {
             const listener = () => forceUpdate();
             Pack2State.uiListeners.push(listener);
-            return () => { Pack2State.uiListeners = Pack2State.uiListeners.filter(l => l !== listener); };
+            return () => {
+                Pack2State.uiListeners = Pack2State.uiListeners.filter(l => l !== listener);
+            };
         }, []);
+
         if (gameState !== 'playing') return null;
 
         return React.createElement('div', { className: 'pack2-inventory' },
@@ -313,10 +320,16 @@ window.PackUIs = window.PackUIs || [];
                 React.createElement('span', { className: 'inv-icon' }, '⚡'),
                 React.createElement('span', { className: 'inv-count' }, Pack2State.inventory.sprint),
                 React.createElement('span', { className: 'inv-key' }, '3')
+            ),
+            React.createElement('button', { className: `inv-btn ${Pack2State.inventory.slowmo > 0 ? 'active' : ''}`, onClick: () => usePowerup('slowmo') },
+                React.createElement('span', { className: 'inv-icon' }, '⏳'),
+                React.createElement('span', { className: 'inv-count' }, Pack2State.inventory.slowmo),
+                React.createElement('span', { className: 'inv-key' }, '4')
             )
         );
     }
 
     if (window.PackUIs) { window.PackUIs.push(Pack2UI); } else { window.PackUIs = [Pack2UI]; }
+
     console.log('%c🌪️ PACK 2 (Inventory & Weather) loaded', 'color:#00FFFF;font-weight:bold;font-size:14px');
 })();
