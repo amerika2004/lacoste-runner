@@ -113,7 +113,6 @@ window.PackUIs = window.PackUIs || [];
         if (e.code === 'Digit1') usePowerup('shield');
         if (e.code === 'Digit2') usePowerup('magnet');
         if (e.code === 'Digit3') usePowerup('sprint');
-        if (e.code === 'Digit4') usePowerup('slowmo');
     });
 
     // === ПОДПИСКА НА СОБЫТИЯ ===
