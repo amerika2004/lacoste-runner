@@ -314,7 +314,6 @@ canvas { display: block; width: 100%; height: 100%; object-fit: contain; touch-a
    ДОБАВЛЕНО ДЛЯ ОБНОВЛЕНИЯ (game.js v2)
    ================================================================== */
 
-/* Обёртка игры — ведёт себя как #game-container (сохраняет пропорции) */
 .game-root {
     position: relative; box-sizing: border-box;
     background: #000; overflow: hidden;
@@ -326,7 +325,6 @@ canvas { display: block; width: 100%; height: 100%; object-fit: contain; touch-a
     .game-root { width: 1200px; height: 600px; border-radius: 16px; }
 }
 
-/* Меню — новый контейнер .menu-panel (game.js) */
 .menu-panel {
     display: flex; flex-direction: column; align-items: center; justify-content: center;
     width: 100%; max-width: 900px; max-height: 100%;
@@ -335,7 +333,6 @@ canvas { display: block; width: 100%; height: 100%; object-fit: contain; touch-a
 }
 .menu-panel::-webkit-scrollbar { display: none; }
 
-/* Меню — заголовок */
 .menu-title {
     font-family: 'Montserrat', sans-serif; font-weight: 900; font-style: italic;
     font-size: clamp(32px, 7vmin, 80px); letter-spacing: -2px;
@@ -344,28 +341,23 @@ canvas { display: block; width: 100%; height: 100%; object-fit: contain; touch-a
     text-transform: uppercase; line-height: 0.9; margin-bottom: 25px; text-align: center;
 }
 
-/* Меню — контейнер кнопок */
 .menu-buttons {
     display: flex; flex-direction: column; gap: 12px;
     width: 100%; max-width: 340px; margin-bottom: 15px;
 }
 
-/* Меню — строка статистики */
 .menu-stats {
     font-family: 'Rajdhani', sans-serif; font-weight: 700; font-size: 16px;
     color: var(--fh-text-muted); letter-spacing: 2px; text-transform: uppercase;
     margin-top: 10px; text-align: center;
 }
 
-/* Game Over — большой счёт */
 .gameover-score {
     font-family: 'Montserrat', sans-serif; font-weight: 900; font-style: italic;
     font-size: clamp(48px, 10vmin, 96px); color: var(--fh-gold);
     text-shadow: 0 0 30px rgba(255,215,0,0.6); line-height: 1; margin: 15px 0;
 }
 
-/* Переопределение .game-btn внутри панелей —
-   превращает кружок из правого нижнего угла в обычную кнопку на всю ширину */
 .menu-panel .game-btn,
 .menu-buttons .game-btn,
 .settings-panel .game-btn,
@@ -384,7 +376,6 @@ canvas { display: block; width: 100%; height: 100%; object-fit: contain; touch-a
     box-shadow: 0 8px 25px rgba(0,255,204,0.35);
 }
 
-/* HUD сверху по центру (game.js использует .hud-top) */
 .hud-top {
     position: absolute; top: 20px; left: 50%; transform: translateX(-50%);
     display: flex; gap: 22px; align-items: center;
@@ -403,7 +394,6 @@ canvas { display: block; width: 100%; height: 100%; object-fit: contain; touch-a
     color: var(--fh-gold);
 }
 
-/* Кастомизация — оверлей */
 .customization-overlay {
     position: absolute; inset: 0;
     background: linear-gradient(135deg, rgba(5, 10, 20, 0.85) 0%, rgba(10, 5, 20, 0.95) 100%);
@@ -412,7 +402,6 @@ canvas { display: block; width: 100%; height: 100%; object-fit: contain; touch-a
     padding: 2vh 2vw; box-sizing: border-box; overflow-y: auto;
 }
 
-/* Кастомизация — сама панель */
 .customization-panel {
     position: relative; width: 100%; max-width: 600px; max-height: 90%;
     background: var(--fh-bg-dark); border: 1px solid var(--fh-glass-border);
@@ -424,7 +413,6 @@ canvas { display: block; width: 100%; height: 100%; object-fit: contain; touch-a
 .customization-panel::-webkit-scrollbar-track { background: transparent; }
 .customization-panel::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
 
-/* Кастомизация — хедер / вкладки / контент */
 .custom-header {
     display: flex; justify-content: space-between; align-items: center; gap: 15px;
     border-bottom: 1px solid var(--fh-glass-border); padding-bottom: 15px;
@@ -460,7 +448,6 @@ canvas { display: block; width: 100%; height: 100%; object-fit: contain; touch-a
 }
 .custom-content .list { display: flex; flex-direction: column; gap: 10px; }
 
-/* Кнопка-крестик (modal-close) — используется в новых панелях */
 .modal-close {
     background: rgba(255, 255, 255, 0.05);
     border: 1px solid rgba(255, 255, 255, 0.1);
@@ -477,13 +464,11 @@ canvas { display: block; width: 100%; height: 100%; object-fit: contain; touch-a
     transform: rotate(90deg) scale(1.1);
 }
 
-/* Character card — строка со статами */
 .char-card .char-stats {
     font-family: 'Rajdhani', sans-serif; font-weight: 600; font-size: 11px;
     color: var(--fh-text-muted); letter-spacing: 0.5px; text-align: center;
 }
 
-/* Skins — новые классы (game.js) */
 .skin-card.selected {
     border-color: var(--fh-accent); background: rgba(0,255,204,0.08);
     box-shadow: 0 0 20px rgba(0,255,204,0.2);
@@ -496,7 +481,6 @@ canvas { display: block; width: 100%; height: 100%; object-fit: contain; touch-a
 }
 .skin-card.locked .skin-status { color: var(--fh-gold); }
 
-/* Upgrades — строки прокачки статов */
 .upgrade-row {
     display: grid; grid-template-columns: auto 1fr auto; gap: 14px; align-items: center;
     background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);
@@ -526,11 +510,323 @@ canvas { display: block; width: 100%; height: 100%; object-fit: contain; touch-a
 }
 .upgrade-buy-btn:hover { transform: translateY(-2px); background: #FFF; }
 
-/* Скрыть дубль счётчика монет из Pack4HUD (в основном HUD он уже есть) */
 .pack4-hud-coins { display: none; }
 
-/* Mobile */
+/* ==================================================================
+   MENU SHELL (единое меню для всех вкладок: Home / Shop / Promo /
+   Leaderboard / Settings) — используется window.MenuShell
+   ================================================================== */
+
+/* ---- Overlay / Panel ---- */
+.ms-overlay {
+    position: absolute; inset: 0;
+    background: linear-gradient(135deg, rgba(5, 10, 20, 0.92) 0%, rgba(10, 5, 20, 0.97) 100%);
+    backdrop-filter: blur(15px); -webkit-backdrop-filter: blur(15px);
+    z-index: 20; display: flex; justify-content: center; align-items: center;
+    padding: 2vh 2vw; box-sizing: border-box;
+}
+
+.ms-panel {
+    display: flex; flex-direction: column;
+    width: 100%; max-width: 960px; max-height: 100%;
+    background: var(--fh-bg-dark);
+    border: 1px solid var(--fh-glass-border);
+    border-radius: 18px; box-shadow: 0 20px 60px rgba(0,0,0,0.8);
+    overflow: hidden; box-sizing: border-box;
+    padding: 20px;
+}
+
+/* ---- Header ---- */
+.ms-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding-bottom: 14px; border-bottom: 1px solid var(--fh-glass-border);
+    margin-bottom: 14px; flex-shrink: 0;
+}
+.ms-logo {
+    font-family: 'Montserrat', sans-serif; font-weight: 900; font-style: italic;
+    font-size: clamp(20px, 3vmin, 28px); letter-spacing: -1px;
+    background: linear-gradient(90deg, #FFF 0%, var(--fh-accent) 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    text-transform: uppercase;
+}
+.ms-coins {
+    font-family: 'Rajdhani', sans-serif; font-weight: 700; font-size: 20px;
+    color: var(--fh-gold);
+    padding: 6px 16px; border-radius: 20px;
+    background: rgba(255,215,0,0.08); border: 1px solid rgba(255,215,0,0.3);
+}
+
+/* ---- Nav (главные вкладки) ---- */
+.ms-nav {
+    display: flex; gap: 6px; margin-bottom: 14px;
+    padding: 6px; background: rgba(255,255,255,0.03);
+    border-radius: 12px; border: 1px solid rgba(255,255,255,0.06);
+    overflow-x: auto; scrollbar-width: none; flex-shrink: 0;
+}
+.ms-nav::-webkit-scrollbar { display: none; }
+.ms-nav-btn {
+    flex: 1;
+    padding: 10px 14px; border: none; border-radius: 8px;
+    background: transparent; color: var(--fh-text-muted);
+    font-family: 'Montserrat', sans-serif; font-weight: 700; font-size: 13px;
+    cursor: pointer; transition: all 0.2s;
+    text-transform: uppercase; letter-spacing: 1px; white-space: nowrap;
+}
+.ms-nav-btn:hover { color: #FFF; background: rgba(255,255,255,0.05); }
+.ms-nav-btn.active {
+    background: var(--fh-accent); color: #000;
+    box-shadow: 0 4px 14px rgba(0,255,204,0.3);
+}
+
+/* ---- Title ---- */
+.ms-title {
+    font-family: 'Montserrat', sans-serif; font-weight: 800; font-size: 20px;
+    letter-spacing: 2px; color: #FFF; text-transform: uppercase;
+    padding-bottom: 12px; flex-shrink: 0;
+}
+
+/* ---- Content (скроллится внутри панели) ---- */
+.ms-content {
+    flex: 1; min-height: 0; overflow-y: auto;
+    padding: 4px 4px 4px 0;
+    scrollbar-width: thin; scrollbar-color: #333 transparent;
+}
+.ms-content::-webkit-scrollbar { width: 6px; }
+.ms-content::-webkit-scrollbar-track { background: transparent; }
+.ms-content::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+
+/* ---- Home tab ---- */
+.ms-home-title {
+    font-family: 'Montserrat', sans-serif; font-weight: 900; font-style: italic;
+    font-size: clamp(32px, 7vmin, 64px); letter-spacing: -2px;
+    background: linear-gradient(90deg, #FFF 0%, var(--fh-accent) 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    text-transform: uppercase; line-height: 0.9; margin-bottom: 6px; text-align: center;
+}
+.ms-home-sub {
+    font-family: 'Rajdhani', sans-serif; font-weight: 700; font-size: 13px;
+    color: var(--fh-text-muted); letter-spacing: 6px; text-transform: uppercase;
+    text-align: center; margin-bottom: 22px;
+}
+.ms-actions {
+    display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px;
+}
+
+/* ---- Section title / Row ---- */
+.ms-section-title {
+    font-family: 'Rajdhani', sans-serif; font-weight: 700; font-size: 15px;
+    color: var(--fh-accent); text-transform: uppercase; letter-spacing: 2px;
+    margin-bottom: 10px;
+}
+.ms-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 4px 0;
+}
+.ms-row span {
+    font-family: 'Montserrat', sans-serif; font-weight: 600; font-size: 14px;
+    color: var(--fh-text);
+}
+
+/* ---- Character tabs (Home + Shop) ---- */
+.ms-char-tabs {
+    display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px;
+}
+.ms-char-tab {
+    padding: 8px 16px; border-radius: 10px;
+    background: rgba(255,255,255,0.03); border: 1px solid var(--fh-glass-border);
+    color: var(--fh-text-muted);
+    font-family: 'Montserrat', sans-serif; font-weight: 700; font-size: 13px;
+    cursor: pointer; transition: all 0.2s; text-transform: uppercase; letter-spacing: 1px;
+}
+.ms-char-tab:hover { color: #FFF; background: rgba(255,255,255,0.07); }
+.ms-char-tab.active {
+    border-color: var(--fh-accent); color: var(--fh-accent);
+    background: rgba(0,255,204,0.1); box-shadow: 0 0 15px rgba(0,255,204,0.2);
+}
+
+/* ---- Time of day ---- */
+.ms-tod {
+    display: flex; gap: 10px; margin-bottom: 8px;
+}
+.ms-tod-btn {
+    flex: 1; padding: 10px 16px; border-radius: 10px;
+    background: rgba(255,255,255,0.03); border: 1px solid var(--fh-glass-border);
+    color: var(--fh-text-muted);
+    font-family: 'Montserrat', sans-serif; font-weight: 700; font-size: 13px;
+    cursor: pointer; transition: all 0.2s; text-transform: uppercase; letter-spacing: 1px;
+}
+.ms-tod-btn:hover { color: #FFF; background: rgba(255,255,255,0.07); }
+.ms-tod-btn.active {
+    border-color: var(--fh-accent); color: var(--fh-accent);
+    background: rgba(0,255,204,0.1); box-shadow: 0 0 15px rgba(0,255,204,0.2);
+}
+
+/* ---- Buttons ---- */
+.ms-btn {
+    padding: 12px 22px; border-radius: 10px;
+    background: rgba(255,255,255,0.05); border: 1px solid var(--fh-glass-border);
+    color: var(--fh-text);
+    font-family: 'Montserrat', sans-serif; font-weight: 700; font-size: 14px;
+    cursor: pointer; transition: all 0.2s; text-transform: uppercase; letter-spacing: 1px;
+}
+.ms-btn:hover { background: rgba(255,255,255,0.1); transform: translateY(-1px); }
+.ms-btn.primary {
+    background: var(--fh-accent); color: #000; border: none;
+    box-shadow: 0 6px 20px rgba(0,255,204,0.35);
+}
+.ms-btn.primary:hover { background: #FFF; transform: translateY(-2px); }
+.ms-btn.ghost { background: transparent; }
+.ms-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+/* ---- Sub-tabs (внутри Shop / Settings) ---- */
+.ms-tabs {
+    display: flex; gap: 6px;
+    padding: 6px; background: rgba(255,255,255,0.03);
+    border-radius: 10px; border: 1px solid rgba(255,255,255,0.06);
+    margin-bottom: 14px;
+}
+.ms-tab {
+    flex: 1; padding: 9px 12px; border: none; border-radius: 8px;
+    background: transparent; color: var(--fh-text-muted);
+    font-family: 'Montserrat', sans-serif; font-weight: 700; font-size: 12px;
+    cursor: pointer; transition: all 0.2s; text-transform: uppercase; letter-spacing: 1px;
+}
+.ms-tab:hover { color: #FFF; background: rgba(255,255,255,0.05); }
+.ms-tab.active {
+    background: var(--fh-accent); color: #000;
+    box-shadow: 0 4px 14px rgba(0,255,204,0.3);
+}
+
+/* ---- Grid cards (Shop / Skins / Upgrades) ---- */
+.ms-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 12px;
+}
+.ms-card {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--fh-glass-border);
+    border-radius: 14px; padding: 14px;
+    display: flex; flex-direction: column; align-items: center; text-align: center;
+    gap: 8px; transition: all 0.2s; position: relative;
+}
+.ms-card:hover {
+    background: rgba(255,255,255,0.07); transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+}
+.ms-card.owned { border-color: rgba(0,255,204,0.4); background: rgba(0,255,204,0.05); }
+.ms-card.maxed { border-color: var(--fh-gold); background: rgba(255,215,0,0.05); }
+.ms-card-tier {
+    font-family: 'Montserrat', sans-serif; font-weight: 800; font-size: 10px;
+    text-transform: uppercase; letter-spacing: 1px;
+    padding: 3px 10px; border-radius: 12px;
+}
+.ms-card-icon {
+    font-size: 36px; line-height: 1;
+    filter: drop-shadow(0 2px 5px rgba(0,0,0,0.5));
+}
+.ms-card-name {
+    font-family: 'Montserrat', sans-serif; font-weight: 800; font-size: 14px;
+    color: #FFF;
+}
+.ms-card-sub {
+    font-family: 'Rajdhani', sans-serif; font-weight: 600; font-size: 12px;
+    color: var(--fh-text-muted); line-height: 1.3; margin-bottom: 4px;
+}
+
+.ms-buy-btn {
+    background: var(--fh-accent); color: #000; border: none;
+    padding: 8px 16px; border-radius: 8px;
+    font-family: 'Montserrat', sans-serif; font-weight: 800; font-size: 12px;
+    cursor: pointer; transition: all 0.2s; width: 100%; margin-top: auto;
+    text-transform: uppercase; letter-spacing: 1px;
+}
+.ms-buy-btn:hover { background: #FFF; transform: scale(1.03); box-shadow: 0 0 12px rgba(255,255,255,0.4); }
+.ms-buy-btn.equipped {
+    background: rgba(0,255,204,0.15); color: var(--fh-accent);
+    border: 1px solid var(--fh-accent); cursor: default;
+}
+.ms-buy-btn.maxed {
+    background: rgba(255,215,0,0.15); color: var(--fh-gold);
+    border: 1px solid var(--fh-gold); cursor: default;
+}
+.ms-buy-btn:disabled { cursor: default; transform: none; box-shadow: none; }
+
+/* ---- Progress bar ---- */
+.ms-progress {
+    width: 100%; height: 6px; background: #222;
+    border-radius: 3px; overflow: hidden; margin: 4px 0;
+}
+.ms-progress-bar {
+    height: 100%; background: var(--fh-accent); border-radius: 3px;
+    transition: width 0.3s ease;
+}
+.ms-progress-bar.maxed { background: var(--fh-gold); }
+
+/* ---- Empty state ---- */
+.ms-empty {
+    padding: 40px 20px; text-align: center;
+    font-family: 'Rajdhani', sans-serif; font-weight: 700; font-size: 16px;
+    color: var(--fh-text-muted); letter-spacing: 1px;
+}
+
+/* ---- Promo ---- */
+.ms-promo-card {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--fh-glass-border);
+    border-radius: 14px; padding: 18px; margin-bottom: 14px;
+}
+.ms-promo-code {
+    font-family: 'Rajdhani', sans-serif; font-weight: 700;
+    font-size: clamp(18px, 3vmin, 24px);
+    color: var(--fh-accent); letter-spacing: 3px;
+    padding: 10px; text-align: center;
+    background: rgba(0,255,204,0.08); border-radius: 8px;
+    border: 1px dashed rgba(0,255,204,0.3);
+}
+.ms-promo-hint {
+    font-family: 'Rajdhani', sans-serif; font-weight: 600; font-size: 12px;
+    color: var(--fh-text-muted); margin-top: 8px;
+}
+
+.ms-input {
+    flex: 1; padding: 10px 14px;
+    background: rgba(0,0,0,0.4); border: 1px solid var(--fh-glass-border);
+    border-radius: 8px; color: #FFF;
+    font-family: 'Rajdhani', sans-serif; font-weight: 600; font-size: 15px;
+    outline: none; transition: all 0.2s;
+}
+.ms-input:focus { border-color: var(--fh-accent); box-shadow: 0 0 12px rgba(0,255,204,0.2); }
+.ms-input:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ---- Settings: range-слайдеры внутри .ms-row ---- */
+.ms-row input[type="range"] {
+    -webkit-appearance: none; appearance: none;
+    height: 4px; background: #333; border-radius: 2px;
+    outline: none; cursor: pointer;
+}
+.ms-row input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 16px; height: 16px;
+    background: var(--fh-accent); border-radius: 50%; cursor: pointer;
+    box-shadow: 0 0 10px var(--fh-accent);
+}
+.ms-row input[type="range"]::-moz-range-thumb {
+    width: 16px; height: 16px;
+    background: var(--fh-accent); border: none; border-radius: 50%;
+    cursor: pointer; box-shadow: 0 0 10px var(--fh-accent);
+}
+
+/* ---- Mobile ---- */
 @media (max-width: 480px) {
+    .ms-panel { padding: 12px; border-radius: 12px; }
+    .ms-title { font-size: 16px; padding-bottom: 8px; }
+    .ms-nav-btn { padding: 8px 10px; font-size: 11px; }
+    .ms-card { padding: 10px; }
+    .ms-card-icon { font-size: 28px; }
+    .ms-card-name { font-size: 12px; }
+    .ms-grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+    .ms-tab { font-size: 10px; padding: 7px 6px; }
+    .ms-char-tab { font-size: 11px; padding: 7px 12px; }
+    .ms-tod-btn { font-size: 11px; padding: 8px 10px; }
     .custom-content .grid { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); }
     .upgrade-row { grid-template-columns: 1fr auto; }
     .upgrade-bar { display: none; }
