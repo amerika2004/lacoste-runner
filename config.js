@@ -11,9 +11,7 @@
             sfxVolume: 0.7, ambientVolume: 0.25, masterVolume: 1.0, soundEnabled: true, graphics: 'high', 
             comboEnabled: true, comboVisualsEnabled: true, weatherEnabled: true, dynamicMusicEnabled: true,
             biomesEnabled: true, achievementsEnabled: true, dailyGoalsEnabled: true,
-            // НОВЫЕ НАСТРОЙКИ HUD
-            hudScale: 1.0,
-            hudOpacity: 0.8
+            hudScale: 1.0, hudOpacity: 0.8
         },
         
         combo: {
@@ -33,8 +31,8 @@
                 types: {
                     shield: { emoji: '🛡️', duration: 0, color: '#00FFFF', sound: 'source/sounds/powerup_shield.wav' },
                     magnet: { emoji: '🧲', duration: 5000, color: '#FF0000', sound: 'source/sounds/powerup_magnet.wav' },
-                    slowmo: { emoji: '⏳', duration: 3000, color: '#0000FF', sound: 'source/sounds/powerup_slowmo.wav' },
-                    sprint: { emoji: '⚡', duration: 3000, color: '#FFD700', sound: 'source/sounds/powerup_sprint.wav' }
+                    sprint: { emoji: '⚡', duration: 3000, color: '#FFD700', sound: 'source/sounds/powerup_sprint.wav' },
+                    slowmo: { emoji: '⏳', duration: 3000, color: '#0080FF', sound: 'source/sounds/powerup_slowmo.wav' }
                 }
             },
             weather: {
@@ -83,16 +81,21 @@
             economy: { coinsPerMeter: 1, bonusCombo: 5, bonusGoldenFood: 50 },
             shop: {
                 skins: [
-                    { id: 'default', name: 'Default', price: 0, color: null, unlocked: true },
-                    { id: 'gold', name: 'Golden Croc', price: 5000, color: 'gold', unlocked: false }
+                    { id: 'default', name: 'Default', price: 0, color: null, unlocked: true, icon: '🐊' },
+                    { id: 'gold', name: 'Golden Croc', price: 5000, color: 'gold', unlocked: false, icon: '👑' }
                 ],
                 buffs: [
-                    { id: 'start_hp', name: '+2 Max HP', price: 500, description: 'Start with 8 HP instead of 6' },
-                    { id: 'start_shield', name: 'Start with Shield', price: 1000, description: 'Start each run with a shield' },
-                    { id: 'start_speed', name: '+5% Score Rate', price: 1500, description: 'Gain points 5% faster' }
+                    { id: 'start_hp', name: 'Max HP', price: 500, description: '+2 Start HP', icon: '❤️' },
+                    { id: 'start_shield', name: 'Shield Start', price: 1000, description: 'Start with 🛡️', icon: '🛡️' },
+                    { id: 'start_speed', name: 'Speed Boost', price: 1500, description: '+5% Score Rate', icon: '⚡' },
+                    { id: 'start_combo', name: 'Combo Start', price: 2000, description: 'Start with x3 Combo', icon: '🔥' },
+                    { id: 'revive', name: 'Second Chance', price: 3000, description: 'Survive 1 fatal hit', icon: '💖' }
                 ],
-                backgrounds: [
-                    { id: 'bg_cyber', name: 'Cyberpunk', price: 2000, dayImg: 'source/bg_cyber_day.jpg', nightImg: 'source/bg_cyber_night.jpg' }
+                consumables: [
+                    { id: 'shield', name: 'Shield', price: 100, icon: '🛡️', color: '#00FFFF' },
+                    { id: 'magnet', name: 'Magnet', price: 150, icon: '🧲', color: '#FF0000' },
+                    { id: 'sprint', name: 'Sprint', price: 150, icon: '⚡', color: '#FFD700' },
+                    { id: 'slowmo', name: 'Slow-mo', price: 100, icon: '⏳', color: '#0080FF' }
                 ]
             },
             missions: [
