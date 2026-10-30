@@ -1,5 +1,5 @@
 /* ==================================================================
-   PACK 5 — 3D Model Loader (ИСПРАВЛЕННАЯ ВЕРСИЯ)
+   PACK 5 — 3D Model Loader (Config-Driven)
    ================================================================== */
 window.GameEvents = window.GameEvents || { listeners: {}, on(e,c){ if(!this.listeners[e]) this.listeners[e]=[]; this.listeners[e].push(c); }, emit(e,d){ if(this.listeners[e]) this.listeners[e].forEach(cb=>cb(d)); } };
 window.PackUIs = window.PackUIs || [];
@@ -9,40 +9,68 @@ window.PackUIs = window.PackUIs || [];
     if (!window.THREE) { console.error('❌ Three.js не загружен!'); return; }
 
     let currentCharacter = localStorage.getItem('lacosteCharacter') || 'crocodile';
+    let settings3DEnabled = true;
+    let isModelLoaded = false;
+    let currentState = 'run';
 
-    window.GameEvents.on('pack4_character_changed', (data) => {
-        currentCharacter = data.charId;
-    });
-    window.GameEvents.on('start', (data) => {
-        currentCharacter = data.character;
-    });
+    // === КЭШ МОДЕЛЕЙ ===
+    const modelCache = {};
+
+    function loadModelForCharacter(charId, onLoaded) {
+        if (modelCache[charId]) {
+            onLoaded(modelCache[charId]);
+            return;
+        }
+        const charConf = window.GAME_CONFIG?.characters?.[charId];
+        if (!charConf || !charConf.model3d) {
+            onLoaded(null);
+            return;
+        }
+
+        const { obj, mtl } = charConf.model3d;
+        const mtlLoader = new THREE.MTLLoader();
+        mtlLoader.load(mtl, (materials) => {
+            materials.preload();
+            const objLoader = new THREE.OBJLoader();
+            objLoader.setMaterials(materials);
+            objLoader.load(obj, (object) => {
+                const box = new THREE.Box3().setFromObject(object);
+                const center = box.getCenter(new THREE.Vector3());
+                object.position.sub(center);
+                
+                const size = box.getSize(new THREE.Vector3());
+                const maxDim = Math.max(size.x, size.y, size.z);
+                object.scale.setScalar(2 / maxDim); 
+                
+                // ПОВОРОТ МОДЕЛИ (подстрой под свою .obj, если смотрит не туда)
+                object.rotation.y = Math.PI / 2; 
+
+                modelCache[charId] = object;
+                onLoaded(object);
+            }, undefined, (err) => { console.error('Ошибка загрузки OBJ:', err); onLoaded(null); });
+        }, undefined, (err) => { console.error('Ошибка загрузки MTL:', err); onLoaded(null); });
+    }
 
     // ==========================================
     // 1. КОМПОНЕНТ ДЛЯ 3D ПРЕВЬЮ В МЕНЮ
     // ==========================================
-    window.ThreePreview = function ThreePreview() {
+    window.ThreePreview = function ThreePreview({ charId, emoji }) {
         const containerRef = React.useRef(null);
+        const [loaded, setLoaded] = React.useState(false);
         
         React.useEffect(() => {
             if (!window.THREE || !containerRef.current) return;
             
             const container = containerRef.current;
-            // Делаем холст побольше (100x100), а в CSS уменьшим
             const width = 100, height = 100;
             
-            const renderer = new THREE.WebGLRenderer({ 
-                alpha: true, 
-                antialias: true,
-                preserveDrawingBuffer: true 
-            });
+            const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, preserveDrawingBuffer: true });
             renderer.setSize(width, height);
             renderer.setClearColor(0x000000, 0);
             container.appendChild(renderer.domElement);
             
             const scene = new THREE.Scene();
             const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
-            
-            // Ставим камеру ровно напротив центра (0,0,0)
             camera.position.set(0, 0, 5); 
             camera.lookAt(0, 0, 0);
             
@@ -51,66 +79,48 @@ window.PackUIs = window.PackUIs || [];
             dirLight.position.set(5, 10, 7);
             scene.add(dirLight);
             
-            let group = null;
-            let isLoaded = false;
-            
-            const mtlLoader = new THREE.MTLLoader();
-            mtlLoader.load('https://github.com/amerika2004/lacoste-runner/blob/lacoste-runner/source/characters/crocodile_3d/Kip.mtl', (materials) => {
-                materials.preload();
-                const objLoader = new THREE.OBJLoader();
-                objLoader.setMaterials(materials);
-                objLoader.load('https://github.com/amerika2004/lacoste-runner/blob/lacoste-runner/source/characters/crocodile_3d/Kip.obj', (object) => {
-                    const box = new THREE.Box3().setFromObject(object);
-                    const center = box.getCenter(new THREE.Vector3());
-                    object.position.sub(center);
-                    
-                    const size = box.getSize(new THREE.Vector3());
-                    const maxDim = Math.max(size.x, size.y, size.z);
-                    // Увеличиваем масштаб до 2.5, чтобы модель была крупной
-                    object.scale.setScalar(2.5 / maxDim);
-                    
-                    group = new THREE.Group();
-                    group.add(object);
-                    // Поворот (если нужно)
-                    group.rotation.y = Math.PI / 2; 
-                    scene.add(group);
-                    isLoaded = true;
-                });
-            });
+            const group = new THREE.Group();
+            scene.add(group);
             
             let animId;
-            const animate = () => {
-                animId = requestAnimationFrame(animate);
-                if (isLoaded && group) {
-                    group.rotation.y += 0.02; 
+            let isActive = true;
+
+            loadModelForCharacter(charId, (model) => {
+                if (!isActive) return;
+                if (model) {
+                    const clonedModel = model.clone();
+                    clonedModel.scale.multiplyScalar(1.2); 
+                    group.add(clonedModel);
+                    setLoaded(true);
                 }
+            });
+
+            const animate = () => {
+                if (!isActive) return;
+                animId = requestAnimationFrame(animate);
+                group.rotation.y += 0.02; 
                 renderer.render(scene, camera);
             };
             animate();
             
             return () => {
+                isActive = false;
                 cancelAnimationFrame(animId);
                 renderer.dispose();
                 if (container.contains(renderer.domElement)) {
                     container.removeChild(renderer.domElement);
                 }
             };
-        }, []);
+        }, [charId]);
         
-        // Задаем жесткие размеры контейнеру, чтобы он не схлопывался в 0
-        return React.createElement('div', { 
-            ref: containerRef, 
-            style: { 
-                width: '40px', 
-                height: '40px', 
-                minWidth: '40px',
-                display: 'inline-block', 
-                verticalAlign: 'middle',
-                overflow: 'hidden'
-            } 
-        });
+        return React.createElement('div', { style: { position: 'relative', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center' } },
+            !loaded && React.createElement('span', { style: { fontSize: '24px' } }, emoji || '❓'),
+            React.createElement('div', { 
+                ref: containerRef, 
+                style: { position: 'absolute', inset: 0, opacity: loaded ? 1 : 0, transition: 'opacity 0.3s' } 
+            })
+        );
     };
-
 
     // ==========================================
     // 2. ВНЕДРЕНИЕ 3D В САМ ГЕЙМПЛЕЙ
@@ -122,20 +132,14 @@ window.PackUIs = window.PackUIs || [];
     threeCanvas.naturalWidth = 256;
     threeCanvas.naturalHeight = 256;
 
-    // ВОТ ГЛАВНЫЙ ФИКС: preserveDrawingBuffer: true (без него холст мигает)
-    const renderer = new THREE.WebGLRenderer({ 
-        canvas: threeCanvas, 
-        alpha: true, 
-        antialias: true,
-        preserveDrawingBuffer: true 
-    });
+    const renderer = new THREE.WebGLRenderer({ canvas: threeCanvas, alpha: true, antialias: true, preserveDrawingBuffer: true });
     renderer.setSize(256, 256);
     renderer.setClearColor(0x000000, 0);
 
     const scene3D = new THREE.Scene();
     const camera3D = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
     camera3D.position.set(0, 0, 5);
-    camera3D.lookAt(0, 0, 0); // Камера смотрит в центр
+    camera3D.lookAt(0, 0, 0);
 
     scene3D.add(new THREE.AmbientLight(0xffffff, 0.7));
     const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
@@ -145,31 +149,32 @@ window.PackUIs = window.PackUIs || [];
     const modelGroup = new THREE.Group();
     scene3D.add(modelGroup);
 
-    let isModelLoaded = false;
-    let currentState = 'run';
+    window.GameEvents.on('pack4_character_changed', (data) => {
+        currentCharacter = data.charId;
+    });
 
-    const mtlLoader = new THREE.MTLLoader();
-    mtlLoader.load('https://github.com/amerika2004/lacoste-runner/blob/lacoste-runner/source/characters/crocodile_3d/Kip.mtl', (materials) => {
-        materials.preload();
-        const objLoader = new THREE.OBJLoader();
-        objLoader.setMaterials(materials);
-        objLoader.load('https://github.com/amerika2004/lacoste-runner/blob/lacoste-runner/source/characters/crocodile_3d/Kip.obj', (object) => {
-            const box = new THREE.Box3().setFromObject(object);
-            const center = box.getCenter(new THREE.Vector3());
-            object.position.sub(center);
-            
-            const size = box.getSize(new THREE.Vector3());
-            const maxDim = Math.max(size.x, size.y, size.z);
-            object.scale.setScalar(2 / maxDim); 
+    window.GameEvents.on('start', (data) => {
+        currentCharacter = data.character;
+        settings3DEnabled = data.settings.use3DCharacters !== false;
+        currentState = 'run';
+        
+        const charConf = window.GAME_CONFIG?.characters?.[currentCharacter];
+        if (settings3DEnabled && charConf?.model3d) {
+            loadModelForCharacter(currentCharacter, (model) => {
+                if (model) {
+                    modelGroup.clear();
+                    const cloned = model.clone();
+                    modelGroup.add(cloned);
+                    isModelLoaded = true;
+                } else {
+                    isModelLoaded = false;
+                }
+            });
+        } else {
+            isModelLoaded = false;
+        }
+    });
 
-            modelGroup.rotation.y = Math.PI / 2; 
-            modelGroup.add(object);
-            isModelLoaded = true;
-            console.log('🐊 3D Модель для геймплея загружена!');
-        }, undefined, (err) => console.error('Ошибка загрузки OBJ:', err));
-    }, undefined, (err) => console.error('Ошибка загрузки MTL:', err));
-
-    window.GameEvents.on('start', () => { currentState = 'run'; });
     window.GameEvents.on('jump', () => { currentState = 'jump'; });
     window.GameEvents.on('land', () => { currentState = 'run'; });
     window.GameEvents.on('eat', () => { currentState = 'eat'; setTimeout(()=> currentState='run', 500); });
@@ -183,8 +188,8 @@ window.PackUIs = window.PackUIs || [];
         const originalDraw = window.RenderEngine.draw;
 
         window.RenderEngine.draw = function (ctx, canvas, scene) {
-            // Если выбран не крокодил, или модель не загрузилась — рисуем 2D спрайт
-            if (currentCharacter !== 'crocodile' || !isModelLoaded || !scene.player) {
+            // Если настройка выключена, или модель не загрузилась — рисуем 2D спрайт
+            if (!settings3DEnabled || !isModelLoaded || !scene.player) {
                 return originalDraw.call(this, ctx, canvas, scene);
             }
 
@@ -208,19 +213,16 @@ window.PackUIs = window.PackUIs || [];
                 modelGroup.rotation.z = 0.5;
             }
 
-            // Рендерим 3D
             renderer.render(scene3D, camera3D);
 
-            // Подменяем картинку и вызываем оригинальный рендер
             const originalImg = scene.player.img;
             scene.player.img = threeCanvas;
 
             originalDraw.call(this, ctx, canvas, scene);
 
-            // Возвращаем как было
             scene.player.img = originalImg;
         };
-        console.log('%c🐊 3D Render Bridge активен', 'color:#00FFCC;font-weight:bold');
+        console.log('%c🐊 3D Render Bridge активен (Config-Driven)', 'color:#00FFCC;font-weight:bold');
     };
 
     const waitForEngine = setInterval(() => {
