@@ -13,7 +13,7 @@ window.PackUIs = window.PackUIs || [];
 
     const P4_CONFIG = (window.GAME_CONFIG && window.GAME_CONFIG.pack4) || {
         economy: { coinsPerMeter: 1, bonusCombo: 5, bonusGoldenFood: 50 },
-        shop: { skins: [], buffs: [], consumables: [] },
+        shop: { buffs: [], consumables: [] }, // Убрали skins
         missions: [],
         secrets: { goldenCrocDistance: 5000, konami: { code: [], duration: 10000 }, ufoChance: 0.05, ufoCoins: 100 }
     };
@@ -56,9 +56,7 @@ window.PackUIs = window.PackUIs || [];
     function buyItem(type, id, price) {
         if (Pack4State.coins < price) { window.GameEvents.emit('pack4_toast', { text: '❌ Not enough coins!', type: 'danger' }); return; }
         Pack4State.coins -= price;
-        if (type === 'skin') {
-            if (!Pack4State.unlockedSkins.includes(id)) Pack4State.unlockedSkins.push(id);
-        } else if (type === 'buff') {
+        if (type === 'buff') {
             if (!Pack4State.boughtBuffs.includes(id)) Pack4State.boughtBuffs.push(id);
         }
         window.GameEvents.emit('pack4_toast', { text: '✅ Purchased!', type: 'success' });
@@ -175,7 +173,7 @@ window.PackUIs = window.PackUIs || [];
 
     function Pack4Shop() {
         const [visible, setVisible] = React.useState(false);
-        const [activeTab, setActiveTab] = React.useState('skins');
+        const [activeTab, setActiveTab] = React.useState('upgrades'); // Теперь по умолчанию 'upgrades'
         const [, forceUpdate] = React.useReducer(x => x + 1, 0);
 
         React.useEffect(() => {
@@ -201,27 +199,14 @@ window.PackUIs = window.PackUIs || [];
                     )
                 ),
 
+                // Оставили только 2 вкладки
                 React.createElement('div', { className: 'shop-tabs' },
-                    React.createElement('button', { className: `shop-tab ${activeTab === 'skins' ? 'active' : ''}`, onClick: () => setActiveTab('skins') }, 'Skins'),
                     React.createElement('button', { className: `shop-tab ${activeTab === 'upgrades' ? 'active' : ''}`, onClick: () => setActiveTab('upgrades') }, 'Upgrades'),
                     React.createElement('button', { className: `shop-tab ${activeTab === 'consumables' ? 'active' : ''}`, onClick: () => setActiveTab('consumables') }, 'Consumables')
                 ),
 
                 React.createElement('div', { className: 'shop-content' },
-                    activeTab === 'skins' && React.createElement('div', { className: 'pack4-section' },
-                        React.createElement('div', { className: 'pack4-grid' },
-                            P4_CONFIG.shop.skins.map(skin => {
-                                const owned = Pack4State.unlockedSkins.includes(skin.id);
-                                return React.createElement('div', { key: skin.id, className: `pack4-item ${owned ? 'owned' : ''}` },
-                                    React.createElement('div', { className: 'pack4-item-icon' }, skin.id === 'gold' ? '👑' : '🐊'),
-                                    React.createElement('div', { className: 'pack4-item-name' }, skin.name),
-                                    !owned && React.createElement('button', { className: 'pack4-buy-btn', onClick: () => buyItem('skin', skin.id, skin.price) }, `💰 ${skin.price}`),
-                                    owned && React.createElement('div', { className: 'pack4-owned-label' }, 'OWNED')
-                                );
-                            })
-                        )
-                    ),
-
+                    // ВКЛАДКА УЛУЧШЕНИЙ
                     activeTab === 'upgrades' && React.createElement('div', { className: 'pack4-section' },
                         React.createElement('div', { className: 'pack4-grid' },
                             P4_CONFIG.shop.buffs.map(buff => {
@@ -237,6 +222,7 @@ window.PackUIs = window.PackUIs || [];
                         )
                     ),
 
+                    // ВКЛАДКА РАСХОДНИКОВ
                     activeTab === 'consumables' && React.createElement('div', { className: 'pack4-section' },
                         React.createElement('div', { className: 'pack4-grid' },
                             P4_CONFIG.shop.consumables.map(item => {
