@@ -81,8 +81,9 @@
             economy: { coinsPerMeter: 1, bonusCombo: 5, bonusGoldenFood: 50 },
             shop: {
                 skins: [
-                    { id: 'gold', name: 'Golden Croc', price: 5000, icon: '👑', desc: 'Golden Crocodile Skin' },
-                    { id: 'red', name: 'Red Panda', price: 3000, icon: '🔴', desc: 'Red Panda Skin' }
+                    { id: 'default', name: 'Default', price: 0, color: null, unlocked: true, icon: '🐊' },
+                    { id: 'gold', name: 'Golden Croc', price: 5000, color: '#FFD700', unlocked: false, icon: '👑' },
+                    { id: 'red',  name: 'Red Panda', price: 3000, color: '#FF4500', unlocked: false, icon: '🔴' }
                 ],
                 buffs: [
                     { id: 'start_hp', name: 'Max HP', price: 500, description: '+2 Start HP', icon: '❤️' },
@@ -98,6 +99,10 @@
                     { id: 'slowmo', name: 'Slow-mo', price: 100, icon: '⏳', color: '#0080FF' }
                 ]
             },
+            upgrades: {
+                pricePerLevel: 500,
+                statBonus: 0.05
+            },
             missions: [
                 { id: 'm_run_2000', title: 'Run 2000m', target: 2000, type: 'distance', reward: 200 },
                 { id: 'm_eat_20', title: 'Eat 20 foods', target: 20, type: 'food', reward: 150 },
@@ -111,9 +116,9 @@
         },
 
         characters: {
-            crocodile: { 
-                id: 'crocodile', name: 'Crocodile', emoji: '🐊', folder: 'source/characters/crocodile', 
-                frameCount: 12, baseWidth: 165.4, baseHeight: 110.3, 
+            crocodile: {
+                id: 'crocodile', name: 'Crocodile', emoji: '🐊', folder: 'source/characters/crocodile',
+                frameCount: 12, baseWidth: 165.4, baseHeight: 110.3,
                 foodEmojis: ['🍗', '🍔', '🍕', '🥩'], eatEmoji: null, eatFolder: null, eatFrameCount: 0, eatDuration: 0,
                 stats: { speed: 1.0, jump: 1.0, luck: 1.0 },
                 skins: [
@@ -121,9 +126,9 @@
                     { id: 'gold', name: 'Golden Croc', color: '#FFD700', price: 5000, unlocked: false }
                 ]
             },
-            panda: { 
-                id: 'panda', name: 'Panda', emoji: '🐼', folder: 'source/characters/panda', 
-                frameCount: 20, baseWidth: 160, baseHeight: 120, 
+            panda: {
+                id: 'panda', name: 'Panda', emoji: '🐼', folder: 'source/characters/panda',
+                frameCount: 20, baseWidth: 160, baseHeight: 120,
                 foodEmojis: ['🎋'], eatEmoji: '🎋', eatFolder: 'source/characters/panda/eating', eatFrameCount: 8, eatDuration: 4.0,
                 stats: { speed: 0.9, jump: 1.15, luck: 1.2 },
                 skins: [
