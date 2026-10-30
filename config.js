@@ -50,8 +50,8 @@
         pack3: {
             biomes: [
                 { id: 'forest', name: '🌳 Forest', distance: 0, dayImg: 'source/landscape.jpg', nightImg: 'source/landscape_n.jpg', obstacleTypes: ['barrel', 'rock', 'cactus', 'puddle', 'pit'] },
-//                { id: 'desert', name: '🏜️ Desert', distance: 1000, dayImg: 'source/desert_day.jpg', nightImg: 'source/desert_night.jpg', obstacleTypes: ['cactus', 'rock', 'pit'] },
-//                { id: 'city', name: '🏙️ City', distance: 2000, dayImg: 'source/city_day.jpg', nightImg: 'source/city_night.jpg', obstacleTypes: ['barrel', 'puddle', 'pit'] },
+                { id: 'desert', name: '🏜️ Desert', distance: 1000, dayImg: 'source/desert_day.jpg', nightImg: 'source/desert_night.jpg', obstacleTypes: ['cactus', 'rock', 'pit'] },
+                { id: 'city', name: '🏙️ City', distance: 2000, dayImg: 'source/city_day.jpg', nightImg: 'source/city_night.jpg', obstacleTypes: ['barrel', 'puddle', 'pit'] },
                 { id: 'jungle', name: '🌿 Jungle', distance: 3000, dayImg: 'source/jungle_day.jpg', nightImg: 'source/jungle_night.jpg', obstacleTypes: ['cactus', 'puddle', 'pit'] }
             ],
             music: {
@@ -80,10 +80,6 @@
         pack4: {
             economy: { coinsPerMeter: 1, bonusCombo: 5, bonusGoldenFood: 50 },
             shop: {
-                skins: [
-                    { id: 'default', name: 'Default', price: 0, color: null, unlocked: true, icon: '🐊' },
-                    { id: 'gold', name: 'Golden Croc', price: 5000, color: 'gold', unlocked: false, icon: '👑' }
-                ],
                 buffs: [
                     { id: 'start_hp', name: 'Max HP', price: 500, description: '+2 Start HP', icon: '❤️' },
                     { id: 'start_shield', name: 'Shield Start', price: 1000, description: 'Start with 🛡️', icon: '🛡️' },
@@ -111,8 +107,26 @@
         },
 
         characters: {
-            crocodile: { id: 'crocodile', name: 'Crocodile', emoji: '🐊', folder: 'source/characters/crocodile', frameCount: 12, baseWidth: 165.4, baseHeight: 110.3, foodEmojis: ['🍗', '🍔', '🍕', '🥩'], eatEmoji: null, eatFolder: null, eatFrameCount: 0, eatDuration: 0 },
-            panda: { id: 'panda', name: 'Panda', emoji: '🐼', folder: 'source/characters/panda', frameCount: 20, baseWidth: 160, baseHeight: 120, foodEmojis: ['🎋'], eatEmoji: '🎋', eatFolder: 'source/characters/panda/eating', eatFrameCount: 8, eatDuration: 4.0 }
+            crocodile: { 
+                id: 'crocodile', name: 'Crocodile', emoji: '🐊', folder: 'source/characters/crocodile', 
+                frameCount: 12, baseWidth: 165.4, baseHeight: 110.3, 
+                foodEmojis: ['🍗', '🍔', '🍕', '🥩'], eatEmoji: null, eatFolder: null, eatFrameCount: 0, eatDuration: 0,
+                stats: { speed: 1.0, jump: 1.0, luck: 1.0 },
+                skins: [
+                    { id: 'default', name: 'Original', color: null, price: 0, unlocked: true },
+                    { id: 'gold', name: 'Golden Croc', color: '#FFD700', price: 5000, unlocked: false }
+                ]
+            },
+            panda: { 
+                id: 'panda', name: 'Panda', emoji: '🐼', folder: 'source/characters/panda', 
+                frameCount: 20, baseWidth: 160, baseHeight: 120, 
+                foodEmojis: ['🎋'], eatEmoji: '🎋', eatFolder: 'source/characters/panda/eating', eatFrameCount: 8, eatDuration: 4.0,
+                stats: { speed: 0.9, jump: 1.15, luck: 1.2 },
+                skins: [
+                    { id: 'default', name: 'Classic', color: null, price: 0, unlocked: true },
+                    { id: 'red', name: 'Red Panda', color: '#FF4500', price: 3000, unlocked: false }
+                ]
+            }
         },
 
         biomes: {
