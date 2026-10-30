@@ -80,6 +80,10 @@
         pack4: {
             economy: { coinsPerMeter: 1, bonusCombo: 5, bonusGoldenFood: 50 },
             shop: {
+                skins: [
+                    { id: 'gold', name: 'Golden Croc', price: 5000, icon: '👑', desc: 'Golden Crocodile Skin' },
+                    { id: 'red', name: 'Red Panda', price: 3000, icon: '🔴', desc: 'Red Panda Skin' }
+                ],
                 buffs: [
                     { id: 'start_hp', name: 'Max HP', price: 500, description: '+2 Start HP', icon: '❤️' },
                     { id: 'start_shield', name: 'Shield Start', price: 1000, description: 'Start with 🛡️', icon: '🛡️' },
