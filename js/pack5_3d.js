@@ -1,5 +1,5 @@
 /* ==================================================================
-   PACK 5 — 3D Model Loader (Config-Driven)
+   PACK 5 — 3D Model Loader (DEBUG VERSION)
    ================================================================== */
 window.GameEvents = window.GameEvents || { listeners: {}, on(e,c){ if(!this.listeners[e]) this.listeners[e]=[]; this.listeners[e].push(c); }, emit(e,d){ if(this.listeners[e]) this.listeners[e].forEach(cb=>cb(d)); } };
 window.PackUIs = window.PackUIs || [];
@@ -12,43 +12,53 @@ window.PackUIs = window.PackUIs || [];
     let settings3DEnabled = true;
     let isModelLoaded = false;
     let currentState = 'run';
+    let modelCache = {};
 
-    // === КЭШ МОДЕЛЕЙ ===
-    const modelCache = {};
-
+    // Загрузчик модели
     function loadModelForCharacter(charId, onLoaded) {
         if (modelCache[charId]) {
             onLoaded(modelCache[charId]);
             return;
         }
-        const charConf = window.GAME_CONFIG?.characters?.[charId];
-        if (!charConf || !charConf.model3d) {
-            onLoaded(null);
-            return;
-        }
-
-        const { obj, mtl } = charConf.model3d;
-        const mtlLoader = new THREE.MTLLoader();
-        mtlLoader.load(mtl, (materials) => {
-            materials.preload();
-            const objLoader = new THREE.OBJLoader();
-            objLoader.setMaterials(materials);
-            objLoader.load(obj, (object) => {
-                const box = new THREE.Box3().setFromObject(object);
-                const center = box.getCenter(new THREE.Vector3());
-                object.position.sub(center);
+        
+        // Ждем, пока GAME_CONFIG загрузится (на случай, если скрипты подключены не в том порядке)
+        const checkConfig = setInterval(() => {
+            if (window.GAME_CONFIG && window.GAME_CONFIG.characters) {
+                clearInterval(checkConfig);
+                const charConf = window.GAME_CONFIG.characters[charId];
                 
-                const size = box.getSize(new THREE.Vector3());
-                const maxDim = Math.max(size.x, size.y, size.z);
-                object.scale.setScalar(2 / maxDim); 
-                
-                // ПОВОРОТ МОДЕЛИ (подстрой под свою .obj, если смотрит не туда)
-                object.rotation.y = Math.PI / 2; 
+                if (!charConf || !charConf.model3d) {
+                    console.warn(`[3D] У персонажа ${charId} нет модели в config.js`);
+                    onLoaded(null);
+                    return;
+                }
 
-                modelCache[charId] = object;
-                onLoaded(object);
-            }, undefined, (err) => { console.error('Ошибка загрузки OBJ:', err); onLoaded(null); });
-        }, undefined, (err) => { console.error('Ошибка загрузки MTL:', err); onLoaded(null); });
+                console.log(`[3D] Начинаю загрузку модели для ${charId}...`);
+                const { obj, mtl } = charConf.model3d;
+                
+                const mtlLoader = new THREE.MTLLoader();
+                mtlLoader.load(mtl, (materials) => {
+                    materials.preload();
+                    const objLoader = new THREE.OBJLoader();
+                    objLoader.setMaterials(materials);
+                    objLoader.load(obj, (object) => {
+                        console.log(`[3D] Модель ${charId} успешно загружена!`);
+                        const box = new THREE.Box3().setFromObject(object);
+                        const center = box.getCenter(new THREE.Vector3());
+                        object.position.sub(center);
+                        
+                        const size = box.getSize(new THREE.Vector3());
+                        const maxDim = Math.max(size.x, size.y, size.z);
+                        object.scale.setScalar(2 / maxDim); 
+                        
+                        object.rotation.y = Math.PI / 2; 
+
+                        modelCache[charId] = object;
+                        onLoaded(object);
+                    }, undefined, (err) => { console.error('[3D] Ошибка загрузки OBJ:', err); onLoaded(null); });
+                }, undefined, (err) => { console.error('[3D] Ошибка загрузки MTL:', err); onLoaded(null); });
+            }
+        }, 100);
     }
 
     // ==========================================
@@ -149,23 +159,22 @@ window.PackUIs = window.PackUIs || [];
     const modelGroup = new THREE.Group();
     scene3D.add(modelGroup);
 
-    window.GameEvents.on('pack4_character_changed', (data) => {
-        currentCharacter = data.charId;
-    });
-
     window.GameEvents.on('start', (data) => {
         currentCharacter = data.character;
+        // Важно: проверяем настройку из игры
         settings3DEnabled = data.settings.use3DCharacters !== false;
         currentState = 'run';
         
-        const charConf = window.GAME_CONFIG?.characters?.[currentCharacter];
-        if (settings3DEnabled && charConf?.model3d) {
+        console.log(`[3D] Игра началась. Персонаж: ${currentCharacter}, 3D включено: ${settings3DEnabled}`);
+        
+        if (settings3DEnabled) {
             loadModelForCharacter(currentCharacter, (model) => {
                 if (model) {
                     modelGroup.clear();
                     const cloned = model.clone();
                     modelGroup.add(cloned);
                     isModelLoaded = true;
+                    console.log(`[3D] Модель готова к рендеру!`);
                 } else {
                     isModelLoaded = false;
                 }
@@ -188,7 +197,6 @@ window.PackUIs = window.PackUIs || [];
         const originalDraw = window.RenderEngine.draw;
 
         window.RenderEngine.draw = function (ctx, canvas, scene) {
-            // Если настройка выключена, или модель не загрузилась — рисуем 2D спрайт
             if (!settings3DEnabled || !isModelLoaded || !scene.player) {
                 return originalDraw.call(this, ctx, canvas, scene);
             }
@@ -222,7 +230,7 @@ window.PackUIs = window.PackUIs || [];
 
             scene.player.img = originalImg;
         };
-        console.log('%c🐊 3D Render Bridge активен (Config-Driven)', 'color:#00FFCC;font-weight:bold');
+        console.log('%c🐊 3D Render Bridge ПАТЧНУТ', 'color:#00FFCC;font-weight:bold');
     };
 
     const waitForEngine = setInterval(() => {
