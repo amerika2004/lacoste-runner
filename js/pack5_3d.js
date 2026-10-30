@@ -1,5 +1,5 @@
 /* ==================================================================
-   PACK 5 — 3D Model Loader (DEBUG VERSION)
+   PACK 5 — 3D Model Loader (FORCED DEBUG)
    ================================================================== */
 window.GameEvents = window.GameEvents || { listeners: {}, on(e,c){ if(!this.listeners[e]) this.listeners[e]=[]; this.listeners[e].push(c); }, emit(e,d){ if(this.listeners[e]) this.listeners[e].forEach(cb=>cb(d)); } };
 window.PackUIs = window.PackUIs || [];
@@ -14,55 +14,60 @@ window.PackUIs = window.PackUIs || [];
     let currentState = 'run';
     let modelCache = {};
 
-    // Загрузчик модели
     function loadModelForCharacter(charId, onLoaded) {
         if (modelCache[charId]) {
             onLoaded(modelCache[charId]);
             return;
         }
         
-        // Ждем, пока GAME_CONFIG загрузится (на случай, если скрипты подключены не в том порядке)
         const checkConfig = setInterval(() => {
             if (window.GAME_CONFIG && window.GAME_CONFIG.characters) {
                 clearInterval(checkConfig);
                 const charConf = window.GAME_CONFIG.characters[charId];
                 
                 if (!charConf || !charConf.model3d) {
-                    console.warn(`[3D] У персонажа ${charId} нет модели в config.js`);
                     onLoaded(null);
                     return;
                 }
 
-                console.log(`[3D] Начинаю загрузку модели для ${charId}...`);
                 const { obj, mtl } = charConf.model3d;
-                
                 const mtlLoader = new THREE.MTLLoader();
+                
                 mtlLoader.load(mtl, (materials) => {
                     materials.preload();
                     const objLoader = new THREE.OBJLoader();
                     objLoader.setMaterials(materials);
+                    
                     objLoader.load(obj, (object) => {
-                        console.log(`[3D] Модель ${charId} успешно загружена!`);
                         const box = new THREE.Box3().setFromObject(object);
                         const center = box.getCenter(new THREE.Vector3());
                         object.position.sub(center);
                         
                         const size = box.getSize(new THREE.Vector3());
                         const maxDim = Math.max(size.x, size.y, size.z);
-                        object.scale.setScalar(2 / maxDim); 
                         
+                        // ЖЕСТКИЙ МАСШТАБ (чтобы точно влезло в камеру)
+                        object.scale.setScalar(1.5 / (maxDim || 1)); 
+                        
+                        // ВРЕМЕННО КРАСИМ В КРАСНЫЙ, ЧТОБЫ УВИДЕТЬ
+                        object.traverse((child) => {
+                            if (child.isMesh) {
+                                child.material = new THREE.MeshBasicMaterial({ color: 0xff0000 });
+                            }
+                        });
+
                         object.rotation.y = Math.PI / 2; 
 
                         modelCache[charId] = object;
                         onLoaded(object);
-                    }, undefined, (err) => { console.error('[3D] Ошибка загрузки OBJ:', err); onLoaded(null); });
-                }, undefined, (err) => { console.error('[3D] Ошибка загрузки MTL:', err); onLoaded(null); });
+                    }, undefined, (err) => { console.error('[3D] Ошибка OBJ:', err); onLoaded(null); });
+                }, undefined, (err) => { console.error('[3D] Ошибка MTL:', err); onLoaded(null); });
             }
         }, 100);
     }
 
     // ==========================================
-    // 1. КОМПОНЕНТ ДЛЯ 3D ПРЕВЬЮ В МЕНЮ
+    // КОМПОНЕНТ ДЛЯ 3D ПРЕВЬЮ В МЕНЮ
     // ==========================================
     window.ThreePreview = function ThreePreview({ charId, emoji }) {
         const containerRef = React.useRef(null);
@@ -72,10 +77,8 @@ window.PackUIs = window.PackUIs || [];
             if (!window.THREE || !containerRef.current) return;
             
             const container = containerRef.current;
-            const width = 100, height = 100;
-            
             const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true, preserveDrawingBuffer: true });
-            renderer.setSize(width, height);
+            renderer.setSize(100, 100);
             renderer.setClearColor(0x000000, 0);
             container.appendChild(renderer.domElement);
             
@@ -84,10 +87,7 @@ window.PackUIs = window.PackUIs || [];
             camera.position.set(0, 0, 5); 
             camera.lookAt(0, 0, 0);
             
-            scene.add(new THREE.AmbientLight(0xffffff, 0.8));
-            const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
-            dirLight.position.set(5, 10, 7);
-            scene.add(dirLight);
+            scene.add(new THREE.AmbientLight(0xffffff, 1.0));
             
             const group = new THREE.Group();
             scene.add(group);
@@ -98,9 +98,7 @@ window.PackUIs = window.PackUIs || [];
             loadModelForCharacter(charId, (model) => {
                 if (!isActive) return;
                 if (model) {
-                    const clonedModel = model.clone();
-                    clonedModel.scale.multiplyScalar(1.2); 
-                    group.add(clonedModel);
+                    group.add(model.clone());
                     setLoaded(true);
                 }
             });
@@ -127,60 +125,50 @@ window.PackUIs = window.PackUIs || [];
             !loaded && React.createElement('span', { style: { fontSize: '24px' } }, emoji || '❓'),
             React.createElement('div', { 
                 ref: containerRef, 
-                style: { position: 'absolute', inset: 0, opacity: loaded ? 1 : 0, transition: 'opacity 0.3s' } 
+                style: { position: 'absolute', inset: 0, opacity: loaded ? 1 : 0 } 
             })
         );
     };
 
     // ==========================================
-    // 2. ВНЕДРЕНИЕ 3D В САМ ГЕЙМПЛЕЙ
+    // ВНЕДРЕНИЕ 3D В ГЕЙМПЛЕЙ
     // ==========================================
     const threeCanvas = document.createElement('canvas');
     threeCanvas.width = 256;
     threeCanvas.height = 256;
-    threeCanvas.complete = true;
-    threeCanvas.naturalWidth = 256;
-    threeCanvas.naturalHeight = 256;
+    // Добавляем на страницу, чтобы браузер не останавливал WebGL (скрываем визуально)
+    threeCanvas.style.position = 'absolute';
+    threeCanvas.style.left = '-9999px';
+    document.body.appendChild(threeCanvas);
 
-    const renderer = new THREE.WebGLRenderer({ canvas: threeCanvas, alpha: true, antialias: true, preserveDrawingBuffer: true });
+    const renderer = new THREE.WebGLRenderer({ canvas: threeCanvas, alpha: false, antialias: true, preserveDrawingBuffer: true });
     renderer.setSize(256, 256);
-    renderer.setClearColor(0x000000, 0);
+    // ДЕЛАЕМ ЗЕЛЕНЫЙ ФОН, ЧТОБЫ ВИДЕТЬ, ЧТО ПАТЧ РАБОТАЕТ
+    renderer.setClearColor(0x00ff00, 1); 
 
     const scene3D = new THREE.Scene();
     const camera3D = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
     camera3D.position.set(0, 0, 5);
     camera3D.lookAt(0, 0, 0);
 
-    scene3D.add(new THREE.AmbientLight(0xffffff, 0.7));
-    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-    dirLight.position.set(5, 10, 7);
-    scene3D.add(dirLight);
-
     const modelGroup = new THREE.Group();
     scene3D.add(modelGroup);
 
     window.GameEvents.on('start', (data) => {
         currentCharacter = data.character;
-        // Важно: проверяем настройку из игры
         settings3DEnabled = data.settings.use3DCharacters !== false;
         currentState = 'run';
-        
-        console.log(`[3D] Игра началась. Персонаж: ${currentCharacter}, 3D включено: ${settings3DEnabled}`);
         
         if (settings3DEnabled) {
             loadModelForCharacter(currentCharacter, (model) => {
                 if (model) {
                     modelGroup.clear();
-                    const cloned = model.clone();
-                    modelGroup.add(cloned);
+                    modelGroup.add(model.clone());
                     isModelLoaded = true;
-                    console.log(`[3D] Модель готова к рендеру!`);
                 } else {
                     isModelLoaded = false;
                 }
             });
-        } else {
-            isModelLoaded = false;
         }
     });
 
@@ -226,11 +214,17 @@ window.PackUIs = window.PackUIs || [];
             const originalImg = scene.player.img;
             scene.player.img = threeCanvas;
 
+            // Чтобы игра не выдала ошибку из-за отсутствия свойств картинки
+            if (!threeCanvas.complete) {
+                threeCanvas.complete = true;
+                threeCanvas.naturalWidth = 256;
+                threeCanvas.naturalHeight = 256;
+            }
+
             originalDraw.call(this, ctx, canvas, scene);
 
             scene.player.img = originalImg;
         };
-        console.log('%c🐊 3D Render Bridge ПАТЧНУТ', 'color:#00FFCC;font-weight:bold');
     };
 
     const waitForEngine = setInterval(() => {
