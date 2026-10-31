@@ -350,7 +350,7 @@ function Game() {
     // === PATCH: убран showSettings из зависимостей и Escape-логики ===
     const handleKeyDown = useCallback((e) => {
         konamiRef.current.push(e.code);
-        if (konamiRef.current.length > 10) konamiRef.current.shift();
+        if (konamiRef.current.length > 8) konamiRef.current.shift();
         if (JSON.stringify(konamiRef.current) === JSON.stringify(CONFIG.pack4.secrets.konami.code)) {
             if (window.Pack4State) {
                 window.Pack4State.cheatInvincible = Date.now() + CONFIG.pack4.secrets.konami.duration;
