@@ -12,7 +12,8 @@
             comboEnabled: true, comboVisualsEnabled: true, weatherEnabled: true, dynamicMusicEnabled: true,
             biomesEnabled: true, achievementsEnabled: true, dailyGoalsEnabled: true,
             hudScale: 1.0, hudOpacity: 0.8,
-            use3DCharacters: true // <--- ДОБАВИТЬ ВОТ ЭТО
+            vibrateEnabled: true
+            // use3DCharacters: true // TODO: не реализовано
         },
 
         combo: {
@@ -24,6 +25,28 @@
                 { threshold: 20, mult: 10, emoji: '🌈', color: '#FFFFFF' }
             ],
             sadEmoji: '😢', sadColor: '#888888'
+        },
+
+        // ═══ PACK 1 — Core Gameplay (синхронизирован с combo.tiers) ═══
+        pack1: {
+            combo: {
+                thresholds: [
+                    { c: 3,  m: 2 },
+                    { c: 5,  m: 3 },
+                    { c: 10, m: 5 },
+                    { c: 20, m: 10 }
+                ],
+                decayMs: 3000
+            },
+            charges: { max: 3, foodPerCharge: 5, dashCost: 2, doubleJumpCost: 1, invulnMs: 600 },
+            food: {
+                weights: {
+                    regular: { emoji: '🍗', weight: 60, score: 10, growth: 1 },
+                    golden:  { emoji: '🌟', weight: 15, score: 50, growth: 2, coins: 5 },
+                    rare:    { emoji: '🍎', weight: 20, score: 25, heal: 2 },
+                    poison:  { emoji: '🍄', weight: 5,  score: 0,  damage: 1 }
+                }
+            }
         },
 
         pack2: {
@@ -91,9 +114,9 @@
 
             shop: {
                 buffs: [
-                    { id: 'start_hp',     name: 'Max HP',        price: 500,  description: '+2 Start HP',       icon: '❤️' },
-                    { id: 'start_shield', name: 'Shield Start',  price: 1000, description: 'Start with 🛡️',      icon: '🛡️' },
-                    { id: 'start_speed',  name: 'Speed Boost',   price: 1500, description: '+5% Score Rate',    icon: '⚡' },
+                    { id: 'start_hp',     name: 'Max HP',        price: 500,  description: '+2 Start HP',        icon: '❤️' },
+                    { id: 'start_shield', name: 'Shield Start',  price: 1000, description: 'Start with 🛡️',       icon: '🛡️' },
+                    { id: 'start_speed',  name: 'Speed Boost',   price: 1500, description: '+5% Score Rate',     icon: '⚡' },
                     { id: 'start_combo',  name: 'Combo Start',   price: 2000, description: 'Start with x3 Combo', icon: '🔥' },
                     { id: 'revive',       name: 'Second Chance', price: 3000, description: 'Survive 1 fatal hit', icon: '💖' }
                 ],
@@ -130,7 +153,7 @@
             secrets: {
                 goldenCrocDistance: 5000,
                 konami: { code: ['ArrowUp','ArrowUp','ArrowDown','ArrowDown','ArrowLeft','ArrowRight','ArrowLeft','ArrowRight'], duration: 10000 },
-                ufoChance: 0.05, ufoCoins: 1500
+                ufoChance: 0.05, ufoCoins: 500
             }
         },
 
