@@ -148,22 +148,28 @@
 
             secrets: {
                 goldenCrocDistance: 5000,
+                // Konami cheat: activates invincibility + UFO drop.
+                // Desktop: Arrow Up Up Down Down Left Right Left Right
+                // Mobile :  Swipe  Up Up Down Down Left Right Left Right
                 konami: {
                     code: ['ArrowUp','ArrowUp','ArrowDown','ArrowDown','ArrowLeft','ArrowRight','ArrowLeft','ArrowRight'],
+                    swipes: ['up','up','down','down','left','right','left','right'],
                     duration: 10000
                 },
-                ufoChance: 0.05,
-                ufoCoins: 500,
-                // ─── NEW: UFO drop ───
+                // UFO drop (triggered by konami cheat)
                 ufoDrop: {
-                    duration: 10000,
-                    spawnInterval: 400,
-                    moneyValue: 25,
+                    duration: 10000,           // ms of continuous coin dropping
+                    spawnInterval: 400,        // ms between coin spawns
+                    moneyValue: 25,            // coins per single pickup
                     moneyEmojis: ['💰', '💵', '🪙', '💎'],
-                    gravity: 0.4,
-                    lifetime: 15000,
-                    ufoY: 180,
-                    ufoHoverX: 900
+                    gravity: 0.4,              // downward acceleration per tick
+                    lifetime: 15000,           // ms coin lives before disappearing
+                    ufoY: 180,                 // base altitude of UFO
+                    ufoHoverX: 900,            // X position where UFO hovers
+                    ufoEntryX: 1400,           // X position where UFO appears from
+                    coinSize: 30,              // px size for coin hitbox
+                    entrySpeed: 4,             // px/tick horizontal entry speed
+                    exitSpeed: 6               // px/tick vertical exit speed
                 }
             }
         },
