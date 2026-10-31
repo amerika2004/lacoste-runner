@@ -129,7 +129,7 @@
             ],
             secrets: {
                 goldenCrocDistance: 5000,
-                konami: { code: ['ArrowUp','ArrowUp','ArrowDown','ArrowDown','ArrowLeft','ArrowRight','ArrowLeft','ArrowRight','KeyB','KeyA'], duration: 10000 },
+                konami: { code: ['ArrowUp','ArrowUp','ArrowDown','ArrowDown','ArrowLeft','ArrowRight','ArrowLeft','ArrowRight'], duration: 10000 },
                 ufoChance: 0.05, ufoCoins: 100
             }
         },
