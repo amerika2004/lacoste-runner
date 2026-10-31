@@ -171,6 +171,92 @@ function Game() {
         localStorage.setItem('lacosteSkin', currentSkin || 'default');
     }, [currentSkins, currentSkin]);
 
+    // === PATCH: Konami через свайпы для мобильных ===
+useEffect(() => {
+    const KONAMI_SWIPES = ['up', 'up', 'down', 'down', 'left', 'right', 'left', 'right'];
+    const KONAMI_DURATION = CONFIG.pack4?.secrets?.konami?.duration || 10000;
+    const SWIPE_THRESHOLD = 40;   // px — минимальная длина свайпа
+    const MAX_DURATION  = 800;    // ms — максимальная длительность одного свайпа
+    const RESET_AFTER   = 2000;   // ms — сброс прогресса при бездействии
+
+    const seqRef = { current: [] };
+    let startX = 0, startY = 0, startT = 0;
+    let skipped = false;
+    let resetTimer = null;
+
+    const resetSeq = () => { seqRef.current = []; };
+    const scheduleReset = () => {
+        clearTimeout(resetTimer);
+        resetTimer = setTimeout(resetSeq, RESET_AFTER);
+    };
+
+    const onStart = (e) => {
+        // Игнорируем свайпы, начатые на кнопках/полях/навигации
+        const target = e.target;
+        skipped = !!(target.closest('button') || target.closest('input') ||
+                     target.closest('textarea') || target.closest('.ms-nav') ||
+                     target.closest('.ms-tabs') || target.closest('.ms-char-tabs'));
+        if (skipped) return;
+        const t = e.touches[0];
+        startX = t.clientX;
+        startY = t.clientY;
+        startT = Date.now();
+    };
+
+    const onEnd = (e) => {
+        if (skipped) return;
+        const t = e.changedTouches[0];
+        const dx = t.clientX - startX;
+        const dy = t.clientY - startY;
+        const dt = Date.now() - startT;
+        if (dt > MAX_DURATION) { resetSeq(); return; }
+
+        let dir = null;
+        if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > SWIPE_THRESHOLD) {
+            dir = dx > 0 ? 'right' : 'left';
+        } else if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > SWIPE_THRESHOLD) {
+            dir = dy > 0 ? 'down' : 'up';
+        }
+        if (!dir) return;
+
+        seqRef.current.push(dir);
+        if (seqRef.current.length > KONAMI_SWIPES.length) seqRef.current.shift();
+        scheduleReset();
+
+        // Лёгкая вибрация-фидбек на каждый свайп (если поддерживается)
+        if (navigator.vibrate) navigator.vibrate(8);
+
+        if (seqRef.current.length === KONAMI_SWIPES.length &&
+            seqRef.current.every((d, i) => d === KONAMI_SWIPES[i])) {
+            resetSeq();
+            clearTimeout(resetTimer);
+            if (window.Pack4State) {
+                window.Pack4State.cheatInvincible = Date.now() + KONAMI_DURATION;
+                window.GameEvents.emit('pack4_toast', { text: '🔱 CHEAT ACTIVATED! 10s INVINCIBILITY', type: 'danger' });
+                if (window.RenderEngine) {
+                    window.RenderEngine.flash('0,255,255', 0.5);
+                    window.RenderEngine.shake(15, 25);
+                }
+                if (navigator.vibrate) navigator.vibrate([60, 40, 60, 40, 100]);
+            } else {
+                console.warn('[Konami] sequence matched but Pack4State missing');
+            }
+        }
+    };
+
+    const onCancel = () => { resetSeq(); };
+
+    document.addEventListener('touchstart', onStart, { passive: true });
+    document.addEventListener('touchend', onEnd, { passive: true });
+    document.addEventListener('touchcancel', onCancel, { passive: true });
+    return () => {
+        clearTimeout(resetTimer);
+        document.removeEventListener('touchstart', onStart);
+        document.removeEventListener('touchend', onEnd);
+        document.removeEventListener('touchcancel', onCancel);
+    };
+}, []);
+
     // === PATCH: слушаем смену скина из Shop ===
     useEffect(() => {
         const handler = (data) => setCurrentSkins(prev => ({ ...prev, [data.charId]: data.skinId }));
