@@ -13,7 +13,6 @@
             biomesEnabled: true, achievementsEnabled: true, dailyGoalsEnabled: true,
             hudScale: 1.0, hudOpacity: 0.8,
             vibrateEnabled: true
-            // use3DCharacters: true // TODO: не реализовано
         },
 
         combo: {
@@ -27,7 +26,6 @@
             sadEmoji: '😢', sadColor: '#888888'
         },
 
-        // ═══ PACK 1 — Core Gameplay (синхронизирован с combo.tiers) ═══
         pack1: {
             combo: {
                 thresholds: [
@@ -104,7 +102,6 @@
         pack4: {
             economy: { coinsPerMeter: 1, bonusCombo: 5, bonusGoldenFood: 50 },
 
-            // ═══ ТИРЫ СКИНОВ ═══
             skinTiers: {
                 bronze: { name: 'Bronze', color: '#CD7F32', order: 1, emoji: '🥉', filter: null },
                 silver: { name: 'Silver', color: '#C0C0C0', order: 2, emoji: '🥈', filter: 'grayscale(0.7) brightness(1.2)' },
@@ -128,15 +125,13 @@
                 ]
             },
 
-            // ═══ ПРОКАЧКА ═══
             upgrades: {
-                maxLevel: 10,       // лимит уровней на стат
-                priceBase: 500,     // цена 1-го уровня
-                priceStep: 250,     // прирост цены за уровень
-                statBonus: 0.05     // +0.05 к стату за уровень
+                maxLevel: 10,
+                priceBase: 500,
+                priceStep: 250,
+                statBonus: 0.05
             },
 
-            // ═══ ПРОМОКОДЫ ═══
             promo: {
                 friendPrefix: 'FRIEND-',
                 friendCodeLength: 4,
@@ -150,14 +145,29 @@
                 { id: 'm_eat_20',   title: 'Eat 20 foods',  target: 20,   type: 'food',     reward: 150 },
                 { id: 'm_jump_100', title: 'Jump 100 times', target: 100, type: 'jumps',   reward: 100 }
             ],
+
             secrets: {
                 goldenCrocDistance: 5000,
-                konami: { code: ['ArrowUp','ArrowUp','ArrowDown','ArrowDown','ArrowLeft','ArrowRight','ArrowLeft','ArrowRight'], duration: 10000 },
-                ufoChance: 0.05, ufoCoins: 500
+                konami: {
+                    code: ['ArrowUp','ArrowUp','ArrowDown','ArrowDown','ArrowLeft','ArrowRight','ArrowLeft','ArrowRight'],
+                    duration: 10000
+                },
+                ufoChance: 0.05,
+                ufoCoins: 500,
+                // ─── NEW: UFO drop ───
+                ufoDrop: {
+                    duration: 10000,
+                    spawnInterval: 400,
+                    moneyValue: 25,
+                    moneyEmojis: ['💰', '💵', '🪙', '💎'],
+                    gravity: 0.4,
+                    lifetime: 15000,
+                    ufoY: 180,
+                    ufoHoverX: 900
+                }
             }
         },
 
-        // ═══ ПЕРСОНАЖИ — у каждого СВОИ скины по тирам ═══
         characters: {
             crocodile: {
                 id: 'crocodile', name: 'Crocodile', emoji: '🐊', folder: 'source/characters/crocodile',
