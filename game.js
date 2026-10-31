@@ -32,7 +32,6 @@ function getStat(charId, statName) {
     return base + lvl * 0.05;
 }
 
-// === PATCH: getSkinColor → getSkinFilter (тир-фильтр) ===
 function getSkinFilter(characterId, skinId) {
     const char = CONFIG.characters?.[characterId];
     const skin = char?.skins?.find(s => s.id === skinId);
@@ -88,7 +87,6 @@ const RenderEngine = (function () {
             const p = scene.player;
             if (p.img && p.img.complete && p.img.naturalWidth > 0) {
                 ctx.save(); let fallAngle = 0, yOffset = 0, flyTilt = 0; let chewScale = 1.0;
-                // === PATCH: применяем тир-фильтр скина ===
                 if (p.skinFilter) ctx.filter = p.skinFilter;
                 if (p.isEating) chewScale = 1.0 + Math.sin(Date.now() / 80) * 0.05;
                 if (p.isBarrelFlying) flyTilt = p.tilt;
@@ -151,7 +149,6 @@ function Game() {
     const [background, setBackground] = useState(() => { const saved = localStorage.getItem('lacosteBackground'); return (saved && BACKGROUNDS[saved]) ? saved : Object.keys(BACKGROUNDS)[0]; });
     const [character, setCharacter] = useState(() => { const saved = localStorage.getItem('lacosteCharacter'); return (saved && CHARACTERS[saved]) ? saved : Object.keys(CHARACTERS)[0]; });
 
-    // === PATCH: currentSkin → currentSkins (объект по персонажам) ===
     const [currentSkins, setCurrentSkins] = useState(() => {
         try {
             const saved = JSON.parse(localStorage.getItem('lacosteCurrentSkins') || '{}');
@@ -171,93 +168,82 @@ function Game() {
         localStorage.setItem('lacosteSkin', currentSkin || 'default');
     }, [currentSkins, currentSkin]);
 
-    // === PATCH: Konami через свайпы для мобильных ===
-useEffect(() => {
-    const KONAMI_SWIPES = ['up', 'up', 'down', 'down', 'left', 'right', 'left', 'right'];
-    const KONAMI_DURATION = CONFIG.pack4?.secrets?.konami?.duration || 10000;
-    const SWIPE_THRESHOLD = 40;   // px — минимальная длина свайпа
-    const MAX_DURATION  = 800;    // ms — максимальная длительность одного свайпа
-    const RESET_AFTER   = 2000;   // ms — сброс прогресса при бездействии
+    // === Konami через свайпы для мобильных ===
+    useEffect(() => {
+        const KONAMI_SWIPES = ['up', 'up', 'down', 'down', 'left', 'right', 'left', 'right'];
+        const KONAMI_DURATION = CONFIG.pack4?.secrets?.konami?.duration || 10000;
+        const SWIPE_THRESHOLD = 40;
+        const MAX_DURATION  = 800;
+        const RESET_AFTER   = 2000;
 
-    const seqRef = { current: [] };
-    let startX = 0, startY = 0, startT = 0;
-    let skipped = false;
-    let resetTimer = null;
+        const seqRef = { current: [] };
+        let startX = 0, startY = 0, startT = 0;
+        let skipped = false;
+        let resetTimer = null;
 
-    const resetSeq = () => { seqRef.current = []; };
-    const scheduleReset = () => {
-        clearTimeout(resetTimer);
-        resetTimer = setTimeout(resetSeq, RESET_AFTER);
-    };
+        const resetSeq = () => { seqRef.current = []; };
+        const scheduleReset = () => { clearTimeout(resetTimer); resetTimer = setTimeout(resetSeq, RESET_AFTER); };
 
-    const onStart = (e) => {
-        // Игнорируем свайпы, начатые на кнопках/полях/навигации
-        const target = e.target;
-        skipped = !!(target.closest('button') || target.closest('input') ||
-                     target.closest('textarea') || target.closest('.ms-nav') ||
-                     target.closest('.ms-tabs') || target.closest('.ms-char-tabs'));
-        if (skipped) return;
-        const t = e.touches[0];
-        startX = t.clientX;
-        startY = t.clientY;
-        startT = Date.now();
-    };
+        const onStart = (e) => {
+            const target = e.target;
+            skipped = !!(target.closest('button') || target.closest('input') || target.closest('textarea') || target.closest('.ms-nav') || target.closest('.ms-tabs') || target.closest('.ms-char-tabs'));
+            if (skipped) return;
+            const t = e.touches[0];
+            startX = t.clientX;
+            startY = t.clientY;
+            startT = Date.now();
+        };
 
-    const onEnd = (e) => {
-        if (skipped) return;
-        const t = e.changedTouches[0];
-        const dx = t.clientX - startX;
-        const dy = t.clientY - startY;
-        const dt = Date.now() - startT;
-        if (dt > MAX_DURATION) { resetSeq(); return; }
+        const onEnd = (e) => {
+            if (skipped) return;
+            const t = e.changedTouches[0];
+            const dx = t.clientX - startX;
+            const dy = t.clientY - startY;
+            const dt = Date.now() - startT;
+            if (dt > MAX_DURATION) { resetSeq(); return; }
 
-        let dir = null;
-        if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > SWIPE_THRESHOLD) {
-            dir = dx > 0 ? 'right' : 'left';
-        } else if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > SWIPE_THRESHOLD) {
-            dir = dy > 0 ? 'down' : 'up';
-        }
-        if (!dir) return;
+            let dir = null;
+            if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > SWIPE_THRESHOLD) dir = dx > 0 ? 'right' : 'left';
+            else if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > SWIPE_THRESHOLD) dir = dy > 0 ? 'down' : 'up';
+            if (!dir) return;
 
-        seqRef.current.push(dir);
-        if (seqRef.current.length > KONAMI_SWIPES.length) seqRef.current.shift();
-        scheduleReset();
+            seqRef.current.push(dir);
+            if (seqRef.current.length > KONAMI_SWIPES.length) seqRef.current.shift();
+            scheduleReset();
 
-        // Лёгкая вибрация-фидбек на каждый свайп (если поддерживается)
-        if (navigator.vibrate) navigator.vibrate(8);
+            if (navigator.vibrate) navigator.vibrate(8);
 
-        if (seqRef.current.length === KONAMI_SWIPES.length &&
-            seqRef.current.every((d, i) => d === KONAMI_SWIPES[i])) {
-            resetSeq();
-            clearTimeout(resetTimer);
-            if (window.Pack4State) {
-                window.Pack4State.cheatInvincible = Date.now() + KONAMI_DURATION;
-                window.GameEvents.emit('pack4_toast', { text: '🔱 CHEAT ACTIVATED! 10s INVINCIBILITY', type: 'danger' });
-                if (window.RenderEngine) {
-                    window.RenderEngine.flash('0,255,255', 0.5);
-                    window.RenderEngine.shake(15, 25);
+            if (seqRef.current.length === KONAMI_SWIPES.length && seqRef.current.every((d, i) => d === KONAMI_SWIPES[i])) {
+                resetSeq();
+                clearTimeout(resetTimer);
+                if (window.Pack4State) {
+                    window.Pack4State.cheatInvincible = Date.now() + KONAMI_DURATION;
+                    window.GameEvents.emit('pack4_toast', { text: '🔱 CHEAT ACTIVATED! 10s INVINCIBILITY', type: 'danger' });
+                    if (window.RenderEngine) {
+                        window.RenderEngine.flash('0,255,255', 0.5);
+                        window.RenderEngine.shake(15, 25);
+                    }
+                    if (navigator.vibrate) navigator.vibrate([60, 40, 60, 40, 100]);
+                } else {
+                    console.warn('[Konami] sequence matched but Pack4State missing');
                 }
-                if (navigator.vibrate) navigator.vibrate([60, 40, 60, 40, 100]);
-            } else {
-                console.warn('[Konami] sequence matched but Pack4State missing');
             }
-        }
-    };
+        };
 
-    const onCancel = () => { resetSeq(); };
+        const onCancel = () => { resetSeq(); };
 
-    document.addEventListener('touchstart', onStart, { passive: true });
-    document.addEventListener('touchend', onEnd, { passive: true });
-    document.addEventListener('touchcancel', onCancel, { passive: true });
-    return () => {
-        clearTimeout(resetTimer);
-        document.removeEventListener('touchstart', onStart);
-        document.removeEventListener('touchend', onEnd);
-        document.removeEventListener('touchcancel', onCancel);
-    };
-}, []);
+        document.addEventListener('touchstart', onStart, { passive: true });
+        document.addEventListener('touchend', onEnd, { passive: true });
+        document.addEventListener('touchcancel', onCancel, { passive: true });
+        return () => {
+            clearTimeout(resetTimer);
+            document.removeEventListener('touchstart', onStart);
+            document.removeEventListener('touchend', onEnd);
+            document.removeEventListener('touchcancel', onCancel);
+        };
+    }, []);
 
-    // === PATCH: слушаем смену скина из Shop ===
+    // === Слушаем смену скина из Shop ===
     useEffect(() => {
         const handler = (data) => setCurrentSkins(prev => ({ ...prev, [data.charId]: data.skinId }));
         window.GameEvents.on('pack4_skins_updated', handler);
@@ -278,6 +264,79 @@ useEffect(() => {
     const [settings, setSettings] = useState(() => {
         try { const saved = JSON.parse(localStorage.getItem('lacosteSettings') || '{}'); return { ...DEFAULT_SETTINGS, ...saved }; } catch { return { ...DEFAULT_SETTINGS }; }
     });
+
+    // === PATCH 1a: ref для актуального score в listeners ===
+    const scoreRef = useRef(0);
+    useEffect(() => { scoreRef.current = score; }, [score]);
+
+    // === PATCH 1b: SHARE button — Web Share API / clipboard fallback ===
+    useEffect(() => {
+        const handler = () => {
+            const dist = Math.floor(scoreRef.current) || highScore;
+            const url = `${location.origin}${location.pathname}?record=${dist}`;
+            const text = `Я пробежал ${dist}м в Lacoste Runner! 🐊 Побей мой рекорд!`;
+            if (navigator.share) {
+                navigator.share({ title: 'Lacoste Runner', text, url }).catch(() => {});
+            } else if (navigator.clipboard) {
+                navigator.clipboard.writeText(`${text} ${url}`)
+                    .then(() => window.GameEvents.emit('pack4_toast', { text: '📋 Ссылка скопирована!', type: 'success' }))
+                    .catch(() => { prompt('Скопируйте ссылку:', url); });
+            } else {
+                prompt('Скопируйте ссылку:', url);
+            }
+            if (navigator.vibrate) navigator.vibrate(10);
+        };
+        window.GameEvents.on('show_share', handler);
+        return () => {
+            if (window.GameEvents.listeners['show_share']) {
+                window.GameEvents.listeners['show_share'] = window.GameEvents.listeners['show_share'].filter(cb => cb !== handler);
+            }
+        };
+    }, [highScore]);
+
+    // === PATCH 1c: Character sync — Home ↔ Shop ===
+    useEffect(() => {
+        const handler = (data) => {
+            if (data?.charId && CHARACTERS[data.charId] && data.charId !== character) {
+                setCharacter(data.charId);
+            }
+        };
+        window.GameEvents.on('pack4_character_changed', handler);
+        return () => {
+            if (window.GameEvents.listeners['pack4_character_changed']) {
+                window.GameEvents.listeners['pack4_character_changed'] = window.GameEvents.listeners['pack4_character_changed'].filter(cb => cb !== handler);
+            }
+        };
+    }, [character]);
+
+    // === PATCH 1d: Forward pack1/pack2 toasts в единый toast-стек pack4 ===
+    useEffect(() => {
+        const forward = (d) => window.GameEvents.emit('pack4_toast', d);
+        window.GameEvents.on('pack1_toast', forward);
+        window.GameEvents.on('pack2_toast', forward);
+        return () => {
+            ['pack1_toast', 'pack2_toast'].forEach(ev => {
+                if (window.GameEvents.listeners[ev]) {
+                    window.GameEvents.listeners[ev] = window.GameEvents.listeners[ev].filter(cb => cb !== forward);
+                }
+            });
+        };
+    }, []);
+
+    // === PATCH 1e: Auto-pause при сворачивании вкладки ===
+    useEffect(() => {
+        const onHide = () => { if (document.hidden && gameState === 'playing') setGameState('paused'); };
+        document.addEventListener('visibilitychange', onHide);
+        return () => document.removeEventListener('visibilitychange', onHide);
+    }, [gameState]);
+
+    // === PATCH 1f: Предупреждение при закрытии вкладки во время игры ===
+    useEffect(() => {
+        if (gameState !== 'playing') return;
+        const handler = (e) => { e.preventDefault(); e.returnValue = ''; };
+        window.addEventListener('beforeunload', handler);
+        return () => window.removeEventListener('beforeunload', handler);
+    }, [gameState]);
 
     const comboRef = useRef(0);
     const comboMultRef = useRef(1);
@@ -318,7 +377,6 @@ useEffect(() => {
 
     useEffect(() => {
         localStorage.setItem('lacosteCharacter', character);
-        // === PATCH: пробрасываем setCharacter в Shop для синхронизации ===
         window.__gameSetCharacter = setCharacter;
         walkFramesRef.current = []; currentFrameRef.current = 0; eatFramesRef.current = []; eatFrameIdxRef.current = 0; isEatingRef.current = false; eatTimerRef.current = 0; eatSpeedFactorRef.current = 1.0;
         const char = CHARACTERS[character] || CHARACTERS[Object.keys(CHARACTERS)[0]];
@@ -352,7 +410,6 @@ useEffect(() => {
         else { if (gameState === 'playing') dayAudio.play().catch(() => {}); nightAudio.pause(); }
     }, [timeOfDay, settings.soundEnabled, gameState]);
 
-    // === PATCH: isPaused больше не учитывает showSettings (его нет) ===
     useEffect(() => {
         const isPaused = gameState === 'paused' || gameState === 'menu' || gameState === 'gameover';
         if (isPaused) { if (pitAudioRef.current) pitAudioRef.current.pause(); if (barrelAudioRef.current) barrelAudioRef.current.pause(); if (splashAudioRef.current) splashAudioRef.current.pause(); if (nightAmbientRef.current) nightAmbientRef.current.pause(); if (dayAmbientRef.current) dayAmbientRef.current.pause(); }
@@ -361,7 +418,6 @@ useEffect(() => {
 
     const initChar = CHARACTERS[character] || CHARACTERS[Object.keys(CHARACTERS)[0]];
     const initGroundY = GROUND_Y + (BACKGROUNDS[background]?.groundOffset || 0);
-    // === PATCH: skinColor → skinFilter ===
     const playerRef = useRef({ x: 100, y: initGroundY - initChar.baseHeight, width: initChar.baseWidth, height: initChar.baseHeight, velocityY: 0, isJumping: false, isHoldingJump: false, jumpMult: 1.0, tilt: 0, bob: 0, foodEaten: 0, foodTarget: 1, skinFilter: null });
 
     const obstaclesRef = useRef([]);
@@ -430,10 +486,19 @@ useEffect(() => {
     };
 
     const resetCombo = () => { comboRef.current = 0; comboMultRef.current = 1; window.GameEvents.emit('combo_changed', { mult: 0, count: 0 }); };
-    const addCombo = () => { comboRef.current++; let mult = 1; if (comboRef.current >= 8) mult = 5; else if (comboRef.current >= 5) mult = 3; else if (comboRef.current >= 3) mult = 2; comboMultRef.current = mult; window.GameEvents.emit('combo_changed', { mult: comboRef.current, count: comboRef.current }); };
+    // === PATCH 4: уважает comboEnabled ===
+    const addCombo = () => {
+        if (!settingsRef.current.comboEnabled) return;
+        comboRef.current++;
+        let mult = 1;
+        if (comboRef.current >= 8) mult = 5;
+        else if (comboRef.current >= 5) mult = 3;
+        else if (comboRef.current >= 3) mult = 2;
+        comboMultRef.current = mult;
+        window.GameEvents.emit('combo_changed', { mult: comboRef.current, count: comboRef.current });
+    };
 
     const konamiRef = useRef([]);
-    // === PATCH: убран showSettings из зависимостей и Escape-логики ===
     const handleKeyDown = useCallback((e) => {
         konamiRef.current.push(e.code);
         if (konamiRef.current.length > 8) konamiRef.current.shift();
@@ -486,7 +551,6 @@ useEffect(() => {
         let startHp = 6;
         if (window.Pack4State && window.Pack4State.boughtBuffs?.includes('start_hp')) startHp = 8;
 
-        // === PATCH: используем тир-фильтр ===
         const skinFilter = getSkinFilter(character, currentSkin);
 
         playerRef.current = { x: 100, y: gy - char.baseHeight, width: char.baseWidth, height: char.baseHeight, velocityY: 0, isJumping: false, isHoldingJump: false, jumpMult: 1.0, tilt: 0, bob: 0, foodEaten: 0, foodTarget: 1, skinFilter };
@@ -506,7 +570,6 @@ useEffect(() => {
 
         window.GameEvents.emit('start', { character, background, timeOfDay, settings: settingsRef.current });
 
-        // Sync internal combo с start_combo (визуал — в Pack1)
         if (window.Pack4State?.boughtBuffs?.includes('start_combo')) {
             comboRef.current = 5;
             comboMultRef.current = 3;
@@ -598,7 +661,6 @@ useEffect(() => {
         let pack4SpeedMult = 1.0;
         if (window.Pack4State && window.Pack4State.boughtBuffs?.includes('start_speed')) pack4SpeedMult = 1.05;
 
-        // === STAT UPGRADES ===
         const statSpeed = getStat(character, 'speed');
         const statLuck = getStat(character, 'luck');
 
@@ -670,7 +732,6 @@ useEffect(() => {
                 }
             }
             const foodList = currentBgConfig.foodEmojis || char.foodEmojis || ['🍗', '🍔', '🍕', '🥩']; const foodMult = char.eatFolder ? 3.0 : 1.0;
-            // === LUCK STAT ===
             foodTimerRef.current += (currentSpeed / BASE_SPEED) * statLuck;
             if (foodTimerRef.current > (100 + Math.random() * 80) * foodMult) {
                 let isSafeToSpawn = true; for (let obs of obstaclesRef.current) { if (obs.x + obs.width > canvas.width - 300) { isSafeToSpawn = false; break; } }
@@ -716,13 +777,20 @@ useEffect(() => {
                 p.foodEaten++;
                 if (p.foodEaten >= p.foodTarget) { p.width += 2; p.height += 1.3; p.y = gy - p.height; p.foodEaten = 0; p.foodTarget = p.foodTarget + 1; healthRef.current = Math.min(6, healthRef.current + 1); setHealth(healthRef.current); RenderEngine.spawnParticles(p.x + p.width / 2, p.y + p.height / 2, 12, { colors: ['#FFD700', '#FFFFFF'], speed: 3, life: 30, size: 3, gravity: 0.1 }); }
                 if (isEatTrigger) { isEatingRef.current = true; eatTimerRef.current = 0; eatFrameIdxRef.current = 0; p.y = gy - p.height; p.velocityY = 0; p.isJumping = false; p.isHoldingJump = false; p.tilt = 0; p.bob = 0; }
-                window.GameEvents.emit('eat', { type: 'normal', emoji: food.emoji });
+                // === PATCH 3: передаём pack1Type для дифференцированных SFX ===
+                const pack1Type =
+                    (food.emoji === '🌟' || food.emoji === '💎') ? 'golden' :
+                    food.emoji === '🍄' ? 'poison' :
+                    (food.emoji === '🍎' || food.emoji === '🍏') ? 'rare' :
+                    'regular';
+                window.GameEvents.emit('eat', { type: 'normal', emoji: food.emoji, pack1Type });
                 return false;
             }
             return true;
         });
 
-        window.GameEvents.emit('tick', { delta: 16.6, distance: distanceRef.current, health: healthRef.current, settings: settingsRef.current, timeOfDay: timeOfDayRef.current, combo: comboRef.current });
+        // === PATCH 2: tick.combo читает из Pack1State (правильный decay), fallback comboRef ===
+        window.GameEvents.emit('tick', { delta: 16.6, distance: distanceRef.current, health: healthRef.current, settings: settingsRef.current, timeOfDay: timeOfDayRef.current, combo: window.Pack1State?.combo || comboRef.current });
     };
 
     const describeScene = () => {
@@ -752,7 +820,6 @@ useEffect(() => {
             bgNext: bgNextImg ? { img: bgNextImg } : null,
             transitionAlpha: transitionAlpha,
             groundY: gy,
-            // === PATCH: skinFilter вместо skinColor ===
             player: { x: playerRef.current.x, y: playerRef.current.y, w: playerRef.current.width, h: playerRef.current.height, tilt: playerRef.current.tilt, bob: playerRef.current.bob, isJumping: playerRef.current.isJumping, img: charImg, isEating: isEatingRef.current, isTripping: isTrippingRef.current, tripTimer: tripTimerRef.current, isBarrelTrip: isBarrelTripRef.current, isBarrelFlying: isBarrelFlyingRef.current, isFallingIntoPit: isFallingIntoPitRef.current, skinFilter: playerRef.current.skinFilter || null },
             obstacles: obstaclesRef.current.map(o => ({ x: o.x, y: o.y, w: o.width, h: o.height, type: o.type })),
             foods: foodsRef.current.map(f => ({ x: f.x, y: f.y, w: f.width, h: f.height, emoji: f.emoji, isPowerup: f.isPowerup })),
@@ -796,7 +863,6 @@ useEffect(() => {
     const formatScore = (num) => num.toString().padStart(5, '0');
     const getHearts = () => { let h = []; for (let i = 0; i < 4; i++) { if (health >= (i + 1) * 2) h.push('❤️'); else if (health === i * 2 + 1) h.push('💔'); else h.push('🖤'); } return h.join(''); };
 
-    // === PATCH: контент вкладки Settings для MenuShell ===
     const renderSettingsContent = () => React.createElement('div', null,
         React.createElement('div', { className: 'ms-section-title' }, '🖥️ HUD'),
         React.createElement('div', { className: 'ms-row' },
@@ -832,14 +898,11 @@ useEffect(() => {
         )
     );
 
-    // === PATCH: хелпер для отображения имени скина ===
     const currentSkinData = CHARACTERS[character]?.skins?.find(s => s.id === currentSkin);
     const currentSkinName = currentSkinData?.name || 'Original';
 
-    // === PATCH: собираем вкладки для MenuShell ===
     const menuTabs = [];
 
-    // Home — главное меню
     menuTabs.push({
         id: 'home', icon: '🏠', label: 'Home', title: 'Main Menu',
         render: () => React.createElement('div', null,
@@ -890,12 +953,10 @@ useEffect(() => {
         )
     });
 
-    // Shop / Promo / Leaderboard — из pack4 (если доступны)
     if (window.Pack4Render?.shop) menuTabs.push({ id: 'shop', icon: '🛒', label: 'Shop', title: 'Shop', render: window.Pack4Render.shop });
     if (window.Pack4Render?.promo) menuTabs.push({ id: 'promo', icon: '🎁', label: 'Promo', title: 'Promo & Codes', render: window.Pack4Render.promo });
     if (window.Pack4Render?.leaderboard) menuTabs.push({ id: 'leaderboard', icon: '🏅', label: 'Top', title: 'Leaderboard', render: window.Pack4Render.leaderboard });
 
-    // Settings — из game.js
     menuTabs.push({ id: 'settings', icon: '⚙️', label: 'Settings', title: 'Settings', render: () => renderSettingsContent() });
 
     return React.createElement('div', { id: 'game-container' },
@@ -925,7 +986,6 @@ useEffect(() => {
             React.createElement('button', { id: 'btn-pause', className: 'game-btn', onClick: () => setGameState('paused') }, '❚❚')
         ) : null,
 
-        // === PATCH: единое меню через MenuShell ===
         gameState === 'menu' ? (
             window.MenuShell
                 ? React.createElement(window.MenuShell, { coins: coins, tabs: menuTabs })
