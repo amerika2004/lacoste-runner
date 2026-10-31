@@ -412,7 +412,7 @@ window.PackUIs = window.PackUIs || [];
                     if (window.RenderEngine && !PREFERS_REDUCED_MOTION) {
                         window.RenderEngine.flash('0,255,255', 0.5);
                         window.RenderEngine.spawnParticles(ufo.x, ufo.y, 30, {
-                            colors: ['#00FFFF', '#FFD700', '#FFFFFF'], speed: 6, life: 40, size: 4, gravity: 0.1,
+                            colors: ['#00FFFF', '#FFD700', '#FFFFFF'], speed: 6, life: 40, size: 6, gravity: 0.1,
                         });
                     }
                     Pack4State.activeUFO = null;
