@@ -24,10 +24,6 @@ const BASE_SPEED = CONFIG.physics.baseSpeed ?? 4.0;
 const SPEED_MULTIPLIER = CONFIG.physics.speedMultiplier ?? 0.8;
 const DEFAULT_SETTINGS = CONFIG.defaultSettings;
 
-// === PIT FALL TIMING ===
-const PIT_FALL_FRAMES = 40;
-const PIT_DEATH_DELAY_FRAMES = 60;
-
 // === ХЕЛПЕРЫ ПРОКАЧКИ / СКИНОВ ===
 function getStat(charId, statName) {
     const char = CONFIG.characters?.[charId];
@@ -95,13 +91,10 @@ const RenderEngine = (function () {
                 if (p.isEating) chewScale = 1.0 + Math.sin(Date.now() / 80) * 0.05;
                 if (p.isBarrelFlying) flyTilt = p.tilt;
                 if (p.isTripping) { const fallProgress = Math.min(1, p.tripTimer / 15); const standProgress = Math.max(0, (p.tripTimer - 40) / 80); const flatAmount = fallProgress * (1 - standProgress); let dir = p.isBarrelTrip ? (FLIP_CROC ? 1 : -1) : (FLIP_CROC ? -1 : 1); fallAngle = dir * (Math.PI / 2) * flatAmount; yOffset = -((p.w - p.h) / 2) * flatAmount; if (Math.floor(p.tripTimer / 10) % 2 === 1) ctx.globalAlpha = 0.5; }
-                if (p.isFallingIntoPit && p.pitFallProgress > 0) {
-                    ctx.globalAlpha = Math.max(0, 1 - p.pitFallProgress * 1.2);
-                }
                 const centerX = p.x + p.w / 2; const centerY = p.y + p.h / 2 + (p.isJumping ? 0 : (p.isTripping ? yOffset : p.bob));
                 ctx.translate(centerX, centerY); ctx.rotate(p.tilt + fallAngle + flyTilt); if (FLIP_CROC) ctx.scale(-1, 1);
                 const dW = p.w * chewScale, dH = p.h * chewScale; ctx.drawImage(p.img, -dW / 2, -dH / 2, dW, dH); ctx.restore();
-            } else if (!p.isFallingIntoPit) { ctx.fillStyle = 'red'; ctx.fillRect(p.x, p.y, p.w, p.h); }
+            } else { ctx.fillStyle = 'red'; ctx.fillRect(p.x, p.y, p.w, p.h); }
             ctx.save(); ctx.globalAlpha = 1.0; ctx.textBaseline = 'bottom';
             scene.foods.forEach(f => { ctx.font = `40px Arial`; ctx.fillText(f.emoji, f.x, f.y + f.h); }); ctx.restore();
             const { images, pickImg } = scene;
@@ -231,6 +224,8 @@ function Game() {
                         window.RenderEngine.shake(15, 25);
                     }
                     if (navigator.vibrate) navigator.vibrate([60, 40, 60, 40, 100]);
+                } else {
+                    console.warn('[Konami] sequence matched but Pack4State missing');
                 }
             }
         };
@@ -451,7 +446,9 @@ function Game() {
 
     const biomeTransitionRef = useRef({ active: false, nextBiome: null, alpha: 0 });
 
+    // === FIX #3: защита от двойного gameover ===
     const isGameOverRef = useRef(false);
+    // === FIX #11: точный счётчик еды за забег ===
     const totalFoodEatenRef = useRef(0);
 
     const puddleImg = useRef(new Image()); const puddleNightImg = useRef(new Image());
@@ -490,13 +487,18 @@ function Game() {
         else { if (document.exitFullscreen) document.exitFullscreen(); }
     };
 
+    // === FIX #1: комбо полностью управляется Pack1State — локальный comboRef удалён ===
     const konamiRef = useRef([]);
+
+    // === FIX #14: resetGame доступен из замыканий через ref ===
     const resetGameRef = useRef(null);
 
     const handleKeyDown = useCallback((e) => {
+        // === FIX #6: не перехватываем клавиши в полях ввода ===
         const t = e.target;
         if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
 
+        // === FIX #5: Konami — только стрелки, Space не загрязняет буфер ===
         const KONAMI_CODE = CONFIG.pack4?.secrets?.konami?.code || [];
         if (KONAMI_CODE.includes(e.code)) {
             konamiRef.current.push(e.code);
@@ -515,12 +517,14 @@ function Game() {
 
         if (e.code === 'Space' || e.code === 'ArrowUp') {
             e.preventDefault();
+            // === FIX #7: из меню/геймовера запускаем resetGame(), а не просто playing ===
             if (gameState === 'menu' || gameState === 'gameover') { resetGameRef.current && resetGameRef.current(); return; }
             if (gameState === 'playing' && !playerRef.current.isJumping && !isTrippingRef.current && !isFallingIntoPitRef.current && !isPitDeathDelayRef.current && !isBarrelFlyingRef.current && !isEatingRef.current) {
                 const p = playerRef.current;
                 const baseMult = 1.0 + Math.floor(distanceRef.current / 100) * 0.04;
                 p.jumpMult = calculateJumpMultiplier(p.height, baseMult, speedPenaltyRef.current);
                 p.velocityY = JUMP_FORCE * p.jumpMult; p.isJumping = true; p.isHoldingJump = true;
+                // FIX #1: комбо инкрементит Pack1 на событии jump
                 window.GameEvents.emit('jump', { x: p.x + p.width / 2, y: p.y });
                 RenderEngine.spawnParticles(p.x + p.width / 2, p.y + p.height, 6, { colors: ['#FFFFFF', '#AAAAAA'], speed: 2, life: 20, size: 2, gravity: 0.1 });
             }
@@ -571,6 +575,7 @@ function Game() {
         isTrippingRef.current = false; tripTimerRef.current = 0; speedPenaltyRef.current = 1.0; isBarrelTripRef.current = false; pendingBarrelDamageRef.current = false; isBarrelFlyingRef.current = false; barrelFlyVelocityYRef.current = 0; isFallingIntoPitRef.current = false; pitTargetRef.current = null; pitFallTimerRef.current = 0; pitVelocityRef.current = 0; isPitDeathDelayRef.current = false; pitDeathDelayTimerRef.current = 0;
         isEatingRef.current = false; eatTimerRef.current = 0; eatFrameIdxRef.current = 0; eatSpeedFactorRef.current = 1.0; pitAudioEndedRef.current = false;
 
+        // === FIX #4/#14: очищаем флаги и refs ===
         isGameOverRef.current = false;
         totalFoodEatenRef.current = 0;
         konamiRef.current = [];
@@ -585,11 +590,13 @@ function Game() {
             window.Pack4State.reviveUsed = false;
         }
 
+        // FIX #1: комбо сбросится в Pack1 на 'start' (и 'start_combo' подхватится там же)
         window.GameEvents.emit('start', { character, background, timeOfDay, settings: settingsRef.current });
     };
     resetGameRef.current = resetGame;
 
     const handleGameOver = () => {
+        // === FIX #3: защита от двойного вызова ===
         if (isGameOverRef.current) return;
         isGameOverRef.current = true;
 
@@ -600,6 +607,7 @@ function Game() {
         stats.totalRuns = (stats.totalRuns || 0) + 1;
         stats.totalDistance = (stats.totalDistance || 0) + Math.floor(distanceRef.current);
         stats.totalJumps = (stats.totalJumps || 0) + (window.Pack3State?.runStats?.jumps || 0);
+        // === FIX #11: точный счётчик съеденной еды ===
         stats.totalFood = (stats.totalFood || 0) + totalFoodEatenRef.current;
         localStorage.setItem('lacostePlayerStats', JSON.stringify(stats));
 
@@ -610,6 +618,7 @@ function Game() {
         healthRef.current -= 1;
         setHealth(healthRef.current);
 
+        // Emit hit ДО проверки смерти, чтобы паки увидели финальный удар
         window.GameEvents.emit('hit', {
             health: healthRef.current,
             type,
@@ -641,6 +650,7 @@ function Game() {
 
         obstaclesRef.current.splice(index, 1);
 
+        // === FIX #9/#10: сначала визуал + звук + emit hit, потом — смерть ===
         if (type === 'puddle' && splashAudioRef.current && settingsRef.current.soundEnabled) { splashAudioRef.current.currentTime = 0; splashAudioRef.current.playbackRate = 1.2; splashAudioRef.current.play().catch(e => console.warn("Audio blocked", e)); }
         RenderEngine.flash('255,0,0', 0.4); RenderEngine.shake(6, 12);
         RenderEngine.spawnParticles(playerRef.current.x + playerRef.current.width / 2, playerRef.current.y + playerRef.current.height / 2, 15, { colors: ['#FF007F', '#FFFFFF'], speed: 4, life: 25, size: 3, gravity: 0.15 });
@@ -676,79 +686,14 @@ function Game() {
         spawnCooldownRef.current = 90; spawnTimerRef.current = 0; isBarrelFlyingRef.current = true; isBarrelTripRef.current = true; barrelFlyVelocityYRef.current = -20; p.velocityY = 0; p.isJumping = false; p.isHoldingJump = false; p.tilt = 0;
     };
 
-    const startPitFall = (obs) => {
-        if (isFallingIntoPitRef.current || isPitDeathDelayRef.current || isGameOverRef.current) return;
-
-        isFallingIntoPitRef.current = true;
-        pitTargetRef.current = obs;
-        pitFallTimerRef.current = 0;
-        pitVelocityRef.current = 2.0;
-
-        const p = playerRef.current;
-        p.velocityY = 0;
-        p.isJumping = false;
-        p.isHoldingJump = false;
-        p.isBarrelFlying = false;
-
-        // Reset combo + SFX через hit-эмит (без HP damage)
-        window.GameEvents.emit('hit', {
-            health: healthRef.current,
-            type: 'pit',
-            playerX: p.x + p.width / 2,
-            playerY: p.y + p.height / 2,
-            distance: Math.floor(distanceRef.current),
-        });
-
-        if (pitAudioRef.current && settingsRef.current.soundEnabled && !pitAudioEndedRef.current) {
-            try {
-                pitAudioRef.current.currentTime = 0;
-                pitAudioRef.current.play().catch(() => {});
-            } catch (e) {}
-            pitAudioEndedRef.current = true;
-        }
-
-        RenderEngine.flash('0,0,0', 0.3);
-        RenderEngine.shake(4, 10);
-    };
-
     const updateLogic = () => {
         const canvas = canvasRef.current; const p = playerRef.current;
         const char = CHARACTERS[character] || CHARACTERS[Object.keys(CHARACTERS)[0]]; const gy = groundYRef.current;
 
-        // === PIT FALL (наивысший приоритет) ===
-        if (isFallingIntoPitRef.current) {
-            pitFallTimerRef.current++;
-            pitVelocityRef.current += GRAVITY * 1.5;
-            p.y += pitVelocityRef.current;
-            p.tilt += 0.12;
-
-            if (pitFallTimerRef.current % 4 === 0) {
-                RenderEngine.spawnParticles(p.x + p.width / 2, p.y + p.height / 2, 2, {
-                    colors: ['#666', '#999', '#444'], speed: 2, life: 18, size: 2, gravity: 0.05
-                });
-            }
-
-            if (pitFallTimerRef.current >= PIT_FALL_FRAMES) {
-                isFallingIntoPitRef.current = false;
-                isPitDeathDelayRef.current = true;
-                pitDeathDelayTimerRef.current = 0;
-            }
-            return;
-        }
-
-        // === PIT DEATH DELAY (fade to black) ===
-        if (isPitDeathDelayRef.current) {
-            pitDeathDelayTimerRef.current++;
-            if (pitDeathDelayTimerRef.current >= PIT_DEATH_DELAY_FRAMES) {
-                handleGameOver();
-            }
-            return;
-        }
-
         let currentBgConfig = BACKGROUNDS[backgroundRef.current] || BACKGROUNDS[Object.keys(BACKGROUNDS)[0]];
         if (settingsRef.current.biomesEnabled && window.Pack3State && window.Pack3State.currentBiome) { currentBgConfig = window.Pack3State.currentBiome; }
 
-        const diffMult = SPEED_MULTIPLIER + Math.floor(distanceRef.current / 500) * 0.05;
+                const diffMult = SPEED_MULTIPLIER + Math.floor(distanceRef.current / 500) * 0.05;
         let slowmoFactor = 1.0;
         if ((window.Pack2State?.activePowerups?.slowmo || 0) > Date.now()) slowmoFactor = 0.5;
         let sprintFactor = 1.0;
@@ -763,10 +708,12 @@ function Game() {
         distanceRef.current += currentSpeed * 0.5;
         bgOffsetRef.current += currentSpeed * 0.5;
 
+        // FIX #8: speedPenalty восстанавливается со временем
         if (speedPenaltyRef.current < 1.0 && !isTrippingRef.current && !isBarrelFlyingRef.current) {
             speedPenaltyRef.current = Math.min(1.0, speedPenaltyRef.current + 0.001);
         }
 
+        // HUD-дисплеи
         setScore(Math.floor(distanceRef.current));
         setSpeedDisplay(prev => {
             const next = Math.round((BASE_SPEED + distanceRef.current * 0.001) * 10) / 10;
@@ -777,6 +724,7 @@ function Game() {
             return Math.abs(prev - pw) < 0.1 ? prev : pw;
         });
 
+        // === EATING timer ===
         if (isEatingRef.current) {
             eatTimerRef.current++;
             if (eatTimerRef.current > 30) {
@@ -786,6 +734,7 @@ function Game() {
             }
         }
 
+        // === TRIPPING timer ===
         if (isTrippingRef.current) {
             tripTimerRef.current++;
             if (tripTimerRef.current > 120) {
@@ -794,6 +743,7 @@ function Game() {
             }
         }
 
+        // === BARREL FLY ===
         if (isBarrelFlyingRef.current) {
             p.velocityY += 0.7;
             p.y += barrelFlyVelocityYRef.current;
@@ -810,6 +760,7 @@ function Game() {
                 pendingBarrelDamageRef.current = true;
             }
         } else if (p.isJumping) {
+            // === JUMP PHYSICS ===
             p.velocityY += GRAVITY;
             if (p.isHoldingJump && p.velocityY < 0) p.velocityY += HOLD_THRUST;
             p.y += p.velocityY;
@@ -826,6 +777,7 @@ function Game() {
             p.y = gy - p.height;
         }
 
+        // === PENDING BARREL DAMAGE (FIX #9/#10) ===
         if (pendingBarrelDamageRef.current) {
             pendingBarrelDamageRef.current = false;
             const died = applyDamage('barrel');
@@ -837,11 +789,12 @@ function Game() {
             }
         }
 
-        // SPAWN OBSTACLES
+        // === SPAWN OBSTACLES (FIX #spawnTimer: инвертированная логика) ===
         spawnTimerRef.current++;
         if (spawnCooldownRef.current > 0) {
             spawnCooldownRef.current--;
         } else {
+            // FIX: быстрее игра → чаще спавн (было наоборот)
             const spawnRate = Math.max(45, 140 - currentSpeed * 8) + Math.random() * 40;
             if (spawnTimerRef.current > spawnRate) {
                 spawnTimerRef.current = 0;
@@ -869,7 +822,7 @@ function Game() {
             }
         }
 
-        // SPAWN FOOD
+        // === SPAWN FOOD ===
         foodTimerRef.current++;
         if (foodTimerRef.current > 60 + Math.random() * 80) {
             foodTimerRef.current = 0;
@@ -882,14 +835,14 @@ function Game() {
             });
         }
 
-        // MOVE OBSTACLES
+        // === MOVE OBSTACLES ===
         for (let i = obstaclesRef.current.length - 1; i >= 0; i--) {
             const obs = obstaclesRef.current[i];
             obs.x -= currentSpeed;
             if (obs.x + (obs.w || obs.width) < -200) obstaclesRef.current.splice(i, 1);
         }
 
-        // MOVE FOOD (+ magnet)
+        // === MOVE FOOD (+ magnet) ===
         const magnetActive = (window.Pack2State?.activePowerups?.magnet || 0) > Date.now();
         for (let i = foodsRef.current.length - 1; i >= 0; i--) {
             const f = foodsRef.current[i];
@@ -906,14 +859,14 @@ function Game() {
             if (f.x + f.w < -100) foodsRef.current.splice(i, 1);
         }
 
-        // MOVE EXPLOSIONS
+        // === MOVE EXPLOSIONS ===
         for (let i = explosionsRef.current.length - 1; i >= 0; i--) {
             const e = explosionsRef.current[i];
             e.timer++;
             if (e.timer > e.maxTimer) explosionsRef.current.splice(i, 1);
         }
 
-        // FOOD COLLISION
+        // === FOOD COLLISION (FIX #11: точный счётчик) ===
         const pHitbox = {
             x: p.x + p.width * 0.15, y: p.y + p.height * 0.15,
             w: p.width * 0.7, h: p.height * 0.7,
@@ -938,7 +891,7 @@ function Game() {
             }
         }
 
-        // OBSTACLE COLLISION
+        // === OBSTACLE COLLISION ===
         const pBox = {
             x: p.x + p.width * 0.2, y: p.y + p.height * 0.15,
             w: p.width * 0.6, h: p.height * 0.8,
@@ -953,8 +906,17 @@ function Game() {
                 && pBox.y < oBox.y + oBox.h && pBox.y + pBox.h > oBox.y) {
 
                 if (obs.type === 'pit') {
-                    if (!p.isJumping && !isTrippingRef.current && !isFallingIntoPitRef.current) {
-                        startPitFall(obs);
+                    if (!p.isJumping && !isTrippingRef.current) {
+                        isFallingIntoPitRef.current = true;
+                        pitTargetRef.current = obs;
+                        pitFallTimerRef.current = 0;
+                        p.velocityY = 0;
+                        p.isJumping = false;
+                        p.isHoldingJump = false;
+                        if (pitAudioRef.current && settingsRef.current.soundEnabled) {
+                            pitAudioRef.current.currentTime = 0;
+                            pitAudioRef.current.play().catch(() => {});
+                        }
                     }
                 } else if (obs.type === 'barrel') {
                     handleBarrelHit(i);
@@ -965,7 +927,7 @@ function Game() {
             }
         }
 
-        // BIOME TRANSITION
+        // === BIOME TRANSITION ===
         if (settingsRef.current.biomesEnabled && window.Pack3State?.nextBiome) {
             const trans = biomeTransitionRef.current;
             if (!trans.active) {
@@ -1010,6 +972,7 @@ function Game() {
             transitionAlpha = trans.alpha;
         }
 
+        // Спрайт персонажа (walk / eat)
         let playerImg = null;
         if (isEatingRef.current && eatFramesRef.current.length > 0) {
             playerImg = eatFramesRef.current[eatFrameIdxRef.current % eatFramesRef.current.length];
@@ -1027,6 +990,7 @@ function Game() {
 
         const pickImg = (day, night) => isNight ? night : day;
 
+        // Pit overlay
         let pitOverlay = null;
         if (isFallingIntoPitRef.current && pitTargetRef.current) {
             const pit = pitTargetRef.current;
@@ -1037,9 +1001,10 @@ function Game() {
             };
         }
 
+        // FIX #4: deathFade — таймер, не аудио
         let deathFade = null;
         if (isPitDeathDelayRef.current) {
-            deathFade = Math.min(1, pitDeathDelayTimerRef.current / PIT_DEATH_DELAY_FRAMES);
+            deathFade = Math.min(1, pitDeathDelayTimerRef.current / 180);
         }
 
         const player = {
@@ -1053,7 +1018,6 @@ function Game() {
             isBarrelFlying: isBarrelFlyingRef.current,
             isEating: isEatingRef.current,
             isFallingIntoPit: isFallingIntoPitRef.current,
-            pitFallProgress: isFallingIntoPitRef.current ? Math.min(1, pitFallTimerRef.current / PIT_FALL_FRAMES) : 0,
             skinFilter: getSkinFilter(character, currentSkin),
         };
 
@@ -1081,7 +1045,7 @@ function Game() {
         };
     };
 
-    // === ИГРОВОЙ ЦИКЛ ===
+    // === ИГРОВОЙ ЦИКЛ (FIX #2: tick эмитится ЗДЕСЬ, а не в updateLogic) ===
     const lastLoopTimeRef = useRef(0);
 
     const gameLoop = useCallback(() => {
@@ -1128,6 +1092,7 @@ function Game() {
                 });
             }
         } else if (gameState === 'gameover') {
+            // Один финальный кадр — на случай deathFade / анимаций
             RenderEngine.update();
             const ctx = canvas.getContext('2d');
             const scene = describeScene();
