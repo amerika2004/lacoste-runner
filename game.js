@@ -24,6 +24,10 @@ const BASE_SPEED = CONFIG.physics.baseSpeed ?? 4.0;
 const SPEED_MULTIPLIER = CONFIG.physics.speedMultiplier ?? 0.8;
 const DEFAULT_SETTINGS = CONFIG.defaultSettings;
 
+// === PIT FALL TIMING ===
+const PIT_FALL_FRAMES = 40;
+const PIT_DEATH_DELAY_FRAMES = 60;
+
 // === ХЕЛПЕРЫ ПРОКАЧКИ / СКИНОВ ===
 function getStat(charId, statName) {
     const char = CONFIG.characters?.[charId];
@@ -91,10 +95,13 @@ const RenderEngine = (function () {
                 if (p.isEating) chewScale = 1.0 + Math.sin(Date.now() / 80) * 0.05;
                 if (p.isBarrelFlying) flyTilt = p.tilt;
                 if (p.isTripping) { const fallProgress = Math.min(1, p.tripTimer / 15); const standProgress = Math.max(0, (p.tripTimer - 40) / 80); const flatAmount = fallProgress * (1 - standProgress); let dir = p.isBarrelTrip ? (FLIP_CROC ? 1 : -1) : (FLIP_CROC ? -1 : 1); fallAngle = dir * (Math.PI / 2) * flatAmount; yOffset = -((p.w - p.h) / 2) * flatAmount; if (Math.floor(p.tripTimer / 10) % 2 === 1) ctx.globalAlpha = 0.5; }
+                if (p.isFallingIntoPit && p.pitFallProgress > 0) {
+                    ctx.globalAlpha = Math.max(0, 1 - p.pitFallProgress * 1.2);
+                }
                 const centerX = p.x + p.w / 2; const centerY = p.y + p.h / 2 + (p.isJumping ? 0 : (p.isTripping ? yOffset : p.bob));
                 ctx.translate(centerX, centerY); ctx.rotate(p.tilt + fallAngle + flyTilt); if (FLIP_CROC) ctx.scale(-1, 1);
                 const dW = p.w * chewScale, dH = p.h * chewScale; ctx.drawImage(p.img, -dW / 2, -dH / 2, dW, dH); ctx.restore();
-            } else { ctx.fillStyle = 'red'; ctx.fillRect(p.x, p.y, p.w, p.h); }
+            } else if (!p.isFallingIntoPit) { ctx.fillStyle = 'red'; ctx.fillRect(p.x, p.y, p.w, p.h); }
             ctx.save(); ctx.globalAlpha = 1.0; ctx.textBaseline = 'bottom';
             scene.foods.forEach(f => { ctx.font = `40px Arial`; ctx.fillText(f.emoji, f.x, f.y + f.h); }); ctx.restore();
             const { images, pickImg } = scene;
@@ -224,8 +231,6 @@ function Game() {
                         window.RenderEngine.shake(15, 25);
                     }
                     if (navigator.vibrate) navigator.vibrate([60, 40, 60, 40, 100]);
-                } else {
-                    console.warn('[Konami] sequence matched but Pack4State missing');
                 }
             }
         };
@@ -258,18 +263,17 @@ function Game() {
     const [speedDisplay, setSpeedDisplay] = useState(1.0);
     const [powerDisplay, setPowerDisplay] = useState(1.0);
     const [health, setHealth] = useState(6);
-    const [highScore, setHighScore] = useState(() => parseInt(localStorage.getItem('lacosteHighScore')) || 0);
-    const [coins, setCoins] = useState(() => parseInt(localStorage.getItem('lacosteCoins')) || 0);
+    const [highScore, setHighScore] = useState(() => Math.max(0, parseInt(localStorage.getItem('lacosteHighScore')) || 0));
+    const [coins, setCoins] = useState(() => Math.max(0, parseInt(localStorage.getItem('lacosteCoins')) || 0));
 
     const [settings, setSettings] = useState(() => {
         try { const saved = JSON.parse(localStorage.getItem('lacosteSettings') || '{}'); return { ...DEFAULT_SETTINGS, ...saved }; } catch { return { ...DEFAULT_SETTINGS }; }
     });
 
-    // === PATCH 1a: ref для актуального score в listeners ===
     const scoreRef = useRef(0);
     useEffect(() => { scoreRef.current = score; }, [score]);
 
-    // === PATCH 1b: SHARE button — Web Share API / clipboard fallback ===
+    // SHARE
     useEffect(() => {
         const handler = () => {
             const dist = Math.floor(scoreRef.current) || highScore;
@@ -294,7 +298,7 @@ function Game() {
         };
     }, [highScore]);
 
-    // === PATCH 1c: Character sync — Home ↔ Shop ===
+    // Character sync
     useEffect(() => {
         const handler = (data) => {
             if (data?.charId && CHARACTERS[data.charId] && data.charId !== character) {
@@ -309,7 +313,7 @@ function Game() {
         };
     }, [character]);
 
-    // === PATCH 1d: Forward pack1/pack2 toasts в единый toast-стек pack4 ===
+    // Forward pack1/pack2 toasts
     useEffect(() => {
         const forward = (d) => window.GameEvents.emit('pack4_toast', d);
         window.GameEvents.on('pack1_toast', forward);
@@ -323,14 +327,14 @@ function Game() {
         };
     }, []);
 
-    // === PATCH 1e: Auto-pause при сворачивании вкладки ===
+    // Auto-pause
     useEffect(() => {
         const onHide = () => { if (document.hidden && gameState === 'playing') setGameState('paused'); };
         document.addEventListener('visibilitychange', onHide);
         return () => document.removeEventListener('visibilitychange', onHide);
     }, [gameState]);
 
-    // === PATCH 1f: Предупреждение при закрытии вкладки во время игры ===
+    // beforeunload
     useEffect(() => {
         if (gameState !== 'playing') return;
         const handler = (e) => { e.preventDefault(); e.returnValue = ''; };
@@ -338,11 +342,9 @@ function Game() {
         return () => window.removeEventListener('beforeunload', handler);
     }, [gameState]);
 
-    const comboRef = useRef(0);
-    const comboMultRef = useRef(1);
-
+    // Coins sync
     useEffect(() => {
-        const handleCoinsUpdate = () => setCoins(parseInt(localStorage.getItem('lacosteCoins')) || 0);
+        const handleCoinsUpdate = () => setCoins(Math.max(0, parseInt(localStorage.getItem('lacosteCoins')) || 0));
         window.GameEvents.on('pack4_coins_updated', handleCoinsUpdate);
         return () => {
             if (window.GameEvents.listeners['pack4_coins_updated']) {
@@ -449,6 +451,9 @@ function Game() {
 
     const biomeTransitionRef = useRef({ active: false, nextBiome: null, alpha: 0 });
 
+    const isGameOverRef = useRef(false);
+    const totalFoodEatenRef = useRef(0);
+
     const puddleImg = useRef(new Image()); const puddleNightImg = useRef(new Image());
     const rockImg = useRef(new Image()); const rockNightImg = useRef(new Image());
     const pitImg = useRef(new Image()); const pitNightImg = useRef(new Image());
@@ -485,63 +490,70 @@ function Game() {
         else { if (document.exitFullscreen) document.exitFullscreen(); }
     };
 
-    const resetCombo = () => { comboRef.current = 0; comboMultRef.current = 1; window.GameEvents.emit('combo_changed', { mult: 0, count: 0 }); };
-    // === PATCH 4: уважает comboEnabled ===
-    const addCombo = () => {
-        if (!settingsRef.current.comboEnabled) return;
-        comboRef.current++;
-        let mult = 1;
-        if (comboRef.current >= 8) mult = 5;
-        else if (comboRef.current >= 5) mult = 3;
-        else if (comboRef.current >= 3) mult = 2;
-        comboMultRef.current = mult;
-        window.GameEvents.emit('combo_changed', { mult: comboRef.current, count: comboRef.current });
-    };
-
     const konamiRef = useRef([]);
+    const resetGameRef = useRef(null);
+
     const handleKeyDown = useCallback((e) => {
-        konamiRef.current.push(e.code);
-        if (konamiRef.current.length > 8) konamiRef.current.shift();
-        if (JSON.stringify(konamiRef.current) === JSON.stringify(CONFIG.pack4.secrets.konami.code)) {
-            if (window.Pack4State) {
-                window.Pack4State.cheatInvincible = Date.now() + CONFIG.pack4.secrets.konami.duration;
-                window.GameEvents.emit('pack4_toast', { text: '🔱 CHEAT ACTIVATED! 10s INVINCIBILITY', type: 'danger' });
-                konamiRef.current = [];
+        const t = e.target;
+        if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+
+        const KONAMI_CODE = CONFIG.pack4?.secrets?.konami?.code || [];
+        if (KONAMI_CODE.includes(e.code)) {
+            konamiRef.current.push(e.code);
+            if (konamiRef.current.length > KONAMI_CODE.length) konamiRef.current.shift();
+            if (JSON.stringify(konamiRef.current) === JSON.stringify(KONAMI_CODE)) {
+                if (window.Pack4State) {
+                    window.Pack4State.cheatInvincible = Date.now() + (CONFIG.pack4.secrets.konami.duration || 10000);
+                    window.GameEvents.emit('pack4_toast', { text: '🔱 CHEAT ACTIVATED! 10s INVINCIBILITY', type: 'danger' });
+                    konamiRef.current = [];
+                }
             }
         }
 
         if (e.code === 'Escape') { e.preventDefault(); if (isFallingIntoPitRef.current || isPitDeathDelayRef.current) return; if (gameState === 'playing') setGameState('paused'); else if (gameState === 'paused') setGameState('playing'); return; }
         if (e.code === 'KeyN') { e.preventDefault(); setTimeOfDay(prev => prev === 'day' ? 'night' : 'day'); return; }
+
         if (e.code === 'Space' || e.code === 'ArrowUp') {
             e.preventDefault();
-            if (gameState === 'menu') setGameState('playing');
-            else if (gameState === 'gameover') resetGame();
-            else if (gameState === 'playing' && !playerRef.current.isJumping && !isTrippingRef.current && !isFallingIntoPitRef.current && !isPitDeathDelayRef.current && !isBarrelFlyingRef.current && !isEatingRef.current) {
+            if (gameState === 'menu' || gameState === 'gameover') { resetGameRef.current && resetGameRef.current(); return; }
+            if (gameState === 'playing' && !playerRef.current.isJumping && !isTrippingRef.current && !isFallingIntoPitRef.current && !isPitDeathDelayRef.current && !isBarrelFlyingRef.current && !isEatingRef.current) {
                 const p = playerRef.current;
                 const baseMult = 1.0 + Math.floor(distanceRef.current / 100) * 0.04;
                 p.jumpMult = calculateJumpMultiplier(p.height, baseMult, speedPenaltyRef.current);
-                p.velocityY = JUMP_FORCE * p.jumpMult; p.isJumping = true; p.isHoldingJump = true; addCombo();
+                p.velocityY = JUMP_FORCE * p.jumpMult; p.isJumping = true; p.isHoldingJump = true;
                 window.GameEvents.emit('jump', { x: p.x + p.width / 2, y: p.y });
                 RenderEngine.spawnParticles(p.x + p.width / 2, p.y + p.height, 6, { colors: ['#FFFFFF', '#AAAAAA'], speed: 2, life: 20, size: 2, gravity: 0.1 });
             }
         }
     }, [gameState, character]);
-    const handleKeyUp = useCallback((e) => { if (e.code === 'Space' || e.code === 'ArrowUp') playerRef.current.isHoldingJump = false; }, []);
+    const handleKeyUp = useCallback((e) => {
+        const t = e.target;
+        if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+        if (e.code === 'Space' || e.code === 'ArrowUp') playerRef.current.isHoldingJump = false;
+    }, []);
     useEffect(() => { window.addEventListener('keydown', handleKeyDown); window.addEventListener('keyup', handleKeyUp); return () => { window.removeEventListener('keydown', handleKeyDown); window.removeEventListener('keyup', handleKeyUp); }; }, [handleKeyDown, handleKeyUp]);
 
     useEffect(() => {
         const canvas = canvasRef.current; if (!canvas) return;
+        const shouldSkipTouch = (target) =>
+            target.closest('.game-btn') || target.closest('.btn') || target.closest('.char-btn') ||
+            target.closest('.settings-panel') || target.closest('.settings-open-btn') ||
+            target.closest('.pack2-inventory') || target.closest('.pack3-ui') || target.closest('.ms-overlay') ||
+            target.closest('input') || target.closest('textarea') || target.closest('button');
+
         const handleTouchStart = (e) => {
-            if (e.target.closest('.game-btn') || e.target.closest('.btn') || e.target.closest('.char-btn') || e.target.closest('.settings-panel') || e.target.closest('.settings-open-btn') || e.target.closest('.pack2-inventory') || e.target.closest('.pack3-ui') || e.target.closest('.ms-overlay')) return;
+            if (shouldSkipTouch(e.target)) return;
             e.preventDefault(); if (gameState !== 'playing') return;
             if (playerRef.current.isJumping || isTrippingRef.current || isFallingIntoPitRef.current || isPitDeathDelayRef.current || isBarrelFlyingRef.current || isEatingRef.current) return;
             const p = playerRef.current; const baseMult = 1.0 + Math.floor(distanceRef.current / 100) * 0.04;
-            p.jumpMult = calculateJumpMultiplier(p.height, baseMult, speedPenaltyRef.current); p.velocityY = JUMP_FORCE * p.jumpMult; p.isJumping = true; p.isHoldingJump = true; addCombo();
+            p.jumpMult = calculateJumpMultiplier(p.height, baseMult, speedPenaltyRef.current); p.velocityY = JUMP_FORCE * p.jumpMult; p.isJumping = true; p.isHoldingJump = true;
             window.GameEvents.emit('jump', { x: p.x + p.width / 2, y: p.y });
             RenderEngine.spawnParticles(p.x + p.width / 2, p.y + p.height, 6, { colors: ['#FFFFFF', '#AAAAAA'], speed: 2, life: 20, size: 2, gravity: 0.1 });
         };
-        const handleTouchEnd = (e) => { if (e.target.closest('.game-btn') || e.target.closest('.btn') || e.target.closest('.char-btn') || e.target.closest('.settings-panel') || e.target.closest('.settings-open-btn') || e.target.closest('.pack2-inventory') || e.target.closest('.pack3-ui') || e.target.closest('.ms-overlay')) return; if (gameState !== 'playing') return; e.preventDefault(); playerRef.current.isHoldingJump = false; };
-        canvas.addEventListener('touchstart', handleTouchStart, { passive: false }); canvas.addEventListener('touchend', handleTouchEnd, { passive: false }); canvas.addEventListener('touchcancel', handleTouchEnd, { passive: false });
+        const handleTouchEnd = (e) => { if (shouldSkipTouch(e.target)) return; if (gameState !== 'playing') return; e.preventDefault(); playerRef.current.isHoldingJump = false; };
+        canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
+        canvas.addEventListener('touchend', handleTouchEnd, { passive: false });
+        canvas.addEventListener('touchcancel', handleTouchEnd, { passive: false });
         return () => { canvas.removeEventListener('touchstart', handleTouchStart); canvas.removeEventListener('touchend', handleTouchEnd); canvas.removeEventListener('touchcancel', handleTouchEnd); };
     }, [gameState, character]);
 
@@ -558,25 +570,29 @@ function Game() {
         healthRef.current = startHp; setHealth(startHp);
         isTrippingRef.current = false; tripTimerRef.current = 0; speedPenaltyRef.current = 1.0; isBarrelTripRef.current = false; pendingBarrelDamageRef.current = false; isBarrelFlyingRef.current = false; barrelFlyVelocityYRef.current = 0; isFallingIntoPitRef.current = false; pitTargetRef.current = null; pitFallTimerRef.current = 0; pitVelocityRef.current = 0; isPitDeathDelayRef.current = false; pitDeathDelayTimerRef.current = 0;
         isEatingRef.current = false; eatTimerRef.current = 0; eatFrameIdxRef.current = 0; eatSpeedFactorRef.current = 1.0; pitAudioEndedRef.current = false;
+
+        isGameOverRef.current = false;
+        totalFoodEatenRef.current = 0;
+        konamiRef.current = [];
+
         if (pitAudioRef.current) { pitAudioRef.current.pause(); pitAudioRef.current.currentTime = 0; }
 
         biomeTransitionRef.current = { active: false, nextBiome: null, alpha: 0 };
 
-        resetCombo(); RenderEngine.reset(); setScore(0); setSpeedDisplay(1.0); setPowerDisplay(1.0); setGameState('playing');
+        RenderEngine.reset(); setScore(0); setSpeedDisplay(1.0); setPowerDisplay(1.0); setGameState('playing');
 
         if (window.Pack4State) {
             window.Pack4State.reviveUsed = false;
         }
 
         window.GameEvents.emit('start', { character, background, timeOfDay, settings: settingsRef.current });
-
-        if (window.Pack4State?.boughtBuffs?.includes('start_combo')) {
-            comboRef.current = 5;
-            comboMultRef.current = 3;
-        }
     };
+    resetGameRef.current = resetGame;
 
     const handleGameOver = () => {
+        if (isGameOverRef.current) return;
+        isGameOverRef.current = true;
+
         RenderEngine.reset(); if (pitAudioRef.current) pitAudioRef.current.pause(); setGameState('gameover');
         if (Math.floor(distanceRef.current) > highScore) { const newHigh = Math.floor(distanceRef.current); setHighScore(newHigh); localStorage.setItem('lacosteHighScore', newHigh); }
 
@@ -584,19 +600,23 @@ function Game() {
         stats.totalRuns = (stats.totalRuns || 0) + 1;
         stats.totalDistance = (stats.totalDistance || 0) + Math.floor(distanceRef.current);
         stats.totalJumps = (stats.totalJumps || 0) + (window.Pack3State?.runStats?.jumps || 0);
-        stats.totalFood = (stats.totalFood || 0) + playerRef.current.foodEaten;
+        stats.totalFood = (stats.totalFood || 0) + totalFoodEatenRef.current;
         localStorage.setItem('lacostePlayerStats', JSON.stringify(stats));
 
         window.GameEvents.emit('gameover', { distance: Math.floor(distanceRef.current), health: healthRef.current, character, background, timeOfDay });
     };
 
-    const handleHit = (index, type) => {
-        if (isTrippingRef.current) return;
-        if (window.Pack4State && window.Pack4State.cheatInvincible > Date.now()) { obstaclesRef.current.splice(index, 1); RenderEngine.flash('0,255,255', 0.3); return; }
-        if (window.Pack2State && window.Pack2State.hasShield) { window.Pack2State.hasShield = false; obstaclesRef.current.splice(index, 1); window.GameEvents.emit('shield_break', { x: playerRef.current.x, y: playerRef.current.y }); return; }
+    const applyDamage = (type) => {
+        healthRef.current -= 1;
+        setHealth(healthRef.current);
 
-        obstaclesRef.current.splice(index, 1);
-        healthRef.current -= 1; setHealth(healthRef.current);
+        window.GameEvents.emit('hit', {
+            health: healthRef.current,
+            type,
+            playerX: playerRef.current.x + playerRef.current.width / 2,
+            playerY: playerRef.current.y + playerRef.current.height / 2,
+            distance: Math.floor(distanceRef.current),
+        });
 
         if (healthRef.current <= 0) {
             if (window.Pack4State && window.Pack4State.boughtBuffs?.includes('revive') && !window.Pack4State.reviveUsed) {
@@ -605,16 +625,28 @@ function Game() {
                 RenderEngine.flash('255,0,255', 0.8); RenderEngine.shake(20, 30);
                 window.GameEvents.emit('pack4_toast', { text: '💖 SECOND CHANCE ACTIVATED!', type: 'success' });
                 RenderEngine.spawnParticles(playerRef.current.x + playerRef.current.width / 2, playerRef.current.y + playerRef.current.height / 2, 50, { colors: ['#FF007F', '#FFFFFF'], speed: 8, life: 40, size: 4, gravity: 0.1 });
+                return false;
             } else {
-                handleGameOver(); return;
+                handleGameOver();
+                return true;
             }
         }
+        return false;
+    };
+
+    const handleHit = (index, type) => {
+        if (isTrippingRef.current || isGameOverRef.current) return;
+        if (window.Pack4State && window.Pack4State.cheatInvincible > Date.now()) { obstaclesRef.current.splice(index, 1); RenderEngine.flash('0,255,255', 0.3); return; }
+        if (window.Pack2State && window.Pack2State.hasShield) { window.Pack2State.hasShield = false; obstaclesRef.current.splice(index, 1); window.GameEvents.emit('shield_break', { x: playerRef.current.x, y: playerRef.current.y }); return; }
+
+        obstaclesRef.current.splice(index, 1);
 
         if (type === 'puddle' && splashAudioRef.current && settingsRef.current.soundEnabled) { splashAudioRef.current.currentTime = 0; splashAudioRef.current.playbackRate = 1.2; splashAudioRef.current.play().catch(e => console.warn("Audio blocked", e)); }
         RenderEngine.flash('255,0,0', 0.4); RenderEngine.shake(6, 12);
         RenderEngine.spawnParticles(playerRef.current.x + playerRef.current.width / 2, playerRef.current.y + playerRef.current.height / 2, 15, { colors: ['#FF007F', '#FFFFFF'], speed: 4, life: 25, size: 3, gravity: 0.15 });
-        resetCombo();
-        window.GameEvents.emit('hit', { health: healthRef.current, type, playerX: playerRef.current.x + playerRef.current.width / 2, playerY: playerRef.current.y + playerRef.current.height / 2, distance: Math.floor(distanceRef.current) });
+
+        const died = applyDamage(type);
+        if (died) return;
 
         isTrippingRef.current = true; tripTimerRef.current = 0; isBarrelTripRef.current = false;
         const p = playerRef.current; p.y = groundYRef.current - p.height; p.velocityY = 0; p.isJumping = false; p.tilt = 0;
@@ -622,14 +654,15 @@ function Game() {
     };
 
     const handleBarrelHit = (index) => {
-        if (isTrippingRef.current || isBarrelFlyingRef.current) return;
+        if (isTrippingRef.current || isBarrelFlyingRef.current || isGameOverRef.current) return;
         if (window.Pack4State && window.Pack4State.cheatInvincible > Date.now()) { obstaclesRef.current.splice(index, 1); RenderEngine.flash('0,255,255', 0.3); return; }
 
         const obs = obstaclesRef.current[index]; if (!obs) return; const canvas = canvasRef.current; const p = playerRef.current;
         explosionsRef.current.push({ x: obs.x + obs.width / 2, y: obs.y + obs.height / 2, size: obs.height * 6, timer: 0, maxTimer: 30 });
         if (barrelAudioRef.current && settingsRef.current.soundEnabled) { barrelAudioRef.current.currentTime = 0; barrelAudioRef.current.play().catch(e => console.warn("Audio blocked", e)); }
         RenderEngine.spawnParticles(obs.x + obs.width / 2, obs.y + obs.height / 2, 30, { colors: ['#FF007F', '#FFD700', '#FFAA00', '#FFFFFF'], speed: 8, life: 40, size: 5, gravity: 0.2, shape: 'circle' });
-        RenderEngine.shake(12, 20); RenderEngine.flash('255,150,0', 0.3); resetCombo(); window.GameEvents.emit('barrel_hit', { x: obs.x, y: obs.y });
+        RenderEngine.shake(12, 20); RenderEngine.flash('255,150,0', 0.3);
+        window.GameEvents.emit('barrel_hit', { x: obs.x, y: obs.y });
 
         obstaclesRef.current.splice(index, 1); obstaclesRef.current = obstaclesRef.current.filter(o => (o.x + o.width) > p.x && o.x < canvas.width); foodsRef.current = foodsRef.current.filter(f => f.x < canvas.width);
 
@@ -643,392 +676,605 @@ function Game() {
         spawnCooldownRef.current = 90; spawnTimerRef.current = 0; isBarrelFlyingRef.current = true; isBarrelTripRef.current = true; barrelFlyVelocityYRef.current = -20; p.velocityY = 0; p.isJumping = false; p.isHoldingJump = false; p.tilt = 0;
     };
 
+    const startPitFall = (obs) => {
+        if (isFallingIntoPitRef.current || isPitDeathDelayRef.current || isGameOverRef.current) return;
+
+        isFallingIntoPitRef.current = true;
+        pitTargetRef.current = obs;
+        pitFallTimerRef.current = 0;
+        pitVelocityRef.current = 2.0;
+
+        const p = playerRef.current;
+        p.velocityY = 0;
+        p.isJumping = false;
+        p.isHoldingJump = false;
+        p.isBarrelFlying = false;
+
+        // Reset combo + SFX через hit-эмит (без HP damage)
+        window.GameEvents.emit('hit', {
+            health: healthRef.current,
+            type: 'pit',
+            playerX: p.x + p.width / 2,
+            playerY: p.y + p.height / 2,
+            distance: Math.floor(distanceRef.current),
+        });
+
+        if (pitAudioRef.current && settingsRef.current.soundEnabled && !pitAudioEndedRef.current) {
+            try {
+                pitAudioRef.current.currentTime = 0;
+                pitAudioRef.current.play().catch(() => {});
+            } catch (e) {}
+            pitAudioEndedRef.current = true;
+        }
+
+        RenderEngine.flash('0,0,0', 0.3);
+        RenderEngine.shake(4, 10);
+    };
+
     const updateLogic = () => {
         const canvas = canvasRef.current; const p = playerRef.current;
         const char = CHARACTERS[character] || CHARACTERS[Object.keys(CHARACTERS)[0]]; const gy = groundYRef.current;
 
-        let currentBgConfig = BACKGROUNDS[backgroundRef.current] || BACKGROUNDS[Object.keys(BACKGROUNDS)[0]];
-        if (window.Pack3State && window.Pack3State.currentBiome) { currentBgConfig = window.Pack3State.currentBiome; }
+        // === PIT FALL (наивысший приоритет) ===
+        if (isFallingIntoPitRef.current) {
+            pitFallTimerRef.current++;
+            pitVelocityRef.current += GRAVITY * 1.5;
+            p.y += pitVelocityRef.current;
+            p.tilt += 0.12;
 
-        const diffMult = SPEED_MULTIPLIER; const gfxQuality = settingsRef.current.graphics;
-
-        let pack2SpeedMult = 1.0;
-        if (window.Pack2State && window.Pack2State.activePowerups) {
-            if (window.Pack2State.activePowerups.slowmo && window.Pack2State.activePowerups.slowmo > Date.now()) pack2SpeedMult *= 0.5;
-            if (window.Pack2State.activePowerups.sprint && window.Pack2State.activePowerups.sprint > Date.now()) pack2SpeedMult *= 1.5;
-        }
-
-        let pack4SpeedMult = 1.0;
-        if (window.Pack4State && window.Pack4State.boughtBuffs?.includes('start_speed')) pack4SpeedMult = 1.05;
-
-        const statSpeed = getStat(character, 'speed');
-        const statLuck = getStat(character, 'luck');
-
-        if (settingsRef.current.biomesEnabled && window.Pack3State && window.Pack3State.nextBiome && !biomeTransitionRef.current.active) {
-            biomeTransitionRef.current = { active: true, nextBiome: window.Pack3State.nextBiome, alpha: 0 }; window.Pack3State.nextBiome = null;
-        }
-
-        if (biomeTransitionRef.current.active) {
-            biomeTransitionRef.current.alpha += 0.02;
-            if (biomeTransitionRef.current.alpha >= 1) {
-                biomeTransitionRef.current.active = false;
-                if (window.Pack3State) { window.Pack3State.currentBiome = biomeTransitionRef.current.nextBiome; window.Pack3State.currentBgConfig = biomeTransitionRef.current.nextBiome; }
-                biomeTransitionRef.current.alpha = 0;
+            if (pitFallTimerRef.current % 4 === 0) {
+                RenderEngine.spawnParticles(p.x + p.width / 2, p.y + p.height / 2, 2, {
+                    colors: ['#666', '#999', '#444'], speed: 2, life: 18, size: 2, gravity: 0.05
+                });
             }
+
+            if (pitFallTimerRef.current >= PIT_FALL_FRAMES) {
+                isFallingIntoPitRef.current = false;
+                isPitDeathDelayRef.current = true;
+                pitDeathDelayTimerRef.current = 0;
+            }
+            return;
         }
+
+        // === PIT DEATH DELAY (fade to black) ===
+        if (isPitDeathDelayRef.current) {
+            pitDeathDelayTimerRef.current++;
+            if (pitDeathDelayTimerRef.current >= PIT_DEATH_DELAY_FRAMES) {
+                handleGameOver();
+            }
+            return;
+        }
+
+        let currentBgConfig = BACKGROUNDS[backgroundRef.current] || BACKGROUNDS[Object.keys(BACKGROUNDS)[0]];
+        if (settingsRef.current.biomesEnabled && window.Pack3State && window.Pack3State.currentBiome) { currentBgConfig = window.Pack3State.currentBiome; }
+
+        const diffMult = SPEED_MULTIPLIER + Math.floor(distanceRef.current / 500) * 0.05;
+        let slowmoFactor = 1.0;
+        if ((window.Pack2State?.activePowerups?.slowmo || 0) > Date.now()) slowmoFactor = 0.5;
+        let sprintFactor = 1.0;
+        if ((window.Pack2State?.activePowerups?.sprint || 0) > Date.now()) sprintFactor = 1.3;
+
+        const currentSpeed = Math.max(
+            BASE_SPEED * 0.4,
+            (BASE_SPEED + distanceRef.current * 0.001) * diffMult
+                * speedPenaltyRef.current * slowmoFactor * sprintFactor
+        );
+
+        distanceRef.current += currentSpeed * 0.5;
+        bgOffsetRef.current += currentSpeed * 0.5;
+
+        if (speedPenaltyRef.current < 1.0 && !isTrippingRef.current && !isBarrelFlyingRef.current) {
+            speedPenaltyRef.current = Math.min(1.0, speedPenaltyRef.current + 0.001);
+        }
+
+        setScore(Math.floor(distanceRef.current));
+        setSpeedDisplay(prev => {
+            const next = Math.round((BASE_SPEED + distanceRef.current * 0.001) * 10) / 10;
+            return Math.abs(prev - next) < 0.1 ? prev : next;
+        });
+        setPowerDisplay(prev => {
+            const pw = Math.round((window.Pack1State?.comboMult || 1) * 10) / 10;
+            return Math.abs(prev - pw) < 0.1 ? prev : pw;
+        });
 
         if (isEatingRef.current) {
             eatTimerRef.current++;
-            if (eatFramesRef.current.length > 0) { const totalFrames = (char.eatDuration || 4) * 60; const framesPerStep = totalFrames / eatFramesRef.current.length; eatFrameIdxRef.current = Math.min(eatFramesRef.current.length - 1, Math.floor(eatTimerRef.current / framesPerStep)); }
-            if (eatTimerRef.current < 12) eatSpeedFactorRef.current = 1 - eatTimerRef.current / 12; else eatSpeedFactorRef.current = 0;
-            const eatSpeedFactor = eatSpeedFactorRef.current;
-            const baseSpeedMultEat = 1.0 + Math.floor(distanceRef.current / 100) * 0.04; const effectiveSpeedMultEat = Math.max(1.0, baseSpeedMultEat * speedPenaltyRef.current);
-            const currentSpeedEat = BASE_SPEED * effectiveSpeedMultEat * diffMult * eatSpeedFactor * pack2SpeedMult * pack4SpeedMult * statSpeed;
-            distanceRef.current += currentSpeedEat * 0.03; setScore(Math.floor(distanceRef.current)); setSpeedDisplay(eatSpeedFactor > 0.01 ? (effectiveSpeedMultEat * diffMult * eatSpeedFactor * pack2SpeedMult * pack4SpeedMult * statSpeed).toFixed(2) : "0.00"); bgOffsetRef.current -= currentSpeedEat;
-            obstaclesRef.current.forEach(o => { o.x -= currentSpeedEat; }); obstaclesRef.current = obstaclesRef.current.filter(o => o.x + o.width > 0); foodsRef.current.forEach(f => { f.x -= currentSpeedEat; }); foodsRef.current = foodsRef.current.filter(f => f.x + f.width > 0);
-            explosionsRef.current.forEach(e => e.timer++); explosionsRef.current = explosionsRef.current.filter(e => e.timer < e.maxTimer);
-            p.isJumping = false; p.velocityY = 0; p.y = gy - p.height; p.tilt = 0; p.bob = Math.sin(Date.now() / 150) * 3;
-            const particleEvery = gfxQuality === 'low' ? 15 : gfxQuality === 'medium' ? 9 : 6;
-            if (eatTimerRef.current % particleEvery === 0) { RenderEngine.spawnParticles(p.x + p.width / 2 + (Math.random() - 0.5) * p.width * 0.3, p.y + p.height * 0.3, 1, { colors: ['#4CAF50', '#8BC34A'], speed: 2, life: 45, size: 3, gravity: 0.15, shape: 'leaf' }); }
-            const eatDurationFrames = (char.eatDuration || 4) * 60;
-            if (eatTimerRef.current >= eatDurationFrames) { isEatingRef.current = false; eatTimerRef.current = 0; eatFrameIdxRef.current = 0; currentFrameRef.current = 0; lastFrameTimeRef.current = Date.now(); spawnTimerRef.current = 0; spawnCooldownRef.current = 90; }
-            return;
-        } else { eatSpeedFactorRef.current = Math.min(1, eatSpeedFactorRef.current + 0.083); }
-
-        if (isFallingIntoPitRef.current) { pitFallTimerRef.current++; pitVelocityRef.current += 0.2; p.y += pitVelocityRef.current; if (p.y > gy + 30 || pitFallTimerRef.current > 400) { isFallingIntoPitRef.current = false; isPitDeathDelayRef.current = true; pitDeathDelayTimerRef.current = 0; pitAudioEndedRef.current = false; const a = pitAudioRef.current; if (a && settingsRef.current.soundEnabled) { a.currentTime = 0; a.onended = () => { pitAudioEndedRef.current = true; }; a.onerror = () => { pitAudioEndedRef.current = true; }; a.play().catch(() => { pitAudioEndedRef.current = true; }); } else { pitAudioEndedRef.current = true; } } return; }
-        if (isPitDeathDelayRef.current) { pitDeathDelayTimerRef.current++; const audioDone = pitAudioEndedRef.current || !pitAudioRef.current || !settingsRef.current.soundEnabled; const fallbackDone = pitDeathDelayTimerRef.current > 600; const minDelayPassed = pitDeathDelayTimerRef.current > 20; if ((audioDone && minDelayPassed) || fallbackDone) { isPitDeathDelayRef.current = false; handleGameOver(); return; } return; }
-        if (isBarrelFlyingRef.current) { barrelFlyVelocityYRef.current += GRAVITY; p.y += barrelFlyVelocityYRef.current; p.tilt = Math.max(p.tilt - 0.03, -0.4); const backSpeed = 10 * diffMult; bgOffsetRef.current += backSpeed; obstaclesRef.current.forEach(o => { o.x += backSpeed; }); foodsRef.current.forEach(f => { f.x += backSpeed; }); setSpeedDisplay("REVERSE"); if (p.y >= gy - p.height) { p.y = gy - p.height; isBarrelFlyingRef.current = false; barrelFlyVelocityYRef.current = 0; isTrippingRef.current = true; tripTimerRef.current = 0; pendingBarrelDamageRef.current = true; p.tilt = 0; } explosionsRef.current.forEach(e => e.timer++); explosionsRef.current = explosionsRef.current.filter(e => e.timer < e.maxTimer); return; }
-        if (isTrippingRef.current) { tripTimerRef.current++; if (pendingBarrelDamageRef.current && tripTimerRef.current >= 15) { pendingBarrelDamageRef.current = false; healthRef.current -= 1; setHealth(healthRef.current); speedPenaltyRef.current = speedPenaltyRef.current * 0.65; if (healthRef.current <= 0) { handleGameOver(); return; } } if (tripTimerRef.current > 120) { isTrippingRef.current = false; tripTimerRef.current = 0; } }
-
-        explosionsRef.current.forEach(e => e.timer++); explosionsRef.current = explosionsRef.current.filter(e => e.timer < e.maxTimer);
-
-        const baseSpeedMult = 1.0 + Math.floor(distanceRef.current / 100) * 0.04;
-        const effectiveSpeedMult = Math.max(1.0, baseSpeedMult * speedPenaltyRef.current);
-
-        let currentSpeed = 0;
-        if (!isTrippingRef.current) { currentSpeed = BASE_SPEED * effectiveSpeedMult * diffMult * eatSpeedFactorRef.current * pack2SpeedMult * pack4SpeedMult * statSpeed; setSpeedDisplay((effectiveSpeedMult * diffMult * eatSpeedFactorRef.current * pack2SpeedMult * pack4SpeedMult * statSpeed).toFixed(2)); distanceRef.current += (currentSpeed * 0.03); setScore(Math.floor(distanceRef.current)); bgOffsetRef.current -= currentSpeed; }
-        else { setSpeedDisplay("0.00"); }
-
-        const currentPower = calculateJumpMultiplier(p.height, baseSpeedMult, speedPenaltyRef.current); setPowerDisplay(currentPower.toFixed(2));
-
-        if (window.Pack2State && window.Pack2State.activePowerups && window.Pack2State.activePowerups.magnet && window.Pack2State.activePowerups.magnet > Date.now()) { foodsRef.current.forEach(f => { const dx = (p.x + p.width/2) - (f.x + f.width/2); const dy = (p.y + p.height/2) - (f.y + f.height/2); const dist = Math.hypot(dx, dy); if (dist < 300) { f.x += dx * 0.1; f.y += dy * 0.1; } }); }
-
-        if (p.isJumping) { p.velocityY += GRAVITY; if (p.isHoldingJump) p.velocityY -= HOLD_THRUST * p.jumpMult; p.y += p.velocityY; p.tilt = p.velocityY * 0.025; p.tilt = Math.max(-0.35, Math.min(0.35, p.tilt)); if (p.y <= 0) { p.y = 0; if (p.velocityY < 0) p.velocityY = 0; } if (p.y >= gy - p.height) { p.y = gy - p.height; p.velocityY = 0; p.isJumping = false; p.tilt = 0; window.GameEvents.emit('land', { x: p.x + p.width / 2, y: p.y + p.height }); } }
-        else if (!isTrippingRef.current) { p.bob = Math.sin(Date.now() / 80) * 2.5; p.tilt = 0; }
-
-        if (!p.isJumping && !isTrippingRef.current) { const now = Date.now(); const frameDelay = Math.max(30, 100 - (currentSpeed * 5)); if (now - lastFrameTimeRef.current > frameDelay) { currentFrameRef.current = (currentFrameRef.current + 1) % char.frameCount; lastFrameTimeRef.current = now; const frames = walkFramesRef.current; const idx = frames.length > 0 ? currentFrameRef.current % frames.length : 0; const trailImg = frames[idx]; if (trailImg && !isEatingRef.current) RenderEngine.pushTrail(p.x, p.y, p.width, p.height, trailImg); } }
-
-        if (!isTrippingRef.current) {
-            if (spawnCooldownRef.current > 0) { spawnCooldownRef.current--; spawnTimerRef.current = 0; }
-            else {
-                spawnTimerRef.current += (currentSpeed / BASE_SPEED);
-                let gapOk = true; for (let obs of obstaclesRef.current) { if (obs.x + obs.width > canvas.width - 350) { gapOk = false; break; } }
-                if (gapOk && spawnTimerRef.current > Math.max(70, 140 - currentSpeed * 3) + Math.random() * 40) {
-                    const types = currentBgConfig.obstacleTypes || ['barrel', 'rock', 'cactus', 'puddle', 'pit']; const randomType = types[Math.floor(Math.random() * types.length)];
-                    let width = 40, height = 40, yOffset = 0;
-                    if (randomType === 'rock') { width = 120; height = 120; yOffset = 30; } if (randomType === 'cactus') { width = 70; height = 110; } if (randomType === 'barrel') { width = 50; height = 60; } if (randomType === 'puddle') { width = 120; height = 120; yOffset = 30; } if (randomType === 'pit') { width = 140; height = 90; yOffset = 40; }
-                    const powerTier = Math.max(0, Math.floor((currentPower - 1.0) / 0.3)); const maxScale = 1.0 + powerTier * 0.15; const scale = 1.0 + Math.random() * (maxScale - 1.0); width *= scale; height *= scale; yOffset *= scale;
-                    obstaclesRef.current.push({ x: canvas.width, y: gy - height + yOffset, width: width, height: height, type: randomType }); spawnTimerRef.current = 0;
-                }
+            if (eatTimerRef.current > 30) {
+                isEatingRef.current = false;
+                eatFrameIdxRef.current = 0;
+                eatTimerRef.current = 0;
             }
-            const foodList = currentBgConfig.foodEmojis || char.foodEmojis || ['🍗', '🍔', '🍕', '🥩']; const foodMult = char.eatFolder ? 3.0 : 1.0;
-            foodTimerRef.current += (currentSpeed / BASE_SPEED) * statLuck;
-            if (foodTimerRef.current > (100 + Math.random() * 80) * foodMult) {
-                let isSafeToSpawn = true; for (let obs of obstaclesRef.current) { if (obs.x + obs.width > canvas.width - 300) { isSafeToSpawn = false; break; } }
-                if (isSafeToSpawn) {
-                    const isPowerup = Math.random() < (CONFIG.pack2.powerups.spawnChance || 0.05);
-                    if (isPowerup) { const kinds = Object.keys(CONFIG.pack2.powerups.types); const kind = kinds[Math.floor(Math.random() * kinds.length)]; const pData = CONFIG.pack2.powerups.types[kind]; foodsRef.current.push({ x: canvas.width, y: gy - 100, width: 40, height: 40, emoji: pData.emoji, isPowerup: true, kind }); }
-                    else { const randomFood = foodList[Math.floor(Math.random() * foodList.length)]; const foodY = Math.random() > 0.5 ? gy - 80 : gy - 40; foodsRef.current.push({ x: canvas.width, y: foodY, width: 40, height: 40, emoji: randomFood }); }
-                    foodTimerRef.current = 0;
+        }
+
+        if (isTrippingRef.current) {
+            tripTimerRef.current++;
+            if (tripTimerRef.current > 120) {
+                isTrippingRef.current = false;
+                isBarrelTripRef.current = false;
+            }
+        }
+
+        if (isBarrelFlyingRef.current) {
+            p.velocityY += 0.7;
+            p.y += barrelFlyVelocityYRef.current;
+            barrelFlyVelocityYRef.current += 0.7;
+            p.tilt += 0.08;
+
+            if (p.y >= gy - p.height) {
+                p.y = gy - p.height;
+                p.tilt = 0;
+                p.velocityY = 0;
+                barrelFlyVelocityYRef.current = 0;
+                isBarrelFlyingRef.current = false;
+                isBarrelTripRef.current = false;
+                pendingBarrelDamageRef.current = true;
+            }
+        } else if (p.isJumping) {
+            p.velocityY += GRAVITY;
+            if (p.isHoldingJump && p.velocityY < 0) p.velocityY += HOLD_THRUST;
+            p.y += p.velocityY;
+
+            if (p.y >= gy - p.height) {
+                p.y = gy - p.height;
+                p.velocityY = 0;
+                p.isJumping = false;
+                p.isHoldingJump = false;
+                window.GameEvents.emit('land', {});
+            }
+        } else if (!isTrippingRef.current) {
+            p.bob = Math.sin(Date.now() / 100) * 2;
+            p.y = gy - p.height;
+        }
+
+        if (pendingBarrelDamageRef.current) {
+            pendingBarrelDamageRef.current = false;
+            const died = applyDamage('barrel');
+            if (!died && !isGameOverRef.current) {
+                isTrippingRef.current = true;
+                tripTimerRef.current = 0;
+                isBarrelTripRef.current = false;
+                speedPenaltyRef.current = speedPenaltyRef.current * 0.65;
+            }
+        }
+
+        // SPAWN OBSTACLES
+        spawnTimerRef.current++;
+        if (spawnCooldownRef.current > 0) {
+            spawnCooldownRef.current--;
+        } else {
+            const spawnRate = Math.max(45, 140 - currentSpeed * 8) + Math.random() * 40;
+            if (spawnTimerRef.current > spawnRate) {
+                spawnTimerRef.current = 0;
+                const types = currentBgConfig.obstacleTypes || ['barrel', 'rock', 'cactus', 'puddle', 'pit'];
+                const type = types[Math.floor(Math.random() * types.length)];
+                const obsDefs = {
+                    barrel: { w: 60,  h: 80 },
+                    rock:   { w: 80,  h: 60 },
+                    cactus: { w: 50,  h: 90 },
+                    puddle: { w: 140, h: 30 },
+                    pit:    { w: 150, h: 60 },
+                };
+                const def = obsDefs[type];
+                if (def) {
+                    obstaclesRef.current.push({
+                        type,
+                        x: canvas.width + 50,
+                        y: type === 'pit' ? gy : gy - def.h,
+                        w: def.w,
+                        h: def.h,
+                        width: def.w,
+                        height: def.h,
+                    });
                 }
             }
         }
 
-        obstaclesRef.current.forEach(obs => { obs.x -= currentSpeed; }); obstaclesRef.current = obstaclesRef.current.filter(obs => obs.x + obs.width > 0);
-        foodsRef.current.forEach(food => { food.x -= currentSpeed; }); foodsRef.current = foodsRef.current.filter(food => food.x + food.width > 0);
-
-        if (!isTrippingRef.current) {
-            for (let i = obstaclesRef.current.length - 1; i >= 0; i--) {
-                let obs = obstaclesRef.current[i];
-                const hitboxX = p.x + p.width * 0.6; const hitboxY = p.y + p.height * 0.4; const hitboxWidth = p.width * 0.25; const hitboxHeight = p.height * 0.4;
-                let obsHitboxX = obs.x + 10; let obsHitboxWidth = obs.width - 20; let obsHitboxY = obs.y + 5; let obsHitboxHeight = obs.height - 5;
-                if (obs.type === 'puddle') { obsHitboxY = obs.y + obs.height * 0.5; obsHitboxHeight = obs.height * 0.5; }
-                else if (obs.type === 'rock') { obsHitboxY = obs.y + obs.height * 0.2; obsHitboxHeight = obs.height * 0.8; }
-                else if (obs.type === 'pit') { const pitHitboxW = obs.width * 0.5; const pitHitboxH = obs.height * 0.5; obsHitboxX = obs.x + (obs.width - pitHitboxW) / 2 + obs.width * 0.35; obsHitboxWidth = pitHitboxW; obsHitboxY = obs.y + (obs.height - pitHitboxH) / 2; obsHitboxHeight = pitHitboxH; }
-                else if (obs.type === 'cactus') { const pad = obs.width * 0.3; obsHitboxX = obs.x + pad; obsHitboxWidth = obs.width - pad * 2; }
-
-                if (hitboxX < obsHitboxX + obsHitboxWidth && hitboxX + hitboxWidth > obsHitboxX && hitboxY < obsHitboxY + obsHitboxHeight && hitboxY + hitboxHeight > obsHitboxY) {
-                    if (obs.type === 'pit') {
-                        if (window.Pack4State && window.Pack4State.cheatInvincible > Date.now()) { obstaclesRef.current.splice(i, 1); RenderEngine.flash('0,255,255', 0.3); break; }
-                        if (window.Pack2State && window.Pack2State.hasShield) { window.Pack2State.hasShield = false; window.GameEvents.emit('shield_break', { x: p.x, y: p.y }); p.isJumping = true; p.velocityY = JUMP_FORCE * 1.2; obstaclesRef.current.splice(i, 1); RenderEngine.shake(8, 15); break; }
-                        isFallingIntoPitRef.current = true; pitTargetRef.current = obs; pitFallTimerRef.current = 0; pitVelocityRef.current = 0; p.velocityY = 0; p.isJumping = false; p.isHoldingJump = false;
-                        RenderEngine.spawnParticles(obs.x + obs.width / 2, gy, 20, { colors: ['#FF007F', '#FFD700', '#888888'], speed: 4, life: 30, size: 3, gravity: 0.2 }); RenderEngine.shake(10, 15); return;
-                    } else if (obs.type === 'barrel') { handleBarrelHit(i); break; }
-                    else { handleHit(i, obs.type); break; }
-                }
-            }
+        // SPAWN FOOD
+        foodTimerRef.current++;
+        if (foodTimerRef.current > 60 + Math.random() * 80) {
+            foodTimerRef.current = 0;
+            const foodsPool = char.foodEmojis || ['🍗'];
+            const emoji = foodsPool[Math.floor(Math.random() * foodsPool.length)];
+            foodsRef.current.push({
+                x: canvas.width + 50,
+                y: gy - 80 - Math.random() * 180,
+                w: 40, h: 40, emoji, type: 'regular',
+            });
         }
 
-        foodsRef.current = foodsRef.current.filter(food => {
-            const hitboxX = p.x + 20; const hitboxY = p.y + 20; const hitboxWidth = p.width - 40; const hitboxHeight = p.height - 20;
-            if (hitboxX < food.x + food.width && hitboxX + hitboxWidth > food.x && hitboxY < food.y + food.height && hitboxY + hitboxHeight > food.y) {
-                if (food.isPowerup) { window.GameEvents.emit('powerup_collect', { kind: food.kind, x: food.x, y: food.y }); return false; }
-                const isEatTrigger = char.eatEmoji && food.emoji === char.eatEmoji && !isTrippingRef.current;
+        // MOVE OBSTACLES
+        for (let i = obstaclesRef.current.length - 1; i >= 0; i--) {
+            const obs = obstaclesRef.current[i];
+            obs.x -= currentSpeed;
+            if (obs.x + (obs.w || obs.width) < -200) obstaclesRef.current.splice(i, 1);
+        }
+
+        // MOVE FOOD (+ magnet)
+        const magnetActive = (window.Pack2State?.activePowerups?.magnet || 0) > Date.now();
+        for (let i = foodsRef.current.length - 1; i >= 0; i--) {
+            const f = foodsRef.current[i];
+            f.x -= currentSpeed;
+            if (magnetActive && f.x < canvas.width && f.x > 0) {
+                const dx = (p.x + p.width / 2) - (f.x + f.w / 2);
+                const dy = (p.y + p.height / 2) - (f.y + f.h / 2);
+                const dist = Math.hypot(dx, dy);
+                if (dist > 1 && dist < 250) {
+                    f.x += (dx / dist) * 6;
+                    f.y += (dy / dist) * 6;
+                }
+            }
+            if (f.x + f.w < -100) foodsRef.current.splice(i, 1);
+        }
+
+        // MOVE EXPLOSIONS
+        for (let i = explosionsRef.current.length - 1; i >= 0; i--) {
+            const e = explosionsRef.current[i];
+            e.timer++;
+            if (e.timer > e.maxTimer) explosionsRef.current.splice(i, 1);
+        }
+
+        // FOOD COLLISION
+        const pHitbox = {
+            x: p.x + p.width * 0.15, y: p.y + p.height * 0.15,
+            w: p.width * 0.7, h: p.height * 0.7,
+        };
+        for (let i = foodsRef.current.length - 1; i >= 0; i--) {
+            const f = foodsRef.current[i];
+            if (pHitbox.x < f.x + f.w && pHitbox.x + pHitbox.w > f.x
+                && pHitbox.y < f.y + f.h && pHitbox.y + pHitbox.h > f.y) {
+                foodsRef.current.splice(i, 1);
+                totalFoodEatenRef.current++;
                 p.foodEaten++;
-                if (p.foodEaten >= p.foodTarget) { p.width += 2; p.height += 1.3; p.y = gy - p.height; p.foodEaten = 0; p.foodTarget = p.foodTarget + 1; healthRef.current = Math.min(6, healthRef.current + 1); setHealth(healthRef.current); RenderEngine.spawnParticles(p.x + p.width / 2, p.y + p.height / 2, 12, { colors: ['#FFD700', '#FFFFFF'], speed: 3, life: 30, size: 3, gravity: 0.1 }); }
-                if (isEatTrigger) { isEatingRef.current = true; eatTimerRef.current = 0; eatFrameIdxRef.current = 0; p.y = gy - p.height; p.velocityY = 0; p.isJumping = false; p.isHoldingJump = false; p.tilt = 0; p.bob = 0; }
-                // === PATCH 3: передаём pack1Type для дифференцированных SFX ===
-                const pack1Type =
-                    (food.emoji === '🌟' || food.emoji === '💎') ? 'golden' :
-                    food.emoji === '🍄' ? 'poison' :
-                    (food.emoji === '🍎' || food.emoji === '🍏') ? 'rare' :
-                    'regular';
-                window.GameEvents.emit('eat', { type: 'normal', emoji: food.emoji, pack1Type });
-                return false;
+                if (char.eatFrameCount > 0) {
+                    isEatingRef.current = true;
+                    eatTimerRef.current = 0;
+                    eatFrameIdxRef.current = 0;
+                }
+                window.GameEvents.emit('eat', {
+                    x: f.x + f.w / 2, y: f.y + f.h / 2,
+                    pack1Type: f.type || 'regular',
+                    foodType: f.emoji,
+                });
             }
-            return true;
-        });
+        }
 
-        // === PATCH 2: tick.combo читает из Pack1State (правильный decay), fallback comboRef ===
-        window.GameEvents.emit('tick', { delta: 16.6, distance: distanceRef.current, health: healthRef.current, settings: settingsRef.current, timeOfDay: timeOfDayRef.current, combo: window.Pack1State?.combo || comboRef.current });
+        // OBSTACLE COLLISION
+        const pBox = {
+            x: p.x + p.width * 0.2, y: p.y + p.height * 0.15,
+            w: p.width * 0.6, h: p.height * 0.8,
+        };
+        for (let i = obstaclesRef.current.length - 1; i >= 0; i--) {
+            const obs = obstaclesRef.current[i];
+            const obsW = obs.w || obs.width;
+            const obsH = obs.h || obs.height;
+            const oBox = { x: obs.x + 5, y: obs.y + 5, w: obsW - 10, h: obsH - 10 };
+
+            if (pBox.x < oBox.x + oBox.w && pBox.x + pBox.w > oBox.x
+                && pBox.y < oBox.y + oBox.h && pBox.y + pBox.h > oBox.y) {
+
+                if (obs.type === 'pit') {
+                    if (!p.isJumping && !isTrippingRef.current && !isFallingIntoPitRef.current) {
+                        startPitFall(obs);
+                    }
+                } else if (obs.type === 'barrel') {
+                    handleBarrelHit(i);
+                } else {
+                    handleHit(i, obs.type);
+                }
+                break;
+            }
+        }
+
+        // BIOME TRANSITION
+        if (settingsRef.current.biomesEnabled && window.Pack3State?.nextBiome) {
+            const trans = biomeTransitionRef.current;
+            if (!trans.active) {
+                trans.active = true;
+                trans.nextBiome = window.Pack3State.nextBiome;
+                trans.alpha = 0;
+            } else {
+                trans.alpha = Math.min(1, trans.alpha + 0.02);
+                if (trans.alpha >= 1) {
+                    window.Pack3State.currentBiome = trans.nextBiome;
+                    window.Pack3State.nextBiome = null;
+                    trans.active = false;
+                    trans.alpha = 0;
+                    trans.nextBiome = null;
+                }
+            }
+        }
     };
 
+    // === СБОРКА СЦЕНЫ ДЛЯ РЕНДЕРА ===
     const describeScene = () => {
-        const char = CHARACTERS[character] || CHARACTERS[Object.keys(CHARACTERS)[0]]; const gy = groundYRef.current;
+        const canvas = canvasRef.current;
+        if (!canvas) return null;
 
-        let bgConfig = BACKGROUNDS[backgroundRef.current] || BACKGROUNDS[Object.keys(BACKGROUNDS)[0]];
-        if (settings.biomesEnabled && window.Pack3State && window.Pack3State.currentBiome) { bgConfig = window.Pack3State.currentBiome; }
+        const p = playerRef.current;
+        const isNight = timeOfDayRef.current === 'night';
 
-        const bgImages = backgroundImagesRef.current[bgConfig.id] || { day: new Image(), night: new Image() };
-
-        let bgNextImg = null;
-        let transitionAlpha = 0;
-        if (biomeTransitionRef.current.active && biomeTransitionRef.current.nextBiome) {
-            const nextBgConfig = biomeTransitionRef.current.nextBiome;
-            const nextImgs = backgroundImagesRef.current[nextBgConfig.id] || { day: new Image(), night: new Image() };
-            bgNextImg = timeOfDayRef.current === 'night' ? nextImgs.night : nextImgs.day;
-            transitionAlpha = biomeTransitionRef.current.alpha;
+        let currentBgConfig = BACKGROUNDS[backgroundRef.current] || BACKGROUNDS[Object.keys(BACKGROUNDS)[0]];
+        if (settingsRef.current.biomesEnabled && window.Pack3State?.currentBiome) {
+            currentBgConfig = window.Pack3State.currentBiome;
         }
 
-        let charImg;
-        if (isEatingRef.current && eatFramesRef.current.length > 0) charImg = eatFramesRef.current[eatFrameIdxRef.current % eatFramesRef.current.length];
-        else { const frames = walkFramesRef.current; const idx = frames.length > 0 ? currentFrameRef.current % frames.length : 0; charImg = frames[idx]; }
-        const pickImg = (dayImg, nightImg) => timeOfDayRef.current === 'night' ? nightImg.current : dayImg.current;
+        const bgCache = backgroundImagesRef.current;
+        const bgImgs = bgCache[currentBgConfig?.id] || bgCache[backgroundRef.current] || {};
+        const bgImg = isNight ? bgImgs.night : bgImgs.day;
+
+        const trans = biomeTransitionRef.current;
+        let bgNextImg = null, transitionAlpha = 0;
+        if (trans.active && trans.nextBiome && bgCache[trans.nextBiome.id]) {
+            const nextImgs = bgCache[trans.nextBiome.id];
+            bgNextImg = isNight ? nextImgs.night : nextImgs.day;
+            transitionAlpha = trans.alpha;
+        }
+
+        let playerImg = null;
+        if (isEatingRef.current && eatFramesRef.current.length > 0) {
+            playerImg = eatFramesRef.current[eatFrameIdxRef.current % eatFramesRef.current.length];
+            if (eatTimerRef.current % 4 === 0) {
+                eatFrameIdxRef.current = (eatFrameIdxRef.current + 1) % eatFramesRef.current.length;
+            }
+        } else if (walkFramesRef.current.length > 0) {
+            const now = Date.now();
+            if (now - lastFrameTimeRef.current > 100) {
+                lastFrameTimeRef.current = now;
+                currentFrameRef.current = (currentFrameRef.current + 1) % walkFramesRef.current.length;
+            }
+            playerImg = walkFramesRef.current[currentFrameRef.current];
+        }
+
+        const pickImg = (day, night) => isNight ? night : day;
+
+        let pitOverlay = null;
+        if (isFallingIntoPitRef.current && pitTargetRef.current) {
+            const pit = pitTargetRef.current;
+            pitOverlay = {
+                img: pickImg(pitImg.current, pitNightImg.current),
+                x: pit.x, y: pit.y,
+                w: pit.w || pit.width, h: pit.h || pit.height,
+            };
+        }
+
+        let deathFade = null;
+        if (isPitDeathDelayRef.current) {
+            deathFade = Math.min(1, pitDeathDelayTimerRef.current / PIT_DEATH_DELAY_FRAMES);
+        }
+
+        const player = {
+            x: p.x, y: p.y, w: p.width, h: p.height,
+            img: playerImg,
+            tilt: p.tilt || 0, bob: p.bob || 0,
+            isJumping: p.isJumping,
+            isTripping: isTrippingRef.current,
+            tripTimer: tripTimerRef.current,
+            isBarrelTrip: isBarrelTripRef.current,
+            isBarrelFlying: isBarrelFlyingRef.current,
+            isEating: isEatingRef.current,
+            isFallingIntoPit: isFallingIntoPitRef.current,
+            pitFallProgress: isFallingIntoPitRef.current ? Math.min(1, pitFallTimerRef.current / PIT_FALL_FRAMES) : 0,
+            skinFilter: getSkinFilter(character, currentSkin),
+        };
 
         return {
-            bg: { img: timeOfDayRef.current === 'night' ? bgImages.night : bgImages.day, offset: bgOffsetRef.current, fallbackColor: timeOfDayRef.current === 'night' ? '#0a0512' : '#1a0b2e' },
+            bg: { img: bgImg, offset: bgOffsetRef.current, fallbackColor: isNight ? '#1a1a2a' : '#3a5a4a' },
             bgNext: bgNextImg ? { img: bgNextImg } : null,
-            transitionAlpha: transitionAlpha,
-            groundY: gy,
-            player: { x: playerRef.current.x, y: playerRef.current.y, w: playerRef.current.width, h: playerRef.current.height, tilt: playerRef.current.tilt, bob: playerRef.current.bob, isJumping: playerRef.current.isJumping, img: charImg, isEating: isEatingRef.current, isTripping: isTrippingRef.current, tripTimer: tripTimerRef.current, isBarrelTrip: isBarrelTripRef.current, isBarrelFlying: isBarrelFlyingRef.current, isFallingIntoPit: isFallingIntoPitRef.current, skinFilter: playerRef.current.skinFilter || null },
-            obstacles: obstaclesRef.current.map(o => ({ x: o.x, y: o.y, w: o.width, h: o.height, type: o.type })),
-            foods: foodsRef.current.map(f => ({ x: f.x, y: f.y, w: f.width, h: f.height, emoji: f.emoji, isPowerup: f.isPowerup })),
-            explosions: explosionsRef.current.map(e => ({ x: e.x, y: e.y, size: e.size, timer: e.timer, maxTimer: e.maxTimer })),
-            pitOverlay: (isFallingIntoPitRef.current || isPitDeathDelayRef.current) && pitTargetRef.current ? { x: pitTargetRef.current.x, y: pitTargetRef.current.y, w: pitTargetRef.current.width, h: pitTargetRef.current.height, img: pickImg(pitImg, pitNightImg) } : null,
-            isPitDeath: isFallingIntoPitRef.current || isPitDeathDelayRef.current, pitTarget: pitTargetRef.current,
-            deathFade: isPitDeathDelayRef.current ? Math.min(1, (pitAudioRef.current && isFinite(pitAudioRef.current.duration) && pitAudioRef.current.duration > 0.1 && settingsRef.current.soundEnabled) ? pitAudioRef.current.currentTime / pitAudioRef.current.duration : pitDeathDelayTimerRef.current / 180) : null,
-            images: { puddleImg, puddleNightImg, rockImg, rockNightImg, pitImg, pitNightImg, barrelImg, barrelNightImg, cactusImg, cactusNightImg, explosionImg }, pickImg,
+            transitionAlpha,
+            pitOverlay,
+            player,
+            foods: foodsRef.current,
+            obstacles: obstaclesRef.current,
+            explosions: explosionsRef.current,
+            images: {
+                puddleImg: puddleImg.current, puddleNightImg: puddleNightImg.current,
+                rockImg: rockImg.current, rockNightImg: rockNightImg.current,
+                pitImg: pitImg.current, pitNightImg: pitNightImg.current,
+                barrelImg: barrelImg.current, barrelNightImg: barrelNightImg.current,
+                cactusImg: cactusImg.current, cactusNightImg: cactusNightImg.current,
+                explosionImg: explosionImg,
+                pickImg,
+            },
+            isPitDeath: isPitDeathDelayRef.current,
+            pitTarget: pitTargetRef.current,
+            deathFade,
         };
     };
 
-    const lastTimeRef = useRef(0); const accumulatorRef = useRef(0);
-    useEffect(() => {
-        if (gameState === 'playing') {
-            lastTimeRef.current = performance.now(); accumulatorRef.current = 0;
-            const gameLoop = (time) => {
-                if (gameState !== 'playing') return;
-                let deltaTime = time - lastTimeRef.current; lastTimeRef.current = time; if (deltaTime > 250) deltaTime = 250; accumulatorRef.current += deltaTime;
-                const FRAME_TIME = 1000 / 60; let loops = 0;
-                while (accumulatorRef.current >= FRAME_TIME && loops < 5) {
-                    updateLogic(); RenderEngine.update();
-                    accumulatorRef.current -= FRAME_TIME; loops++;
-                }
-                if (gameState !== 'playing') return;
-                const canvas = canvasRef.current; const ctx = canvas.getContext('2d'); const scene = describeScene(); RenderEngine.draw(ctx, canvas, scene);
-                window.GameEvents.emit('render_frame', { ctx, player: scene.player });
-                requestRef.current = requestAnimationFrame(gameLoop);
-            };
+    // === ИГРОВОЙ ЦИКЛ ===
+    const lastLoopTimeRef = useRef(0);
+
+    const gameLoop = useCallback(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) {
             requestRef.current = requestAnimationFrame(gameLoop);
+            return;
         }
-        return () => cancelAnimationFrame(requestRef.current);
-    }, [gameState, character, background]);
+
+        if (gameState === 'playing' || gameState === 'paused') {
+            if (gameState === 'playing') updateLogic();
+
+            RenderEngine.update();
+
+            const ctx = canvas.getContext('2d');
+            const scene = describeScene();
+            if (scene) {
+                RenderEngine.draw(ctx, canvas, scene);
+
+                window.GameEvents.emit('render_frame', {
+                    ctx,
+                    player: {
+                        x: playerRef.current.x,
+                        y: playerRef.current.y,
+                        w: playerRef.current.width,
+                        h: playerRef.current.height,
+                        isFallingIntoPit: isFallingIntoPitRef.current,
+                    },
+                });
+            }
+
+            if (gameState === 'playing') {
+                const now = performance.now();
+                const delta = lastLoopTimeRef.current ? now - lastLoopTimeRef.current : 16.6;
+                lastLoopTimeRef.current = now;
+
+                window.GameEvents.emit('tick', {
+                    distance: distanceRef.current,
+                    health: healthRef.current,
+                    combo: window.Pack1State?.combo || 0,
+                    timeOfDay: timeOfDayRef.current,
+                    settings: settingsRef.current,
+                    delta,
+                });
+            }
+        } else if (gameState === 'gameover') {
+            RenderEngine.update();
+            const ctx = canvas.getContext('2d');
+            const scene = describeScene();
+            if (scene) RenderEngine.draw(ctx, canvas, scene);
+        }
+
+        requestRef.current = requestAnimationFrame(gameLoop);
+    }, [gameState, character, currentSkin]);
 
     useEffect(() => {
-        const params = new URLSearchParams(window.location.search);
-        const rec = params.get('record');
-        if (rec) { alert(`🎉 Ваш друг поделился рекордом: ${rec}м! Побейте его!`); }
+        requestRef.current = requestAnimationFrame(gameLoop);
+        return () => {
+            if (requestRef.current) cancelAnimationFrame(requestRef.current);
+        };
+    }, [gameLoop]);
+
+    // Ресайз канваса
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const resize = () => {
+            const parent = canvas.parentElement;
+            if (parent && parent.clientWidth > 0) {
+                canvas.width = parent.clientWidth;
+                canvas.height = parent.clientHeight;
+            } else {
+                canvas.width = 1280;
+                canvas.height = 720;
+            }
+        };
+        resize();
+        window.addEventListener('resize', resize);
+        return () => window.removeEventListener('resize', resize);
     }, []);
 
-    const startGame = () => resetGame();
-    const formatScore = (num) => num.toString().padStart(5, '0');
-    const getHearts = () => { let h = []; for (let i = 0; i < 4; i++) { if (health >= (i + 1) * 2) h.push('❤️'); else if (health === i * 2 + 1) h.push('💔'); else h.push('🖤'); } return h.join(''); };
+    // === МЕНЮ-ТАБ ===
+    const [menuTab, setMenuTab] = useState('play');
 
-    const renderSettingsContent = () => React.createElement('div', null,
-        React.createElement('div', { className: 'ms-section-title' }, '🖥️ HUD'),
-        React.createElement('div', { className: 'ms-row' },
-            React.createElement('span', { style: { minWidth: '120px' } }, 'Scale'),
-            React.createElement('input', { type: 'range', min: 50, max: 150, value: Math.round(settings.hudScale * 100), onChange: (e) => setSettings(s => ({ ...s, hudScale: Number(e.target.value) / 100 })), style: { flex: 1 } }),
-            React.createElement('span', { style: { minWidth: '50px', textAlign: 'right' } }, `${Math.round(settings.hudScale * 100)}%`)
-        ),
-        React.createElement('div', { className: 'ms-row' },
-            React.createElement('span', { style: { minWidth: '120px' } }, 'Opacity'),
-            React.createElement('input', { type: 'range', min: 20, max: 100, value: Math.round(settings.hudOpacity * 100), onChange: (e) => setSettings(s => ({ ...s, hudOpacity: Number(e.target.value) / 100 })), style: { flex: 1 } }),
-            React.createElement('span', { style: { minWidth: '50px', textAlign: 'right' } }, `${Math.round(settings.hudOpacity * 100)}%`)
-        ),
-        React.createElement('div', { className: 'ms-section-title', style: { marginTop: '16px' } }, '🎨 Graphics'),
-        React.createElement('div', { className: 'ms-tod' },
-            ['low', 'medium', 'high'].map(q => React.createElement('button', {
-                key: q, className: `ms-tod-btn ${settings.graphics === q ? 'active' : ''}`,
-                onClick: () => setSettings(s => ({ ...s, graphics: q }))
-            }, q.toUpperCase()))
-        ),
-        React.createElement('div', { className: 'ms-section-title', style: { marginTop: '16px' } }, '⚡ Gameplay'),
-        ['comboEnabled', 'weatherEnabled', 'biomesEnabled'].map(key => React.createElement('div', { key, className: 'ms-row', style: { justifyContent: 'space-between' } },
-            React.createElement('span', null, key === 'comboEnabled' ? 'Combo System' : key === 'weatherEnabled' ? 'Weather Effects' : 'Dynamic Biomes'),
-            React.createElement('button', { className: `ms-tod-btn ${settings[key] ? 'active' : ''}`, onClick: () => setSettings(s => ({ ...s, [key]: !s[key] })) }, settings[key] ? 'ON' : 'OFF')
-        )),
-        React.createElement('div', { className: 'ms-section-title', style: { marginTop: '16px' } }, '🔊 Audio'),
-        React.createElement('div', { className: 'ms-row' },
-            React.createElement('span', { style: { minWidth: '120px' } }, 'Master'),
-            React.createElement('input', { type: 'range', min: 0, max: 100, value: Math.round(settings.masterVolume * 100), onChange: (e) => setSettings(s => ({ ...s, masterVolume: Number(e.target.value) / 100 })), style: { flex: 1 } }),
-            React.createElement('span', { style: { minWidth: '50px', textAlign: 'right' } }, `${Math.round(settings.masterVolume * 100)}%`)
-        ),
-        React.createElement('div', { className: 'ms-row', style: { marginTop: '16px' } },
-            React.createElement('button', { className: 'ms-btn ghost', onClick: () => setSettings({ ...DEFAULT_SETTINGS }) }, 'RESET DEFAULTS')
-        )
-    );
+    // === JSX ===
+    return React.createElement('div', { className: `game-container state-${gameState}` },
+        React.createElement('canvas', {
+            ref: canvasRef,
+            className: 'game-canvas',
+            style: { display: 'block', width: '100%', height: '100%' },
+        }),
 
-    const currentSkinData = CHARACTERS[character]?.skins?.find(s => s.id === currentSkin);
-    const currentSkinName = currentSkinData?.name || 'Original';
-
-    const menuTabs = [];
-
-    menuTabs.push({
-        id: 'home', icon: '🏠', label: 'Home', title: 'Main Menu',
-        render: () => React.createElement('div', null,
-            React.createElement('div', { className: 'ms-home-title' }, 'LACOSTE'),
-            React.createElement('div', { className: 'ms-home-sub' }, 'RUNNER · VICE CITY EDITION'),
-
-            React.createElement('div', { className: 'ms-row', style: { justifyContent: 'center', gap: '24px', marginBottom: '20px' } },
-                React.createElement('span', null, `🏆 BEST: ${highScore}m`),
-                React.createElement('span', null, `💰 ${coins}`),
-                React.createElement('span', null, `🎨 ${currentSkinName}`)
+        // --- HUD ---
+        (gameState === 'playing' || gameState === 'paused') && React.createElement('div', { className: 'game-hud' },
+            React.createElement('div', { className: 'hud-left' },
+                React.createElement('div', { className: 'hud-score' }, `${score}m`),
+                React.createElement('div', { className: 'hud-coins' }, `💰 ${coins}`)
             ),
-
-            React.createElement('div', { className: 'ms-section-title' }, '🐾 Character'),
-            React.createElement('div', { className: 'ms-char-tabs' },
-                Object.values(CHARACTERS).map(char => React.createElement('button', {
-                    key: char.id,
-                    className: `ms-char-tab ${character === char.id ? 'active' : ''}`,
-                    onClick: () => { setCharacter(char.id); window.GameEvents.emit('pack4_character_changed', { charId: char.id }); }
-                }, `${char.emoji || '❓'} ${char.name}`))
-            ),
-
-            React.createElement('div', { className: 'ms-section-title', style: { marginTop: '16px' } }, '🗺️ Background'),
-            React.createElement('div', { className: 'ms-char-tabs' },
-                Object.values(BACKGROUNDS).map(bg => React.createElement('button', {
-                    key: bg.id,
-                    className: `ms-char-tab ${background === bg.id ? 'active' : ''}`,
-                    onClick: () => setBackground(bg.id)
-                }, `${bg.emoji || '🌍'} ${bg.name}`))
-            ),
-
-            React.createElement('div', { className: 'ms-section-title', style: { marginTop: '16px' } }, '🌓 Time of Day'),
-            React.createElement('div', { className: 'ms-tod' },
-                React.createElement('button', { className: `ms-tod-btn ${timeOfDay === 'day' ? 'active' : ''}`, onClick: () => setTimeOfDay('day') }, '☀️ DAY'),
-                React.createElement('button', { className: `ms-tod-btn ${timeOfDay === 'night' ? 'active' : ''}`, onClick: () => setTimeOfDay('night') }, '🌙 NIGHT')
-            ),
-
-            React.createElement('div', { className: 'ms-actions' },
-                React.createElement('button', { className: 'ms-btn ghost', onClick: toggleFullscreen }, '⛶ FULLSCREEN'),
-                React.createElement('button', { className: 'ms-btn ghost', onClick: () => window.GameEvents.emit('show_achievements') }, '🏆 ACHIEVEMENTS')
-            ),
-
-            React.createElement('button', { className: 'ms-btn primary', style: { width: '100%', marginTop: '16px', fontSize: '18px', padding: '14px' }, onClick: startGame }, '▶ START ESCAPE'),
-
-            React.createElement('div', { style: { marginTop: '20px', color: 'var(--fh-text-muted, #888)', fontSize: '12px', textAlign: 'center' } },
-                React.createElement('p', null, 'Space / Tap — jump, HOLD — high jump!'),
-                React.createElement('p', null, 'Eat food to grow stronger. Avoid pits.')
-            )
-        )
-    });
-
-    if (window.Pack4Render?.shop) menuTabs.push({ id: 'shop', icon: '🛒', label: 'Shop', title: 'Shop', render: window.Pack4Render.shop });
-    if (window.Pack4Render?.promo) menuTabs.push({ id: 'promo', icon: '🎁', label: 'Promo', title: 'Promo & Codes', render: window.Pack4Render.promo });
-    if (window.Pack4Render?.leaderboard) menuTabs.push({ id: 'leaderboard', icon: '🏅', label: 'Top', title: 'Leaderboard', render: window.Pack4Render.leaderboard });
-
-    menuTabs.push({ id: 'settings', icon: '⚙️', label: 'Settings', title: 'Settings', render: () => renderSettingsContent() });
-
-    return React.createElement('div', { id: 'game-container' },
-
-        (gameState === 'playing' || gameState === 'paused') ? React.createElement('div', { className: 'hud-container', style: { transform: `scale(${settings.hudScale})`, opacity: settings.hudOpacity } },
-            React.createElement('div', { className: 'hud-top-row' },
-                React.createElement('span', null, `💰 ${coins}`),
-                React.createElement('span', null, window.Pack3State?.currentBiome?.name || '🌳'),
-                React.createElement('span', null, timeOfDay === 'night' ? '🌙' : '☀️'),
-                React.createElement('span', null, window.Pack2State?.currentWeather?.label || '☀️')
-            ),
-            React.createElement('div', { className: 'hud-main-stats' },
-                React.createElement('span', { className: 'hud-score' }, formatScore(score)),
-                React.createElement('span', { className: 'hud-highscore' }, `BEST: ${formatScore(highScore)}`),
-                React.createElement('span', { className: 'hud-speed' }, `SPD: ${speedDisplay === 'REVERSE' ? '◄◄' : speedDisplay}`)
-            ),
-            React.createElement('div', { className: 'hud-vitals' },
-                React.createElement('span', { className: 'hud-health' }, getHearts()),
-                React.createElement('span', { className: 'hud-food' }, `🍗 ${playerRef.current.foodEaten}/${playerRef.current.foodTarget}`)
-            )
-        ) : null,
-
-        React.createElement('canvas', { ref: canvasRef, width: 1200, height: 600 }),
-
-        gameState === 'playing' ? React.createElement(React.Fragment, null,
-            React.createElement('button', { id: 'btn-fullscreen', className: 'game-btn', onClick: toggleFullscreen }, '⛶'),
-            React.createElement('button', { id: 'btn-pause', className: 'game-btn', onClick: () => setGameState('paused') }, '❚❚')
-        ) : null,
-
-        gameState === 'menu' ? (
-            window.MenuShell
-                ? React.createElement(window.MenuShell, { coins: coins, tabs: menuTabs })
-                : React.createElement('div', { className: 'menu-overlay' },
-                    React.createElement('div', { className: 'menu-box' },
-                        React.createElement('div', { className: 'title' }, 'LACOSTE RUNNER'),
-                        React.createElement('button', { className: 'btn btn-start', onClick: startGame }, 'START'),
-                        React.createElement('p', { style: { color: 'red', marginTop: '10px', fontSize: '12px' } }, 'MenuShell not loaded')
+            React.createElement('div', { className: 'hud-center' },
+                React.createElement('div', { className: 'hud-hearts' },
+                    Array.from({ length: Math.max(0, health) }).map((_, i) =>
+                        React.createElement('span', { key: i, className: 'heart' }, '❤️')
                     )
                 )
-        ) : null,
-
-        gameState === 'paused' ? React.createElement('div', { className: 'menu-overlay' },
-            React.createElement('div', { className: 'menu-box' },
-                React.createElement('div', { className: 'title', style: { fontSize: '48px' } }, 'PAUSED'),
-                React.createElement('div', { style: { display: 'flex', gap: '15px', marginTop: '20px' } },
-                    React.createElement('button', { className: 'btn btn-start', onClick: () => setGameState('playing') }, 'RESUME'),
-                    React.createElement('button', { className: 'btn', onClick: () => resetGame() }, 'RESTART'),
-                    React.createElement('button', { className: 'btn', onClick: () => setGameState('menu') }, 'MENU')
-                )
+            ),
+            React.createElement('div', { className: 'hud-right' },
+                React.createElement('div', { className: 'hud-stat' }, `⚡ ${speedDisplay.toFixed(1)}`),
+                React.createElement('div', { className: 'hud-stat' }, `🔥 x${powerDisplay.toFixed(1)}`),
+                React.createElement('button', {
+                    className: 'hud-btn',
+                    onClick: () => setGameState('paused'),
+                    onTouchStart: (e) => e.stopPropagation(),
+                }, '⏸')
             )
-        ) : null,
+        ),
 
-        gameState === 'gameover' ? React.createElement('div', { className: 'menu-overlay' },
-            React.createElement('div', { className: 'menu-box' },
-                React.createElement('div', { className: 'title', style: { color: '#FF3333', filter: 'none', background: 'none', WebkitTextFillColor: '#FF3333', fontSize: '60px' } }, 'BUSTED'),
-                React.createElement('div', { className: 'subtitle', style: { marginBottom: '30px' } }, 'The employees caught you'),
-                React.createElement('div', { style: { fontSize: '32px', fontFamily: 'Rajdhani', fontWeight: 'bold', marginBottom: '20px' } },
-                    `${Math.floor(score)} M`,
-                    React.createElement('span', { style: { fontSize: '18px', color: 'var(--fh-text-muted)', marginLeft: '10px' } }, `(HI: ${highScore} M)`)
+        // --- MENU ---
+        gameState === 'menu' && React.createElement('div', { className: 'menu-overlay' },
+            menuTab === 'play' && React.createElement('div', { className: 'menu-panel' },
+                React.createElement('h1', { className: 'menu-title' }, '🐊 LACOSTE RUNNER'),
+                React.createElement('div', { className: 'menu-subtitle' }, `Рекорд: ${highScore}m`),
+                React.createElement('button', {
+                    className: 'main-btn',
+                    onClick: () => resetGame(),
+                }, '▶ ИГРАТЬ'),
+                React.createElement('div', { className: 'menu-tabs' },
+                    React.createElement('button', { className: 'menu-tab', onClick: () => setMenuTab('shop') }, '🛒 МАГАЗИН'),
+                    React.createElement('button', { className: 'menu-tab', onClick: () => setMenuTab('promo') }, '🎁 ПРОМО'),
+                    React.createElement('button', { className: 'menu-tab', onClick: () => setMenuTab('leaderboard') }, '🏆 РЕЙТИНГ'),
+                    React.createElement('button', {
+                        className: 'menu-tab',
+                        onClick: () => window.GameEvents.emit('show_achievements'),
+                    }, '🏅 ДОСТИЖЕНИЯ')
                 ),
-                React.createElement('div', { style: { display: 'flex', gap: '15px', marginBottom: '20px' } },
-                    React.createElement('button', { className: 'btn btn-start', onClick: startGame }, 'TRY AGAIN'),
-                    React.createElement('button', { className: 'btn', onClick: () => setGameState('menu') }, 'MENU'),
-                    React.createElement('button', { className: 'btn', onClick: () => window.GameEvents.emit('show_share') }, '📸 SHARE')
+                React.createElement('div', { className: 'menu-hint' },
+                    React.createElement('span', {}, 'SPACE / TAP — Прыжок'),
+                    React.createElement('span', {}, 'N — День/Ночь'),
+                    React.createElement('span', {}, 'ESC — Пауза')
                 )
+            ),
+            menuTab === 'shop' && React.createElement('div', { className: 'menu-panel' },
+                React.createElement('button', { className: 'back-btn', onClick: () => setMenuTab('play') }, '← НАЗАД'),
+                window.Pack4Render?.shop ? React.createElement(window.Pack4Render.shop) : null
+            ),
+            menuTab === 'promo' && React.createElement('div', { className: 'menu-panel' },
+                React.createElement('button', { className: 'back-btn', onClick: () => setMenuTab('play') }, '← НАЗАД'),
+                window.Pack4Render?.promo ? React.createElement(window.Pack4Render.promo) : null
+            ),
+            menuTab === 'leaderboard' && React.createElement('div', { className: 'menu-panel' },
+                React.createElement('button', { className: 'back-btn', onClick: () => setMenuTab('play') }, '← НАЗАД'),
+                window.Pack4Render?.leaderboard ? React.createElement(window.Pack4Render.leaderboard) : null
             )
-        ) : null,
+        ),
 
-        ...(window.PackUIs || []).map((UI, i) => React.createElement(UI, { key: 'plugin-' + i, gameState, setGameState, score }))
+        // --- PAUSE ---
+        gameState === 'paused' && React.createElement('div', { className: 'pause-overlay' },
+            React.createElement('h2', { className: 'pause-title' }, '⏸ ПАУЗА'),
+            React.createElement('button', {
+                className: 'main-btn',
+                onClick: () => setGameState('playing'),
+            }, '▶ ПРОДОЛЖИТЬ'),
+            React.createElement('button', {
+                className: 'main-btn secondary',
+                onClick: () => { setGameState('menu'); setMenuTab('play'); },
+            }, '🏠 В МЕНЮ'),
+            React.createElement('button', {
+                className: 'main-btn secondary',
+                onClick: () => toggleFullscreen(),
+            }, '⛶ ПОЛНЫЙ ЭКРАН')
+        ),
+
+        // --- GAMEOVER ---
+        gameState === 'gameover' && React.createElement('div', { className: 'gameover-overlay' },
+            React.createElement('h2', { className: 'gameover-title' }, 'GAME OVER'),
+            React.createElement('div', { className: 'gameover-score' }, `${score}m`),
+            React.createElement('div', { className: 'gameover-best' }, `Рекорд: ${highScore}m`),
+            React.createElement('button', {
+                className: 'main-btn',
+                onClick: () => resetGame(),
+            }, '🔄 ЗАНОВО'),
+            React.createElement('button', {
+                className: 'main-btn secondary',
+                onClick: () => window.GameEvents.emit('show_share'),
+            }, '📤 ПОДЕЛИТЬСЯ'),
+            React.createElement('button', {
+                className: 'main-btn secondary',
+                onClick: () => { setGameState('menu'); setMenuTab('play'); },
+            }, '🏠 В МЕНЮ')
+        ),
+
+        // --- PACK UIs (рендерятся поверх канваса) ---
+        (window.PackUIs || []).map((UIComponent, i) =>
+            React.createElement(UIComponent, { key: `pack-ui-${i}`, gameState })
+        )
     );
 }
-
-const root = ReactDOM.createRoot(document.getElementById('root'));
-window.__bootGame = function () { if (window.__GAME_STARTED__) return; window.__GAME_STARTED__ = true; root.render(React.createElement(Game)); };
-if (!window.__LOADER_ACTIVE__) { window.__bootGame(); }
